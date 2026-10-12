@@ -37,6 +37,8 @@ import {
 import { emailValue } from "@/lib/forms";
 import { formatDate, formatMoney, formatTimestamp, percentLabel } from "@/lib/format";
 import { getRule } from "@/lib/rules/library";
+import { detectPlace, localProtectionNote } from "@/lib/rules/detect";
+import { isAllowedJurisdiction } from "@/lib/rules/cities";
 import { checkRentIncrease, type Jurisdiction, type RsoStatus, type RstpoTier } from "@/lib/rules/engine";
 import { todayISO } from "@/lib/rules/dates";
 import {
@@ -134,14 +136,20 @@ async function withUnit(): Promise<{ user: User; unit: Unit }> {
 }
 
 function unitInput(input: Record<string, unknown>): UnitInput {
-  const jurisdiction = text(input.jurisdiction) as Jurisdiction;
-  const allowed: Jurisdiction[] = ["city_la", "la_county_unincorporated", "city_sd", "other_ca", "unsure"];
-  if (!allowed.includes(jurisdiction)) throw new Error("Choose a jurisdiction.");
   const street = text(input.street);
   const city = text(input.city);
   const landlordName = text(input.landlordName);
   const landlordEmail = text(input.landlordEmail);
   if (!street || !city || !landlordName || !landlordEmail) throw new Error("Add the address and landlord.");
+  const requested = text(input.jurisdiction);
+  const detected = detectPlace({
+    address: street,
+    city,
+    postalCode: text(input.postalCode),
+    region: text(input.region),
+  });
+  const jurisdiction = requested && requested !== "unsure" && isAllowedJurisdiction(requested) ? requested : detected.jurisdiction;
+  if (!isAllowedJurisdiction(jurisdiction)) throw new Error("Choose a jurisdiction.");
   return {
     street,
     unitNumber: text(input.unitNumber),
@@ -163,6 +171,16 @@ function unitInput(input: Record<string, unknown>): UnitInput {
 
 function notice(locale: Locale) {
   return legalNotice(locale);
+}
+
+function unitPlace(unit: Unit) {
+  return detectPlace({ address: unit.street, city: unit.city, postalCode: unit.postalCode, region: unit.region });
+}
+
+function unitLocal(unit: Unit, locale: Locale) {
+  const place = unitPlace(unit);
+  if (place.pack) return null;
+  return localProtectionNote(place.localOrdinance, locale);
 }
 
 export async function handlePhone(request: Request, path: string[]): Promise<Response> {
@@ -342,6 +360,7 @@ async function homePayload() {
     hello: user.name || tx(locale, "there", ""),
     address: unitAddress(unit),
     sample: user.email === DEMO_EMAIL,
+    local: unitLocal(unit, locale),
     cards,
     notice: notice(locale),
   };
@@ -367,7 +386,7 @@ async function leasePayload() {
       };
     }),
   }));
-  return { reviews, notice: notice(locale) };
+  return { reviews, local: unitLocal(unit, locale), notice: notice(locale) };
 }
 
 async function reviewPosted(input: Record<string, unknown>) {
@@ -553,6 +572,7 @@ async function increasePayload() {
           ].filter(Boolean).join("\n\n"),
         }
       : null,
+    local: unitLocal(unit, locale),
     notice: notice(locale),
   };
 }
@@ -565,11 +585,15 @@ async function runIncrease(input: Record<string, unknown>) {
   const effectiveDate = dateOrNull(input.effectiveDate);
   if (!effectiveDate) throw new Error("Enter the date the new rent would start.");
   const areas = ["los_angeles_orange", "riverside_san_bernardino", "san_diego", "san_francisco_bay", "other_ca"] as const;
+  const jurisdiction = (text(input.jurisdiction) || unit.jurisdiction) as Jurisdiction;
+  const place = unitPlace(unit);
+  const statewide = jurisdiction === "ca" || jurisdiction === "other_ca";
   const result = checkRentIncrease({
-    jurisdiction: (text(input.jurisdiction) || unit.jurisdiction) as Jurisdiction,
+    jurisdiction,
     rsoStatus: (text(input.rsoStatus) || unit.rsoStatus) as RsoStatus,
     rstpoTier: (text(input.rstpoTier) || unit.rstpoTier) as RstpoTier,
-    countyArea: areas.find((area) => area === text(input.countyArea)),
+    countyArea: areas.find((area) => area === text(input.countyArea)) || (statewide ? place.area ?? undefined : undefined),
+    localOrdinanceName: statewide ? place.localOrdinance?.name ?? null : null,
     lowestRentCents: lowest,
     proposedRentCents: proposed,
     noticeDate: dateOrNull(input.noticeDate) || todayISO(),

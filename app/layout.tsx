@@ -8,7 +8,7 @@ const serif = Fraunces({ subsets: ["latin"], variable: "--font-serif" });
 
 export const metadata: Metadata = {
   title: { default: "Rent Right", template: "%s · Rent Right" },
-  description: "Free records and general legal information for Los Angeles and San Diego renters. Not a law firm.",
+  description: "Free records and general legal information for California renters. Not a law firm.",
   applicationName: "Rent Right",
 };
 

@@ -154,7 +154,7 @@ Check from the phone’s browser: open `http://192.168.1.20:3000` (your address)
 - **iPhone:** Open the Camera app, point it at the QR code in the Expo terminal, and tap the banner. It opens in Expo Go.
 - **Android:** Open Expo Go and tap **Scan QR code**. The Android camera often does not hand the code to Expo Go.
 
-The first open can take a minute. The screen should say **Rent Right** and **Free for LA and San Diego renters.**
+The first open can take a minute. The screen should say **Rent Right** and **Free for California renters.**
 
 ## 8. Open the sample
 

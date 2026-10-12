@@ -3,12 +3,13 @@ import { Text } from "react-native";
 import { api } from "@/api";
 import type { Notice } from "@/session";
 import { colors } from "@/theme";
-import { Button, Card, ErrorLine, Field, H1, LegalNote, LearnMore, Page } from "@/ui";
+import { Button, Card, ErrorLine, Field, H1, LegalNote, LearnMore, LocalNote, Page } from "@/ui";
 import { useLoad } from "@/use-load";
 
 type IncreaseData = {
   lowest: string;
   notice: Notice;
+  local?: { text: string; url: string } | null;
   result: { title: string; subtitle: string; max: string | null; ruleId: string | null; detail: string } | null;
 };
 
@@ -31,6 +32,7 @@ export default function Increase() {
   return (
     <Page onRefresh={reload}>
       <H1>Rent increase</H1>
+      <LocalNote note={data?.local} />
       <ErrorLine message={error} />
       <Field label="Current" value={lowest} onChange={setLowest} placeholder={data?.lowest || "2150"} />
       <Field label="Proposed" value={proposed} onChange={setProposed} />

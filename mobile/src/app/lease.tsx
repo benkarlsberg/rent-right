@@ -3,11 +3,12 @@ import { Text } from "react-native";
 import { api } from "@/api";
 import type { Notice } from "@/session";
 import { colors } from "@/theme";
-import { Button, Card, ErrorLine, Field, H1, Kicker, LegalNote, LearnMore, Muted, Page } from "@/ui";
+import { Button, Card, ErrorLine, Field, H1, Kicker, LegalNote, LearnMore, LocalNote, Muted, Page } from "@/ui";
 import { useLoad } from "@/use-load";
 
 type LeaseData = {
   notice: Notice;
+  local?: { text: string; url: string } | null;
   reviews: { id: string; filename: string | null; when: string; findings: { id: string; status: string; ruleId: string | null; title: string; quote: string; detail: string; citation: string | null }[] }[];
 };
 
@@ -30,6 +31,7 @@ export default function Lease() {
   return (
     <Page onRefresh={reload}>
       <H1>Lease</H1>
+      <LocalNote note={data?.local} />
       <ErrorLine message={error} />
       <Button label="Check the sample lease" ghost onPress={() => run("lease/sample")} />
       <Field label="Or paste text" value={text} onChange={setText} multiline />

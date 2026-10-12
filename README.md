@@ -2,7 +2,7 @@
 
 **On your own iPhone or Android:** follow the [phone demo guide](docs/PHONE_DEMO.md). It walks through Node, Git, Expo Go, the same Wi-Fi, and **View a sample Los Angeles tenancy** without assuming you write code.
 
-Free records and general legal information for renters in the City of Los Angeles, unincorporated Los Angeles County, and the City of San Diego. It is not a law firm. Nothing in the app is legal advice, and using it does not create an attorney-client relationship.
+Free records and general legal information for renters anywhere in California. Statewide rules apply to every California address. Local placeholder packs are loaded for jurisdictions with their own tenant ordinances, including the City of Los Angeles, unincorporated Los Angeles County, and the City of San Diego. The full list is [docs/COVERAGE.md](docs/COVERAGE.md). Counties without an unincorporated ordinance are marked state law only. It is not a law firm. Nothing in the app is legal advice, and using it does not create an attorney-client relationship.
 
 Phase 1 covers the product plan’s “now” features only: email sign-in, a unit profile, lease review grounded in a versioned rules library, a timestamped request and notice log, landlord email through a per-unit relay, deadline tracking, a photo condition report, a 21-day security-deposit tracker with a letter the tenant sends, an AB 1482 / LA RSO rent-increase checker, an English and Spanish rights assistant, a rent ledger, and a factual evidence packet. There are no landlord ratings, no texts to landlords, no service referrals, and no paid features.
 
@@ -77,7 +77,20 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 
 ## Rules library
 
-`lib/rules/library.ts` is version `2026-10-12-draft1`. Every entry is a **placeholder**: `placeholder: true`, `clinicReview: "pending_clinic_review"`, and `spanishReview: "pending_volunteer_review"`. Each entry cites an official government URL. The phone shows “Rules pending clinic review.” The full clinic note opens from Learn more. Do not treat the percentages or clause labels as approved legal advice.
+`lib/rules/library.ts` assembles version `2026-10-12-draft1`. Statewide rules are `lib/rules/cities/statewide.ts`. Each loaded city is one file under `lib/rules/cities/` that exports `pack`. Every entry is a **placeholder**: `placeholder: true`, `clinicReview: "pending_clinic_review"`, and `spanishReview: "pending_volunteer_review"`. Each entry cites an official government URL. The phone shows “Rules pending clinic review.” The full clinic note opens from Learn more. Do not treat the percentages or clause labels as approved legal advice.
+
+### Adding a city
+
+Hand-written packs for the City of Los Angeles, unincorporated Los Angeles County, and the City of San Diego stay in their own files. Every other loaded ordinance is a record in `lib/rules/cities/catalog.ts`. `buildPack` turns that record into a placeholder rule with `clinicReview: "pending_clinic_review"`.
+
+1. Add a record to `ORDINANCES`. Cite the official page in `sourceUrl`. Set `effectiveDate` only when that page states one. Otherwise leave it null and say the effective date is unsure in `adoptedNote`.
+2. Set `capStatus` to `"published"` only when the Attorney General chart, or the official page, states one percentage and the window it belongs to. Copy that figure. Do not invent one. If the chart says to check with the city, gives more than one figure, or the base is not current rent, set `capStatus` to `"unsure"` and do not put a percentage in the record. A just-cause or harassment ordinance with no local percentage uses `"none"`.
+3. If the unincorporated county has its own ordinance, set `match` to `"unincorporated"` and point that county at the pack in `lib/rules/cities/counties.ts`. A county with no such ordinance stays `state-law-only`.
+4. Regenerate `docs/COVERAGE.md` with `npx vite-node --config vitest.config.ts scripts/render-coverage.ts` so the coverage test stays in lockstep.
+
+`local-directory.ts` is only for an ordinance that should show the one-line phone note before a pack exists. It is empty while every reviewed city is packed.
+
+`detectPlace` in `lib/rules/detect.ts` reads the city, the ZIP, and the address. A loaded pack wins. An unincorporated county pack matches only when the address says unincorporated. Any other California address uses statewide rules and the AB 1482 chart row for the county area. An address that is not in California stays unsure, and no cap is applied.
 
 The deterministic engine in `lib/rules/engine.ts` owns dates and rent caps. The model is not allowed to invent a rule ID.
 
@@ -87,7 +100,7 @@ The deterministic engine in `lib/rules/engine.ts` owns dates and rent caps. The 
 - A rent increase of 10% or less uses a 30-day notice; above 10% uses 90 days (§827).
 - Three-day notice math skips weekends and the placeholder judicial-holiday list and returns unsure outside 2026–2027.
 - A notice inside 180 days of a logged repair is flagged (§1942.5). The flag does not say retaliation occurred.
-- AB 1482 percentages are stored by period and county area. A date outside the table is unsure. LA RSO is 3% only inside the published windows in the library. Unincorporated LA County uses the RSTPO tier the tenant selects; the app does not verify the tier. City of San Diego has just cause in the library and uses the AB 1482 percentage, not a local cap. Other cities are not calculated.
+- AB 1482 percentages are stored by period and county area, and they apply everywhere in California. A date outside the table is unsure. LA RSO is 3% only inside the published windows in the library, and only when the unit is marked covered. Unincorporated LA County uses the RSTPO tier the tenant selects; the app does not verify the tier. City of San Diego has just cause in the library and uses the AB 1482 percentage, not a local cap. A catalog pack with no local percentage does the same. A catalog pack with a published or unsure local cap does not state a single allowed rent, because coverage of the unit is not confirmed. The chart figure, when there is one, stays in the library rule.
 - If jurisdiction or coverage is unknown, the checker does not state a single allowed rent. A claimed exemption does not change an over-cap result into within-cap.
 
 Lease review quotes the clause and cites a library rule ID, or it says **unsure**. On the phone, the status is the headline and the quote, citation, and explanation open from Learn more. Identical text is cached and does not count against the 3 new reviews per month. The rights assistant shows a short headline from the library (40 questions a month). The library paragraph opens from Learn more. Eviction-strategy questions hand off to legal aid and do not give steps. The full disclaimer, opened from every legal result, is:

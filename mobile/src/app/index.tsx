@@ -56,7 +56,7 @@ export default function Welcome() {
   return (
     <Page>
       <Text style={{ fontSize: 42, color: colors.pine, fontWeight: "600" }}>Rent Right</Text>
-      <Text style={{ fontSize: 18, marginTop: 8, color: colors.ink }}>Free for LA and San Diego renters.</Text>
+      <Text style={{ fontSize: 18, marginTop: 8, color: colors.ink }}>Free for California renters.</Text>
       <ErrorLine message={error} />
       {sent ? <Text style={{ marginTop: 16 }}>Check your email for the sign-in link.</Text> : null}
       <Field label="Email" value={email} onChange={setEmail} placeholder="you@email.com" />

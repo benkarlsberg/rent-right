@@ -3,7 +3,7 @@ import { Pressable, Text } from "react-native";
 import type { Notice } from "@/session";
 import { useSession } from "@/session";
 import { colors } from "@/theme";
-import { Card, H1, Kicker, LegalNote, LearnMore, Muted, Page } from "@/ui";
+import { Card, H1, Kicker, LegalNote, LearnMore, LocalNote, Muted, Page } from "@/ui";
 import { useLoad } from "@/use-load";
 
 type HomeData = {
@@ -11,6 +11,7 @@ type HomeData = {
   address: string;
   sample: boolean;
   notice: Notice;
+  local?: { text: string; url: string } | null;
   cards: { id: string; href: string; kicker: string; title: string; subtitle: string; detail: string; tone: string }[];
 };
 
@@ -22,6 +23,7 @@ export default function Home() {
       <H1>Hello{data?.hello ? `, ${data.hello}` : ""}</H1>
       <Muted>{data?.address || me?.unit?.address || ""}</Muted>
       {data?.sample ? <Text style={{ marginTop: 8, color: colors.pine, fontWeight: "700" }}>Sample</Text> : null}
+      <LocalNote note={data?.local} />
       {error ? <Muted>{error}</Muted> : null}
       {data?.cards.map((card) => (
         <Card key={card.id} tone={card.tone}>
