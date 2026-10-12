@@ -1,5 +1,7 @@
 # Rent Right
 
+**On your own iPhone or Android:** follow the [phone demo guide](docs/PHONE_DEMO.md). It walks through Node, Git, Expo Go, the same Wi-Fi, and **View a sample Los Angeles tenancy** without assuming you write code.
+
 Free records and general legal information for renters in the City of Los Angeles, unincorporated Los Angeles County, and the City of San Diego. It is not a law firm. Nothing in the app is legal advice, and using it does not create an attorney-client relationship.
 
 Phase 1 covers the product plan’s “now” features only: email sign-in, a unit profile, lease review grounded in a versioned rules library, a timestamped request and notice log, landlord email through a per-unit relay, deadline tracking, a photo condition report, a 21-day security-deposit tracker with a letter the tenant sends, an AB 1482 / LA RSO rent-increase checker, an English and Spanish rights assistant, a rent ledger, and a factual evidence packet. There are no landlord ratings, no texts to landlords, no service referrals, and no paid features.
@@ -33,7 +35,7 @@ npx expo start
 
 Then:
 
-- **Expo Go:** install Expo Go on your phone, scan the QR code, and keep the phone on the same Wi-Fi as this computer. The app calls the API on port 3000 of the computer running Metro. `npm run dev` listens on all interfaces so the phone can reach it.
+- **Your phone:** [docs/PHONE_DEMO.md](docs/PHONE_DEMO.md). This app is Expo SDK 57, so Expo Go on the phone needs to be the SDK 57 build. Keep the phone on the same Wi-Fi. The app calls port 3000 on the computer running Metro. `npm run dev` listens on all interfaces so the phone can reach it.
 - **iOS Simulator** (macOS): press `i` in the Expo terminal.
 - **Android emulator:** press `a`. The emulator reaches the API at `http://10.0.2.2:3000` unless you set `EXPO_PUBLIC_API_URL`.
 - **Browser preview:** press `w`, or run `npx expo start --web`.
