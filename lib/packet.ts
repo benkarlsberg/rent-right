@@ -17,7 +17,7 @@ export function packetLines(input: {
   const lines: string[] = [
     "# What this packet is",
     "This packet lists records the tenant stored in Rent Right, in chronological order. It does not say who is responsible, what claim to file, or what the tenant should do.",
-    `Prepared ${new Date().toISOString()} for ${input.user.name || input.user.email}.`,
+    `Prepared ${formatTimestamp(new Date().toISOString(), "en")} for ${input.user.name || input.user.email}.`,
     "# Property the tenant entered",
     unitAddress(input.unit),
     `Jurisdiction selected by the tenant: ${input.unit.jurisdiction}. Confirmed by tenant: ${input.unit.jurisdictionConfirmed ? "yes" : "no"}.`,
