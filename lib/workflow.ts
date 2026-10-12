@@ -1,0 +1,371 @@
+import { readFileSync } from "fs";
+import path from "path";
+import { completeJson, extractImageText } from "@/lib/ai";
+import {
+  addAssistantMessage,
+  addNotification,
+  countAssistantThisMonth,
+  countLeaseReviewsThisMonth,
+  countOutboundSince,
+  findCachedReview,
+  getUser,
+  insertDeadline,
+  insertLog,
+  insertMessage,
+  isBlocked,
+  leaseTextHash,
+  listLogs,
+  replaceOpenDeadline,
+  saveDeposit,
+  saveLeaseReview,
+  type Unit,
+  type User,
+} from "@/lib/db";
+import { landlordMessageBody, sendRelayEmail } from "@/lib/email";
+import { LIBRARY_VERSION, type Locale } from "@/lib/disclaimer";
+import { LEASE_REVIEW_MONTHLY_CAP, mergeModelFindings, redactPii, reviewLease, type ModelFinding } from "@/lib/lease/review";
+import { answerFromModelIds, answerQuestion, selectRules } from "@/lib/rules/assistant";
+import { RULES } from "@/lib/rules/library";
+import {
+  depositReturnDeadline,
+  entryNoticeCheck,
+  pendingReminderSlots,
+  repairReminder,
+  retaliationWindow,
+  threeDayNoticeDeadline,
+  type RepairSeverity,
+} from "@/lib/rules/engine";
+import { appUrl, relayAddress } from "@/lib/text";
+import { randomToken } from "@/lib/crypto";
+import { todayISO } from "@/lib/rules/dates";
+
+const EMAIL_DAILY_CAP = 20;
+const CHAT_MONTHLY_CAP = 40;
+
+function monthPrefix(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+  }).format(now);
+  return `${parts}-01`;
+}
+
+export async function recordLog(input: {
+  user: User;
+  unit: Unit;
+  type: string;
+  noticeKind: string | null;
+  severity: string | null;
+  room: string | null;
+  description: string;
+  eventDate: string;
+  photoFileId: string | null;
+  sendEmail: boolean;
+  subject: string;
+  entryAt: string | null;
+  noticeAt: string | null;
+  createdAt?: string;
+}) {
+  const flags: Record<string, unknown> = {};
+  if (input.entryAt && input.noticeAt) {
+    flags.entry = entryNoticeCheck(input.noticeAt, input.entryAt);
+  }
+  if ((input.noticeKind === "rent_increase" || input.noticeKind === "eviction") && input.eventDate) {
+    const repairs = listLogs(input.user.id, input.unit.id).filter((entry) => entry.type === "repair");
+    const hits = repairs
+      .map((entry) => ({ entry, window: retaliationWindow(entry.eventDate, input.eventDate) }))
+      .filter((item) => item.window.flagged)
+      .sort((a, b) => a.window.daysSince - b.window.daysSince);
+    if (hits[0]) {
+      flags.retaliation = {
+        ...hits[0].window,
+        relatedEntryId: hits[0].entry.id,
+      };
+    }
+  }
+  const entry = insertLog({
+    unitId: input.unit.id,
+    userId: input.user.id,
+    type: input.type,
+    noticeKind: input.noticeKind,
+    severity: input.severity,
+    room: input.room,
+    description: input.description,
+    flags,
+    photoFileId: input.photoFileId,
+    eventDate: input.eventDate,
+    createdAt: input.createdAt,
+  });
+
+  if (input.type === "repair" && input.severity) {
+    const reminder = repairReminder(input.eventDate, input.severity as RepairSeverity);
+    insertDeadline({
+      unitId: input.unit.id,
+      ruleId: reminder.ruleId,
+      kind: "repair",
+      anchorDate: input.eventDate,
+      dueDate: reminder.dueDate,
+      explanation: reminder.explanation,
+      explanationEs: reminder.explanationEs,
+      computation: reminder.computation,
+      sourceId: entry.id,
+      status: "open",
+      unsure: reminder.unsure,
+    });
+  }
+
+  if (input.noticeKind === "pay_or_quit_3day") {
+    const counted = threeDayNoticeDeadline(input.eventDate);
+    insertDeadline({
+      unitId: input.unit.id,
+      ruleId: counted.ruleId,
+      kind: "notice_3day",
+      anchorDate: input.eventDate,
+      dueDate: counted.dueDate,
+      explanation: counted.explanation,
+      explanationEs: counted.explanationEs,
+      computation: counted.computation,
+      sourceId: entry.id,
+      status: "open",
+      unsure: counted.unsure,
+    });
+  }
+
+  if (input.sendEmail) {
+    await emailLandlord({
+      user: input.user,
+      unit: input.unit,
+      logEntryId: entry.id,
+      subject: input.subject || `Message about ${input.unit.street}`,
+      tenantText: input.description,
+    });
+  }
+  return entry;
+}
+
+export async function emailLandlord(input: {
+  user: User;
+  unit: Unit;
+  logEntryId: string | null;
+  subject: string;
+  tenantText: string;
+}) {
+  if (!input.unit.landlordEmail) {
+    throw new Error("Add the landlord's email on your unit before sending.");
+  }
+  if (isBlocked(input.unit.id)) {
+    insertMessage({
+      unitId: input.unit.id,
+      userId: input.user.id,
+      logEntryId: input.logEntryId,
+      direction: "outbound",
+      fromEmail: relayAddress(input.unit.relayLocal),
+      toEmail: input.unit.landlordEmail,
+      ccEmail: input.user.email,
+      subject: input.subject,
+      body: input.tenantText,
+      deliveryStatus: "blocked",
+      deliveryDetail: "The landlord blocked later mail. Print a letter and mail it yourself.",
+    });
+    return;
+  }
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  if (countOutboundSince(input.unit.id, since) >= EMAIL_DAILY_CAP) {
+    throw new Error("This unit reached the daily email limit (20). Use a printed letter.");
+  }
+  const token = randomToken();
+  const responseUrl = `${appUrl()}/r/${token}`;
+  const body = landlordMessageBody(input.tenantText, responseUrl);
+  const sent = await sendRelayEmail({
+    relayLocal: input.unit.relayLocal,
+    to: input.unit.landlordEmail,
+    cc: input.user.email,
+    subject: input.subject,
+    text: body,
+  });
+  insertMessage({
+    unitId: input.unit.id,
+    userId: input.user.id,
+    logEntryId: input.logEntryId,
+    direction: "outbound",
+    fromEmail: relayAddress(input.unit.relayLocal),
+    toEmail: input.unit.landlordEmail,
+    ccEmail: input.user.email,
+    subject: input.subject,
+    body,
+    deliveryStatus: sent.status,
+    deliveryDetail: sent.detail,
+    providerId: sent.providerId,
+    responseToken: token,
+  });
+}
+
+export function saveDepositAndDeadline(user: User, unit: Unit, input: {
+  amountCents: number | null;
+  receivedDate: string | null;
+  moveOutDate: string | null;
+  forwardingAddress: string;
+  landlordDeductions: string;
+  tenantNotes: string;
+}) {
+  saveDeposit(user.id, unit.id, input);
+  if (input.moveOutDate) {
+    const due = depositReturnDeadline(input.moveOutDate);
+    replaceOpenDeadline(unit.id, "deposit");
+    insertDeadline({
+      unitId: unit.id,
+      ruleId: due.ruleId,
+      kind: "deposit",
+      anchorDate: input.moveOutDate,
+      dueDate: due.dueDate,
+      explanation: due.explanation,
+      explanationEs: due.explanationEs,
+      computation: due.computation,
+      sourceId: null,
+      status: "open",
+      unsure: due.unsure,
+    });
+  }
+}
+
+export async function runLeaseReview(user: User, unit: Unit, text: string, filename: string) {
+  const cleaned = redactPii(text).trim();
+  if (cleaned.length < 40) throw new Error("No lease text was found. Paste the text or upload a PDF with selectable text.");
+  const textHash = leaseTextHash(cleaned, LIBRARY_VERSION, unit.rentCents, unit.jurisdiction);
+  const cached = findCachedReview(unit.id, textHash, LIBRARY_VERSION);
+  if (cached) {
+    const id = saveLeaseReview({
+      unitId: unit.id,
+      userId: user.id,
+      filename,
+      textHash,
+      rulesVersion: LIBRARY_VERSION,
+      model: cached.model,
+      cached: true,
+      result: JSON.parse(cached.result),
+    });
+    return id;
+  }
+  if (countLeaseReviewsThisMonth(user.id, monthPrefix()) >= LEASE_REVIEW_MONTHLY_CAP) {
+    throw new Error("This free account can run 3 new lease reviews per month. An identical lease does not count again.");
+  }
+  let review = reviewLease(cleaned, { monthlyRentCents: unit.rentCents, jurisdiction: unit.jurisdiction });
+  const unsure = review.findings.filter((finding) => finding.label === "unsure");
+  let model: string | null = null;
+  if (unsure.length > 0) {
+    const catalog = RULES.filter((rule) => rule.patterns.length > 0 || rule.findingLabel !== "informational")
+      .map((rule) => `${rule.id} | ${rule.findingLabel} | ${rule.titleEn}`)
+      .join("\n");
+    const prompt = [
+      "Classify lease clauses. Return JSON {\"findings\":[{\"quote\":\"exact words from the clause\",\"ruleId\":\"ID\"}]}.",
+      "Use only rule IDs from the list. If none fit, return {\"findings\":[]}. Do not invent citations. Do not give advice.",
+      "Rules:",
+      catalog,
+      "Clauses:",
+      unsure.map((finding) => finding.quote).join("\n---\n"),
+    ].join("\n");
+    const completed = await completeJson("flash", prompt);
+    if (completed && completed.json && typeof completed.json === "object") {
+      const findings = (completed.json as { findings?: ModelFinding[] }).findings || [];
+      review = mergeModelFindings(review, cleaned, findings, completed.model);
+      model = completed.model;
+    }
+  }
+  return saveLeaseReview({
+    unitId: unit.id,
+    userId: user.id,
+    filename,
+    textHash,
+    rulesVersion: LIBRARY_VERSION,
+    model,
+    cached: false,
+    result: review,
+  });
+}
+
+export function sampleLeaseText(): string {
+  return readFileSync(path.join(process.cwd(), "fixtures", "sample-lease.txt"), "utf8");
+}
+
+export async function askAssistant(user: User, unit: Unit | null, question: string, locale: Locale) {
+  const trimmed = question.trim();
+  if (trimmed.length < 8) throw new Error("Ask a full question.");
+  if (countAssistantThisMonth(user.id, monthPrefix()) >= CHAT_MONTHLY_CAP) {
+    throw new Error("This free account reached 40 questions this month.");
+  }
+  addAssistantMessage(user.id, unit?.id || null, "user", { locale, content: trimmed, ruleIds: [], unsure: false });
+  const selected = selectRules(trimmed);
+  let answer = answerQuestion(trimmed, locale);
+  if (selected.rules.length > 0 && (process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY)) {
+    const list = selected.rules.map((rule) => `${rule.id}: ${rule.titleEn}`).join("\n");
+    const completed = await completeJson(
+      "lite",
+      `Pick up to 3 rule IDs from this list that answer the question. If none fit, return {"ruleIds":[]}. JSON only. Do not add advice.\nQuestion: ${trimmed}\n${list}`,
+    );
+    const ids = (completed?.json as { ruleIds?: string[] } | undefined)?.ruleIds;
+    if (completed && Array.isArray(ids)) answer = answerFromModelIds(trimmed, locale, selected.rules, ids);
+  }
+  addAssistantMessage(user.id, unit?.id || null, "assistant", {
+    locale,
+    content: `${answer.text}\n\n${answer.disclaimer}`,
+    ruleIds: answer.ruleIds,
+    unsure: answer.unsure,
+  });
+  return answer;
+}
+
+export async function extractPdfOrText(bytes: Buffer, mime: string, filename: string): Promise<string> {
+  if (mime.startsWith("text/") || filename.toLowerCase().endsWith(".txt")) return bytes.toString("utf8");
+  if (mime.startsWith("image/")) {
+    const text = await extractImageText(bytes, mime || "image/jpeg");
+    return text || "";
+  }
+  if (mime === "application/pdf" || filename.toLowerCase().endsWith(".pdf")) {
+    try {
+      const pdfjs = (await import("pdfjs-dist/legacy/build/pdf.mjs")) as {
+        getDocument: (src: { data: Uint8Array; disableWorker?: boolean; isEvalSupported?: boolean }) => { promise: Promise<{ numPages: number; getPage: (n: number) => Promise<{ getTextContent: () => Promise<{ items: { str?: string }[] }> }> }> };
+      };
+      const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes), disableWorker: true, isEvalSupported: false }).promise;
+      let text = "";
+      for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
+        const page = await doc.getPage(pageNumber);
+        const content = await page.getTextContent();
+        text += `${content.items.map((item) => item.str || "").join(" ")}\n`;
+      }
+      return text;
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
+
+export async function dispatchReminders(today = todayISO()) {
+  const { openDeadlines, reminderSlotsSent, markReminder, unitMemberUserIds } = await import("@/lib/db");
+  const { sendTenantEmail } = await import("@/lib/email");
+  let sent = 0;
+  for (const deadline of openDeadlines()) {
+    if (!deadline.due_date) continue;
+    const slots = pendingReminderSlots(deadline.due_date, today, reminderSlotsSent(deadline.id));
+    if (slots.length === 0) continue;
+    const users = unitMemberUserIds(deadline.unit_id);
+    for (const slot of slots) {
+      for (const userId of users) {
+        const user = getUser(userId);
+        if (!user) continue;
+        const title = slot === "0d" ? "A tracked date is today" : `A tracked date is ${slot === "7d" ? "7" : "3"} days away`;
+        addNotification(userId, title, deadline.explanation, "/deadlines");
+        await sendTenantEmail(
+          user.email,
+          `Rent Right: ${title}`,
+          `${deadline.explanation}\n\nRule ID: ${deadline.rule_id}\nThis is a reminder of a date computed from what you entered. Confirm with the official source.\n${appUrl()}/deadlines`,
+        );
+        sent += 1;
+      }
+      markReminder(deadline.id, slot, "in_app_email");
+    }
+  }
+  return sent;
+}
+
