@@ -1,5 +1,5 @@
 import "server-only";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { readSession, signSession } from "@/lib/crypto";
 import { getUser, type User } from "@/lib/db";
 import type { Locale } from "@/lib/disclaimer";
@@ -8,7 +8,10 @@ const SESSION = "rr_session";
 
 export async function currentUser(): Promise<User | null> {
   const jar = await cookies();
-  const id = readSession(jar.get(SESSION)?.value);
+  const headerList = await headers();
+  const header = headerList.get("authorization");
+  const bearer = header?.match(/^Bearer\s+(\S+)/i)?.[1];
+  const id = readSession(bearer || jar.get(SESSION)?.value);
   if (!id) return null;
   return getUser(id);
 }

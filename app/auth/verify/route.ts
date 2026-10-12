@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { acceptInvite, consumeMagicLink, primaryUnit } from "@/lib/db";
+import { acceptInvite, consumeMagicLink } from "@/lib/db";
+import { signSession } from "@/lib/crypto";
 import { setSessionCookie } from "@/lib/session";
 
 export async function GET(request: Request) {
@@ -14,10 +15,10 @@ export async function GET(request: Request) {
       try { acceptInvite(user.id, invite); } catch { /* invite may be expired */ }
       jar.delete("rr_invite");
     }
-    const unit = primaryUnit(user.id);
-    return NextResponse.redirect(new URL(unit ? "/home" : "/onboarding", request.url));
+    const session = signSession(user.id);
+    return NextResponse.redirect(new URL(`/open?session=${encodeURIComponent(session)}`, request.url));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Sign-in failed.";
-    return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(message)}`, request.url));
+    return NextResponse.redirect(new URL(`/open?error=${encodeURIComponent(message)}`, request.url));
   }
 }
