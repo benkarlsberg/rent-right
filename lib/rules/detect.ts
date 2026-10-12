@@ -107,9 +107,10 @@ function zipHit<T extends { zips: string[] }>(items: T[], zips: string[]): T | n
   return items.find((item) => item.zips.some((zip) => zips.includes(zip))) ?? null;
 }
 
-function unincorporatedLa(text: string, city: string): boolean {
-  const blob = `${city} ${text}`;
-  return /unincorporated/.test(blob) && /los angeles/.test(blob);
+function unincorporatedPack(text: string, city: string): CityPack | null {
+  const blob = normalize(`${city} ${text}`);
+  if (!blob.includes("unincorporated")) return null;
+  return bestPlace(blob, CITY_PACKS.filter((pack) => pack.match === "unincorporated"));
 }
 
 export function detectPlace(input: PlaceQuery): PlaceDetection {
@@ -118,13 +119,13 @@ export function detectPlace(input: PlaceQuery): PlaceDetection {
   const region = normalize(input.region || "");
   const text = normalize(`${address} ${region}`);
   const zips = [...new Set([...zipsIn(input.postalCode || ""), ...zipsIn(address)])];
-  const loaded = CITY_PACKS.filter((pack) => pack.jurisdiction !== "la_county_unincorporated");
-  const countyPack = CITY_PACKS.find((pack) => pack.jurisdiction === "la_county_unincorporated") ?? null;
+  const loaded = CITY_PACKS.filter((pack) => pack.match === "city");
 
   let pack: CityPack | null = null;
   let localOrdinance: LocalOrdinance | null = null;
 
-  if (unincorporatedLa(text, city)) {
+  const countyPack = unincorporatedPack(text, city);
+  if (countyPack) {
     pack = countyPack;
   } else if (city) {
     pack = loaded.find((item) => named(city, item.places)) ?? null;
@@ -152,7 +153,9 @@ export function detectPlace(input: PlaceQuery): PlaceDetection {
         ? "This looks like the City of Los Angeles. RSO coverage is still a ZIMAS question."
         : pack.jurisdiction === "city_sd"
           ? "This looks like the City of San Diego. Confirm the city limits."
-          : "This looks like unincorporated Los Angeles County. Confirm on the county map.",
+          : pack.jurisdiction === "la_county_unincorporated"
+            ? "This looks like unincorporated Los Angeles County. Confirm on the county map."
+            : `This looks like ${pack.name}. Whether a particular unit is covered still has to be confirmed.`,
     ];
     return { jurisdiction: pack.jurisdiction, area: pack.area, inCalifornia: true, pack, localOrdinance: null, confidence: "low", notes };
   }

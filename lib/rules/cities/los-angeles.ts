@@ -10,6 +10,9 @@ export const pack: CityPack = {
   area: "los_angeles_orange",
   housingName: "Los Angeles Housing Department",
   housingUrl: "https://housing.lacity.gov/renter-protections-2",
+  match: "city",
+  county: "Los Angeles",
+  capStatus: "legacy",
   rules: [
   rule({
     id: "LA-RSO-2026-CAP",

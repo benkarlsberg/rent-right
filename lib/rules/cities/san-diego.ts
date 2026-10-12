@@ -10,6 +10,9 @@ export const pack: CityPack = {
   area: "san_diego",
   housingName: "San Diego Housing Commission",
   housingUrl: "https://sdhc.org/housing-opportunities/tenant-protections/",
+  match: "city",
+  county: "San Diego",
+  capStatus: "legacy",
   rules: [
   rule({
     id: "SD-TPG-JUST-CAUSE",

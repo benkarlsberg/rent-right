@@ -5,11 +5,14 @@ export const pack: CityPack = {
   id: "la-county-unincorporated",
   jurisdiction: "la_county_unincorporated",
   name: "Unincorporated Los Angeles County",
-  places: [],
+  places: ["los angeles county", "los angeles"],
   zips: [],
   area: "los_angeles_orange",
   housingName: "LA County Department of Consumer and Business Affairs",
   housingUrl: "https://dcba.lacounty.gov/rentstabilizationprogram/",
+  match: "unincorporated",
+  county: "Los Angeles",
+  capStatus: "legacy",
   rules: [
   rule({
     id: "LAC-RSTPO-2026",

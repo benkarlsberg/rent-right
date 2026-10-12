@@ -38,6 +38,7 @@ import { emailValue } from "@/lib/forms";
 import { formatDate, formatMoney, formatTimestamp, percentLabel } from "@/lib/format";
 import { getRule } from "@/lib/rules/library";
 import { detectPlace, localProtectionNote } from "@/lib/rules/detect";
+import { isAllowedJurisdiction } from "@/lib/rules/cities";
 import { checkRentIncrease, type Jurisdiction, type RsoStatus, type RstpoTier } from "@/lib/rules/engine";
 import { todayISO } from "@/lib/rules/dates";
 import {
@@ -134,23 +135,21 @@ async function withUnit(): Promise<{ user: User; unit: Unit }> {
   return { user, unit };
 }
 
-const JURISDICTIONS: Jurisdiction[] = ["city_la", "la_county_unincorporated", "city_sd", "ca", "other_ca", "unsure"];
-
 function unitInput(input: Record<string, unknown>): UnitInput {
   const street = text(input.street);
   const city = text(input.city);
   const landlordName = text(input.landlordName);
   const landlordEmail = text(input.landlordEmail);
   if (!street || !city || !landlordName || !landlordEmail) throw new Error("Add the address and landlord.");
-  const requested = text(input.jurisdiction) as Jurisdiction;
+  const requested = text(input.jurisdiction);
   const detected = detectPlace({
     address: street,
     city,
     postalCode: text(input.postalCode),
     region: text(input.region),
   });
-  const jurisdiction = requested && requested !== "unsure" && JURISDICTIONS.includes(requested) ? requested : detected.jurisdiction;
-  if (!JURISDICTIONS.includes(jurisdiction)) throw new Error("Choose a jurisdiction.");
+  const jurisdiction = requested && requested !== "unsure" && isAllowedJurisdiction(requested) ? requested : detected.jurisdiction;
+  if (!isAllowedJurisdiction(jurisdiction)) throw new Error("Choose a jurisdiction.");
   return {
     street,
     unitNumber: text(input.unitNumber),
@@ -179,8 +178,9 @@ function unitPlace(unit: Unit) {
 }
 
 function unitLocal(unit: Unit, locale: Locale) {
-  if (unit.jurisdiction === "city_la" || unit.jurisdiction === "city_sd" || unit.jurisdiction === "la_county_unincorporated") return null;
-  return localProtectionNote(unitPlace(unit).localOrdinance, locale);
+  const place = unitPlace(unit);
+  if (place.pack) return null;
+  return localProtectionNote(place.localOrdinance, locale);
 }
 
 export async function handlePhone(request: Request, path: string[]): Promise<Response> {

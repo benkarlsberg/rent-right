@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { lookupJurisdiction } from "@/lib/geo";
+import { isAllowedJurisdiction } from "@/lib/rules/cities";
 import { detectPlace } from "@/lib/rules/detect";
 import {
   acknowledgeCondition,
@@ -69,15 +70,14 @@ async function homeUnit() {
 }
 
 function unitInput(form: FormData): UnitInput {
-  const requested = field(form, "jurisdiction") as Jurisdiction;
-  const allowed: Jurisdiction[] = ["city_la", "la_county_unincorporated", "city_sd", "ca", "other_ca", "unsure"];
+  const requested = field(form, "jurisdiction");
   const street = must(form, "street", "Street address");
   const city = must(form, "city", "City");
   const postalCode = field(form, "postalCode");
   const region = field(form, "region");
   const detected = detectPlace({ address: street, city, postalCode, region });
-  const jurisdiction = requested && requested !== "unsure" && allowed.includes(requested) ? requested : detected.jurisdiction;
-  if (!allowed.includes(jurisdiction)) throw new Error("Choose a jurisdiction.");
+  const jurisdiction = requested && requested !== "unsure" && isAllowedJurisdiction(requested) ? requested : detected.jurisdiction;
+  if (!isAllowedJurisdiction(jurisdiction)) throw new Error("Choose a jurisdiction.");
   return {
     street,
     unitNumber: field(form, "unitNumber"),
