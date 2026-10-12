@@ -5,7 +5,7 @@ import { pack as laCounty } from "@/lib/rules/cities/la-county";
 import { pack as losAngeles } from "@/lib/rules/cities/los-angeles";
 import { pack as sanDiego } from "@/lib/rules/cities/san-diego";
 
-const DATA = new Set(["build-pack.ts", "catalog.ts", "counties.ts", "coverage.ts", "index.ts", "types.ts", "statewide.ts", "local-directory.ts"]);
+const DATA = new Set(["build-pack.ts", "catalog.ts", "counties.ts", "coverage.ts", "index.ts", "types.ts", "statewide.ts", "local-directory.ts", "verify.ts"]);
 
 describe("city pack files", () => {
   it("keeps hand-written packs registered and treats every loaded rule as a clinic placeholder", () => {

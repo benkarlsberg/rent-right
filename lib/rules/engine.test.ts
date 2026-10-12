@@ -168,7 +168,7 @@ describe("rent increase math", () => {
     expect(result.local).toBeNull();
   });
 
-  it("does not state a single Oakland rent when the local chart figure is loaded", () => {
+  it("quotes the Oakland chart figure and uses the statewide chart when coverage was not confirmed", () => {
     const result = checkRentIncrease({
       jurisdiction: "oakland",
       rsoStatus: "unsure",
@@ -179,13 +179,14 @@ describe("rent increase math", () => {
       effectiveDate: "2026-10-01",
       lastIncreaseDate: null,
       claimsExemption: false,
+      localFacts: { builtYear: 1980, housingType: "multi", unitCount: 4, subsidized: false },
     });
     expect(result.local).toBeNull();
     expect(result.ab1482?.ppm).toBe(88_000);
-    expect(result.applicable.status).toBe("unsure");
-    expect(result.applicable.maxRentCents).toBeNull();
-    expect(result.jurisdictionNote).toMatch(/No single allowed rent is stated/);
-    expect(result.jurisdictionNote).not.toMatch(/2\.3%/);
+    expect(result.applicable.status).toBe("within_cap");
+    expect(result.applicable.ruleId).toBe("CA-CC-1947.12");
+    expect(result.jurisdictionNote).toMatch(/2\.3%/);
+    expect(result.jurisdictionNote).toMatch(/not applied/);
   });
 
   it("uses the statewide chart for a California city whose ordinance is not loaded", () => {

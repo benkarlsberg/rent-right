@@ -1,5 +1,6 @@
 import { LIBRARY_VERSION } from "@/lib/disclaimer";
 import { packByJurisdiction } from "@/lib/rules/cities";
+import { evaluateLocalCap, type LocalFacts } from "@/lib/rules/cities/verify";
 import { addDays, addMonths, daysBetween, isWeekend } from "@/lib/rules/dates";
 import { HOLIDAY_CALENDAR_NOTE, HOLIDAY_SPAN, JUDICIAL_HOLIDAYS } from "@/lib/rules/holidays";
 import { getRule } from "@/lib/rules/library";
@@ -362,6 +363,8 @@ export type RentIncreaseInput = {
   countyArea?: AreaKey;
   /** Set when the address is in a city whose ordinance is not loaded yet. */
   localOrdinanceName?: string | null;
+  /** Optional facts used to test a verified local covered class. */
+  localFacts?: LocalFacts;
 };
 
 export type RentIncreaseResult = {
@@ -433,6 +436,8 @@ export function checkRentIncrease(input: RentIncreaseInput): RentIncreaseResult 
 
   const area = areaFor(input);
   const ab1482 = area ? ab1482Quote(input.effectiveDate, area, input.lowestRentCents) : null;
+  const pack = packByJurisdiction(input.jurisdiction);
+  const facts = input.localFacts ?? { builtYear: null, housingType: null, unitCount: null, subsidized: null };
 
   let local: CapQuote | null = null;
   let utilityAddonAllowed: boolean | null = null;
@@ -473,21 +478,24 @@ export function checkRentIncrease(input: RentIncreaseInput): RentIncreaseResult 
       "The City of San Diego ordinance in this library (Municipal Code §§98.0701–98.0709) is a just-cause rule, not a local percentage cap. The percentage used here is the statewide AB 1482 chart for San Diego County. Other cities in the county are not the City of San Diego.";
     jurisdictionNoteEs =
       "La ordenanza de la Ciudad de San Diego en esta biblioteca (Código Municipal §§98.0701–98.0709) es una regla de causa justa, no un tope local de porcentaje. El porcentaje usado aquí es la tabla estatal de AB 1482 para el condado de San Diego. Otras ciudades del condado no son la Ciudad de San Diego.";
-  } else if (packByJurisdiction(input.jurisdiction)?.capStatus === "none") {
-    const name = packByJurisdiction(input.jurisdiction)?.name ?? "This place";
+  } else if (pack?.capStatus === "none") {
+    const name = pack.name;
     jurisdictionNote = `${name} is in this library as a local tenant ordinance without a local percentage rent cap. The percentage used here is the statewide AB 1482 chart. Coverage and exemptions are not confirmed.`;
     jurisdictionNoteEs = `${name} está en esta biblioteca como una ordenanza local de inquilinos sin un tope local de porcentaje. El porcentaje usado aquí es la tabla estatal de AB 1482. La cobertura y las exenciones no están confirmadas.`;
-  } else if (packByJurisdiction(input.jurisdiction)?.capStatus === "published" || packByJurisdiction(input.jurisdiction)?.capStatus === "unsure") {
-    const pack = packByJurisdiction(input.jurisdiction);
-    const name = pack?.name ?? "This place";
-    jurisdictionNote =
-      pack?.capStatus === "published"
-        ? `${name} has a local rent ordinance. A published chart figure is quoted in the library rule and is not applied as this unit's allowed rent, because coverage is not confirmed. No single allowed rent is stated.`
-        : `${name} has a local rent ordinance. The allowable local increase is unsure. No single allowed rent is stated.`;
-    jurisdictionNoteEs =
-      pack?.capStatus === "published"
-        ? `${name} tiene una ordenanza local de renta. Una cifra publicada se cita en la regla de la biblioteca y no se aplica como la renta permitida de esta unidad, porque la cobertura no está confirmada. No se indica una sola renta permitida.`
-        : `${name} tiene una ordenanza local de renta. El aumento local permitido está marcado unsure. No se indica una sola renta permitida.`;
+  } else if (pack?.verification && (pack.capStatus === "published" || pack.capStatus === "unsure")) {
+    const decision = evaluateLocalCap(pack.verification, facts, input.effectiveDate);
+    jurisdictionNote = decision.note;
+    jurisdictionNoteEs = decision.noteEs;
+    if (decision.outcome === "applied" && decision.ppm != null) {
+      local = {
+        ruleId: pack.rules[0]?.id ?? "LOCAL",
+        ppm: decision.ppm,
+        maxRentCents: applyPpm(input.lowestRentCents, decision.ppm),
+        unsure: false,
+        note: decision.note,
+        noteEs: decision.noteEs,
+      };
+    }
   } else if (statewide(input.jurisdiction)) {
     if (input.localOrdinanceName) {
       jurisdictionNote = `Statewide California rules are shown. Local rules in ${input.localOrdinanceName} may add protections. This library has not loaded that city's ordinance, so the percentage here is only the statewide chart.`;
@@ -502,13 +510,10 @@ export function checkRentIncrease(input: RentIncreaseInput): RentIncreaseResult 
   }
 
   const known: CapQuote[] = [ab1482, local].filter((item): item is CapQuote => !!item && !item.unsure && item.ppm !== null);
-  const localCap = packByJurisdiction(input.jurisdiction)?.capStatus;
   const coverageUnknown =
     input.jurisdiction === "unsure" ||
     (input.jurisdiction === "city_la" && input.rsoStatus === "unsure") ||
-    (input.jurisdiction === "la_county_unincorporated" && input.rstpoTier === "unsure") ||
-    localCap === "published" ||
-    localCap === "unsure";
+    (input.jurisdiction === "la_county_unincorporated" && input.rstpoTier === "unsure");
 
   let applicable: RentIncreaseResult["applicable"];
   if (coverageUnknown || known.length === 0) {

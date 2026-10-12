@@ -3,8 +3,9 @@ import type { CapStatus } from "@/lib/rules/cities/types";
 
 /**
  * Local ordinances loaded as placeholder packs.
- * A percentage is copied only when the Attorney General chart (retrieved 2026-10-12)
- * states one figure and a window. Every other cap is "unsure" or "none".
+ * A catalog percentage is copied only when the Attorney General chart (retrieved 2026-10-12)
+ * states one figure and a window. Every other catalog cap is "unsure" or "none".
+ * Primary-source checks, including a later city-page figure, live in verify.ts.
  */
 export type OrdinanceRecord = {
   id: string;
@@ -150,7 +151,7 @@ export const ORDINANCES: OrdinanceRecord[] = [
     county: "Los Angeles",
     housingName: "City of Baldwin Park",
     housingUrl: "https://www.baldwinpark.com/399/Rent-Stabilization-Ordinance",
-    citation: "City of Baldwin Park rent stabilization ordinance (code section not confirmed in this review)",
+    citation: "Baldwin Park Municipal Code ch. 117",
     detail: "The Attorney General chart tells the reader to check with the city and does not leave one figure to apply. This library does not state a percentage.",
   }),
   published({

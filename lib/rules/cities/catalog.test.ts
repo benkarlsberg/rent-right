@@ -24,9 +24,15 @@ describe("local ordinance packs", () => {
       expect(rule.sourceUrl.startsWith("https://")).toBe(true);
       expect(rule.summaryEn).toContain(record.sourceUrl);
       expect(rule.summaryEn.toLowerCase()).toMatch(/pending clinic review/);
-      const dated = record.effectiveDate ? rule.summaryEn.includes(record.effectiveDate) : /effective date is unsure/i.test(rule.summaryEn);
-      expect(dated, record.id).toBe(true);
+      const verification = pack!.verification!;
+      expect(verification.retrieved).toBe("2026-10-12");
+      if (record.effectiveDate) expect(rule.summaryEn).toContain(record.effectiveDate);
+      else if (verification.effectiveDate) expect(rule.summaryEn).toContain(verification.effectiveDate);
+      else expect(verification.effectiveNote.toLowerCase()).toMatch(/unsure/);
       expect(effectiveSentence(record).length).toBeGreaterThan(10);
+      if (verification.coverage.apply) expect(rule.summaryEn.toLowerCase()).toMatch(/applies a local figure only when/);
+      else expect(rule.summaryEn.toLowerCase()).toMatch(/does not apply a local figure/);
+      if (verification.figure) expect(rule.summaryEn).toContain(verification.figure);
       if (record.capStatus === "published") {
         expect(record.figure).toMatch(PERCENT);
         expect(record.window).toBeTruthy();
@@ -34,16 +40,16 @@ describe("local ordinance packs", () => {
         expect(rule.summaryEn).toContain(record.window!);
         expect(rule.summaryEn).toContain("https://oag.ca.gov/rentcaps");
         expect(rule.summaryEn).toContain("2026-10-12");
-        expect(rule.summaryEn.toLowerCase()).toMatch(/not apply that figure/);
       }
-      if (record.capStatus === "unsure" && record.id !== "los-gatos") {
+      if (verification.cap === "unsure") {
         expect(rule.summaryEn.toLowerCase()).toContain("unsure");
-        expect(rule.summaryEn).not.toMatch(PERCENT);
+        expect(rule.summaryEn.toLowerCase()).not.toMatch(/the cap this year is/);
         expect(record.figure).toBeNull();
       }
       if (record.capStatus === "none") {
+        expect(verification.cap).toBe("none");
         expect(rule.summaryEn).not.toMatch(PERCENT);
-        expect(rule.summaryEn.toLowerCase()).toMatch(/did not find a local percentage/);
+        expect(rule.summaryEn.toLowerCase()).toMatch(/local percentage/);
       }
     }
   });
@@ -65,7 +71,7 @@ describe("local ordinance packs", () => {
     expect(rule.summaryEn.toLowerCase()).not.toMatch(/the cap this year is/);
   });
 
-  it("does not apply a published or unsure local figure as the allowed rent", () => {
+  it("uses the statewide chart when coverage facts are missing", () => {
     for (const record of ORDINANCES.filter((item) => item.capStatus === "published" || item.capStatus === "unsure")) {
       const result = checkRentIncrease({
         jurisdiction: record.id,
@@ -78,11 +84,11 @@ describe("local ordinance packs", () => {
         lastIncreaseDate: null,
         claimsExemption: false,
       });
-      expect(result.applicable.status, record.id).toBe("unsure");
-      expect(result.applicable.maxRentCents, record.id).toBeNull();
       expect(result.local, record.id).toBeNull();
       expect(result.ab1482, record.id).not.toBeNull();
-      expect(result.jurisdictionNote.toLowerCase(), record.id).toMatch(/no single allowed rent/);
+      expect(result.applicable.status, record.id).toBe("within_cap");
+      expect(result.applicable.ruleId, record.id).toBe("CA-CC-1947.12");
+      expect(result.jurisdictionNote.toLowerCase(), record.id).toMatch(/statewide/);
     }
   });
 

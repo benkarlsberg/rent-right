@@ -1,5 +1,6 @@
 import type { Rule } from "@/lib/rules/define";
 import type { AreaKey } from "@/lib/rules/engine";
+import type { LocalVerification } from "@/lib/rules/cities/verify";
 
 export type CapStatus = "legacy" | "published" | "unsure" | "none";
 
@@ -18,4 +19,6 @@ export type CityPack = {
   match: "city" | "unincorporated";
   county: string;
   capStatus: CapStatus;
+  /** Primary-source check for catalog packs. Hand-written LA and San Diego packs omit it. */
+  verification?: LocalVerification;
 };

@@ -263,15 +263,20 @@ Copy `.env.example` to `.env.local`. Do not commit `.env.local`.
 
 Hand-written packs for the City of Los Angeles, unincorporated Los Angeles County, and the City of San Diego stay in their own files. Every other loaded ordinance is a record in `lib/rules/cities/catalog.ts`.
 
-1. Add a record to `ORDINANCES`. Cite the official page in `sourceUrl`. Set `effectiveDate` only when that page states one.
-2. Set `capStatus` to `"published"` only when the Attorney General chart, or the official page, states one percentage and the window it belongs to. Copy that figure. Do not invent one.
-3. Regenerate `docs/COVERAGE.md` with `npx tsx scripts/render-coverage.ts` so the coverage test stays in lockstep.
+1. Add a record to `ORDINANCES`. Cite the official page in `sourceUrl`. Set `effectiveDate` only when that page states one. Otherwise leave it null and say the effective date is unsure in `adoptedNote`.
+2. Set `capStatus` to `"published"` only when the Attorney General chart, or the official page, states one percentage and the window it belongs to. Copy that figure. Do not invent one. If the chart says to check with the city, gives more than one figure, or the base is not current rent, set `capStatus` to `"unsure"` and leave the percentage out of the record. A just-cause or harassment ordinance with no local percentage uses `"none"`.
+3. Put a primary-source check in `lib/rules/cities/verify.ts`. Record the figure, window, and source URL only when an official page states them. Set `coverage.apply` only when that page states a covered class the checker can test from year built, unit count, housing type, and subsidy. Anything not on the page stays `unsure`. Do not compute CPI.
+4. If the unincorporated county has its own ordinance, set `match` to `"unincorporated"` and point that county at the pack in `lib/rules/cities/counties.ts`. A county with no such ordinance stays `state-law-only`.
+5. Regenerate `docs/COVERAGE.md` with `npx tsx scripts/render-coverage.ts` so the coverage test stays in lockstep.
 
 The deterministic engine owns dates and rent caps.
 
 - Deposit return is 21 calendar days from move-out (Civil Code §1950.5), rule `CA-CC-1950.5`.
 - A rent increase of 10% or less uses a 30-day notice; above 10% uses 90 days (§827).
 - AB 1482 percentages are stored by period and county area. A date outside the table is unsure.
+- LA RSO is 3% only inside the published windows in the library, and only when the unit is marked covered. Unincorporated LA County uses the RSTPO tier the tenant selects. Unknown LA RSO or RSTPO coverage stays unsure.
+- City of San Diego has just cause in the library and uses the AB 1482 percentage. A catalog pack with no local percentage does the same.
+- A catalog pack applies a local percentage only when `verify.ts` has a figure, a window that contains the effective date, and facts that match the covered class on the official page. Missing facts, an unclear housing type, an unretrieved ordinance, or an unsure percentage fall back to the statewide chart and keep the local note.
 - A claimed exemption does not change an over-cap result into within-cap.
 - If jurisdiction or coverage is unknown, the checker does not state a single allowed rent.
 

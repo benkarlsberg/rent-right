@@ -1,5 +1,4 @@
 import { CATALOG_PACKS } from "@/lib/rules/cities/build-pack";
-import { ORDINANCES } from "@/lib/rules/cities/catalog";
 import { COUNTY_NAMES, COUNTIES } from "@/lib/rules/cities/counties";
 import type { CityPack } from "@/lib/rules/cities/types";
 import { pack as laCounty } from "@/lib/rules/cities/la-county";
@@ -12,18 +11,31 @@ function capCell(pack: CityPack): string {
   if (pack.id === "los-angeles") return "LA RSO percentages in the pack; coverage must be confirmed";
   if (pack.id === "la-county-unincorporated") return "RSTPO tier percentages in the pack; tier must be confirmed";
   if (pack.id === "san-diego") return "No local percentage (just cause)";
-  const record = ORDINANCES.find((item) => item.id === pack.id);
-  if (!record) return "unsure";
-  if (record.capStatus === "published" && record.figure && record.window) return `${record.figure} (${record.window})`;
-  if (record.capStatus === "unsure") return "unsure";
-  return "No local percentage";
+  const verification = pack.verification;
+  if (!verification) return "unsure";
+  if (verification.cap === "none") return "No local percentage";
+  if (verification.cap === "verified" && verification.figure && verification.window) return `${verification.figure} (${verification.window})`;
+  return "unsure";
 }
 
 function effectiveCell(pack: CityPack): string {
-  const record = ORDINANCES.find((item) => item.id === pack.id);
-  if (!record) return "see pack rules";
-  return record.effectiveDate ?? "unsure";
+  if (!pack.verification) return "see pack rules";
+  return pack.verification.effectiveDate ?? "unsure";
 }
+
+function verificationCell(pack: CityPack): string {
+  const verification = pack.verification;
+  if (!verification) return "hand-written pack";
+  const coverage = verification.coverage.apply ? "coverage can apply from stated facts" : `coverage not auto-applied (${verification.coverage.source})`;
+  return `${verification.cap}; ${coverage}`;
+}
+
+const MOBILEHOME = [
+  ["Los Angeles County unincorporated", "3% for 2026-07-01 through 2027-06-30", "verified", "2026-10-12", "https://dcba.lacounty.gov/wp-content/uploads/2026/03/Rent-Increase-Bulletin-MRSMOPO-June2026-July2027.1.pdf"],
+  ["Ventura County unincorporated", "2.8% for increases instituted in 2026-01 through 2026-12", "verified", "2026-10-12", "https://rma.venturacounty.gov/divisions/planning/mobile-home-park-rent-control-program/"],
+  ["Corona", "Ordinance effective 2026-01-02. The allowable percentage was not stated on the page retrieved.", "unsure", "2026-10-12", "https://www.coronaca.gov/departments/city-managers-office/housing/mobile-home-rent-stabilization-ordinance"],
+  ["Sonoma County unincorporated", "The county administers a mobilehome space-rent program. A current percentage was not confirmed on the page retrieved.", "unsure", "2026-10-12", "https://sonomacounty.gov/development-services/community-development-commission/divisions/community-development/mobilehome-rent-stabilization"],
+];
 
 function escapeCell(value: string): string {
   return value.replace(/\|/g, "/").replace(/\n/g, " ");
@@ -32,8 +44,9 @@ function escapeCell(value: string): string {
 export function renderCoverageMarkdown(packs: CityPack[] = [...HAND, ...CATALOG_PACKS]): string {
   const cities = packs.filter((pack) => pack.match === "city").sort((a, b) => a.name.localeCompare(b.name));
   const countiesWithPacks = COUNTIES.filter((county) => county.status === "local-pack");
-  const unsure = ORDINANCES.filter((record) => record.capStatus === "unsure").map((record) => record.name);
-  const missingEffective = ORDINANCES.filter((record) => !record.effectiveDate).map((record) => record.name);
+  const unsure = packs.filter((pack) => pack.verification?.cap === "unsure").map((pack) => pack.name);
+  const missingEffective = packs.filter((pack) => pack.verification && !pack.verification.effectiveDate).map((pack) => pack.name);
+  const applied = packs.filter((pack) => pack.verification?.coverage.apply).map((pack) => pack.name);
 
   const countyRows = COUNTIES.map(
     (county) =>
@@ -44,7 +57,7 @@ export function renderCoverageMarkdown(packs: CityPack[] = [...HAND, ...CATALOG_
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(
       (pack) =>
-        `| ${escapeCell(pack.name)} | ${escapeCell(pack.county)} | ${pack.match} | ${escapeCell(capCell(pack))} | ${effectiveCell(pack)} | ${pack.housingUrl} |`,
+        `| ${escapeCell(pack.name)} | ${escapeCell(pack.county)} | ${pack.match} | ${escapeCell(capCell(pack))} | ${effectiveCell(pack)} | ${escapeCell(verificationCell(pack))} | ${pack.verification?.retrieved ?? ""} | ${pack.housingUrl} |`,
     );
 
   return `# California coverage
@@ -58,19 +71,25 @@ Counts in this file: ${COUNTY_NAMES.length} counties, ${countiesWithPacks.length
 ## Limits of this review
 
 - State law only means this review did not find an unincorporated residential rent-stabilization, just-cause, relocation, or tenant-protection ordinance on the Attorney General chart (https://oag.ca.gov/rentcaps, retrieved 2026-10-12) or in a targeted county search. It is not a page-by-page reading of every county code.
-- Mobilehome-park ordinances are outside this residential review and are not packed.
 - Fairfax (Marin County) is not packed. Town Code §5.55.090 (Ordinance 892, passed 2024-11-05) says the town shall not enforce rent limits more restrictive than state law: https://codelibrary.amlegal.com/codes/fairfax/latest/fairfax_ca/0-0-0-29049. A mediation percentage mentioned in ballot summaries was not confirmed in that code section, so no figure is stored.
 - Humboldt County's COVID-era urgency eviction ordinance is expired emergency law and is not packed.
-- Published percentages are figures on the Attorney General chart for the printed window. The rent checker does not apply them as a unit's allowed rent, because coverage is not confirmed. If the chart says to check with the city, gives more than one figure, or does not state a percentage of current rent, the cap is unsure and no percentage is stored.
-- Los Gatos is the exception that quotes the town's own formula, including the 70% of CPI or 5% language, and still marks the current computed percentage unsure.
-- Ordinance effective dates are unsure unless an official source stated one. Glendale Ordinance 5922 is dated 2019-03-14 on the city flyer. Other catalog effective dates are unsure.
-- Spanish text in these packs is a short template pending volunteer review.
+- A local percentage is applied only when a city or ordinance page states both the figure and a covered class this checker can test, and the facts match that class. Otherwise the checker uses the statewide chart and keeps the local note. Attorney General chart figures stay in the library and are not applied when the ordinance text was not retrieved.
+- Los Gatos quotes the town code formula, 70% of CPI or 5%, whichever is greater, and the current computed percentage is unsure.
+- Mobilehome-park ordinances below are the ones confirmed from an official page in this review. They are not full residential packs. This is not a complete statewide inventory. The Attorney General chart says many jurisdictions have separate mobilehome-park ordinances that are not on the residential chart.
 
-## Unverified in this catalog
+## Unverified after this retrieval
 
-Cap marked unsure (no percentage stored, except the Los Gatos formula): ${unsure.join(", ")}.
+Cap still unsure: ${unsure.join(", ")}.
 
-Effective date unsure: ${missingEffective.join(", ")}.
+Effective date still unsure: ${missingEffective.join(", ")}.
+
+Local cap can be applied when the facts match: ${applied.join(", ")}.
+
+## Mobilehome-park ordinances confirmed from an official page
+
+| Place | What the official page states | Status | Retrieved | Source |
+| --- | --- | --- | --- | --- |
+${MOBILEHOME.map((row) => `| ${row.join(" | ")} |`).join("\n")}
 
 ## Counties
 
@@ -80,8 +99,8 @@ ${countyRows.join("\n")}
 
 ## Places with a local pack
 
-| Place | County | Kind | Cap in this library | Effective date | Source |
-| --- | --- | --- | --- | --- | --- |
+| Place | County | Kind | Cap in this library | Effective date | Verification | Retrieved | Source |
+| --- | --- | --- | --- | --- | --- | --- | --- |
 ${cityRows.join("\n")}
 `;
 }

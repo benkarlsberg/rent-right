@@ -9,19 +9,28 @@ Counts in this file: 58 counties, 5 counties with an unincorporated pack, 39 cit
 ## Limits of this review
 
 - State law only means this review did not find an unincorporated residential rent-stabilization, just-cause, relocation, or tenant-protection ordinance on the Attorney General chart (https://oag.ca.gov/rentcaps, retrieved 2026-10-12) or in a targeted county search. It is not a page-by-page reading of every county code.
-- Mobilehome-park ordinances are outside this residential review and are not packed.
 - Fairfax (Marin County) is not packed. Town Code §5.55.090 (Ordinance 892, passed 2024-11-05) says the town shall not enforce rent limits more restrictive than state law: https://codelibrary.amlegal.com/codes/fairfax/latest/fairfax_ca/0-0-0-29049. A mediation percentage mentioned in ballot summaries was not confirmed in that code section, so no figure is stored.
 - Humboldt County's COVID-era urgency eviction ordinance is expired emergency law and is not packed.
-- Published percentages are figures on the Attorney General chart for the printed window. The rent checker does not apply them as a unit's allowed rent, because coverage is not confirmed. If the chart says to check with the city, gives more than one figure, or does not state a percentage of current rent, the cap is unsure and no percentage is stored.
-- Los Gatos is the exception that quotes the town's own formula, including the 70% of CPI or 5% language, and still marks the current computed percentage unsure.
-- Ordinance effective dates are unsure unless an official source stated one. Glendale Ordinance 5922 is dated 2019-03-14 on the city flyer. Other catalog effective dates are unsure.
-- Spanish text in these packs is a short template pending volunteer review.
+- A local percentage is applied only when a city or ordinance page states both the figure and a covered class this checker can test, and the facts match that class. Otherwise the checker uses the statewide chart and keeps the local note. Attorney General chart figures stay in the library and are not applied when the ordinance text was not retrieved.
+- Los Gatos quotes the town code formula, 70% of CPI or 5%, whichever is greater, and the current computed percentage is unsure.
+- Mobilehome-park ordinances below are the ones confirmed from an official page in this review. They are not full residential packs. This is not a complete statewide inventory. The Attorney General chart says many jurisdictions have separate mobilehome-park ordinances that are not on the residential chart.
 
-## Unverified in this catalog
+## Unverified after this retrieval
 
-Cap marked unsure (no percentage stored, except the Los Gatos formula): San Leandro, Antioch, Baldwin Park, Commerce, Culver City, Huntington Park, Inglewood, Larkspur, Salinas, Palm Springs, Thousand Oaks, Los Gatos.
+Cap still unsure: San Leandro, Commerce, Huntington Park, Larkspur, Salinas, Palm Springs, Thousand Oaks, Los Gatos.
 
-Effective date unsure: Alameda, Berkeley, Hayward, Oakland, San Leandro, Antioch, Concord, Richmond, Baldwin Park, Bell Gardens, Beverly Hills, Commerce, Cudahy, Culver City, Huntington Park, Inglewood, Maywood, Pasadena, Pomona, Santa Monica, West Hollywood, Larkspur, Salinas, Santa Ana, Palm Springs, Sacramento, San Francisco, Mountain View, San Jose, East Palo Alto, Ojai, Oxnard, Thousand Oaks, Long Beach, Los Gatos, Fremont, Unincorporated Alameda County, Unincorporated Marin County, Unincorporated Sonoma County, Unincorporated Santa Cruz County.
+Effective date still unsure: Alameda, Berkeley, Hayward, Oakland, Concord, Richmond, Baldwin Park, Bell Gardens, Beverly Hills, Commerce, Cudahy, Inglewood, Maywood, Pasadena, Pomona, Santa Monica, West Hollywood, Larkspur, Santa Ana, Palm Springs, Sacramento, San Francisco, Mountain View, San Jose, East Palo Alto, Ojai, Oxnard, Thousand Oaks, Long Beach, Fremont, Unincorporated Alameda County, Unincorporated Marin County, Unincorporated Sonoma County, Unincorporated Santa Cruz County.
+
+Local cap can be applied when the facts match: Baldwin Park, Culver City, Pasadena.
+
+## Mobilehome-park ordinances confirmed from an official page
+
+| Place | What the official page states | Status | Retrieved | Source |
+| --- | --- | --- | --- | --- |
+| Los Angeles County unincorporated | 3% for 2026-07-01 through 2027-06-30 | verified | 2026-10-12 | https://dcba.lacounty.gov/wp-content/uploads/2026/03/Rent-Increase-Bulletin-MRSMOPO-June2026-July2027.1.pdf |
+| Ventura County unincorporated | 2.8% for increases instituted in 2026-01 through 2026-12 | verified | 2026-10-12 | https://rma.venturacounty.gov/divisions/planning/mobile-home-park-rent-control-program/ |
+| Corona | Ordinance effective 2026-01-02. The allowable percentage was not stated on the page retrieved. | unsure | 2026-10-12 | https://www.coronaca.gov/departments/city-managers-office/housing/mobile-home-rent-stabilization-ordinance |
+| Sonoma County unincorporated | The county administers a mobilehome space-rent program. A current percentage was not confirmed on the page retrieved. | unsure | 2026-10-12 | https://sonomacounty.gov/development-services/community-development-commission/divisions/community-development/mobilehome-rent-stabilization |
 
 ## Counties
 
@@ -88,49 +97,49 @@ Effective date unsure: Alameda, Berkeley, Hayward, Oakland, San Leandro, Antioch
 
 ## Places with a local pack
 
-| Place | County | Kind | Cap in this library | Effective date | Source |
-| --- | --- | --- | --- | --- | --- |
-| Alameda | Alameda | city | 2.7% (2026-09-01 through 2027-08-31) | unsure | https://www.alamedarentprogram.org/FAQs#Rent%20Increase%20Overview |
-| Antioch | Contra Costa | city | unsure | unsure | https://www.antiochca.gov/1056/Rent-Program |
-| Baldwin Park | Los Angeles | city | unsure | unsure | https://www.baldwinpark.com/399/Rent-Stabilization-Ordinance |
-| Bell Gardens | Los Angeles | city | 1.5% (2025-11-01 through 2026-10-31) | unsure | https://www.bellgardens.org/government/city-departments/community-development/faqs |
-| Berkeley | Alameda | city | 1% (2026-01-01 through 2026-12-31) | unsure | https://rentboard.berkeleyca.gov/rights-responsibilities/rent-levels/annual-general-adjustment |
-| Beverly Hills | Los Angeles | city | 3.6% (2026-07-01 through 2027-06-30) | unsure | https://www.beverlyhills.org/1090/Rent-Stabilization-Division |
-| Commerce | Los Angeles | city | unsure | unsure | https://www.commerceca.gov/city-hall/economic-development-and-planning/housing |
-| Concord | Contra Costa | city | 5% (any 12-month period) | unsure | https://www.cityofconcord.org/1172/Rent-Stabilization-and-Just-Cause-for-Ev |
-| Cudahy | Los Angeles | city | 3% (2026-07-01 through 2027-06-30) | unsure | https://www.cityofcudahy.com/432/Rent-Stabilization-and-Tenant-Protection |
-| Culver City | Los Angeles | city | unsure | unsure | https://www.culvercity.org/Services/Housing-Homeless-Human-Services/Rent-Control-Tenant-Protection-Measures |
-| East Palo Alto | San Mateo | city | 2% (2026-07-01 through 2027-06-30) | unsure | https://www.ci.east-palo-alto.ca.us/rent-stabilization/page/guide-rent-stabilization-rent-increases |
-| Fremont | Alameda | city | No local percentage | unsure | https://www.codepublishing.com/CA/Fremont/html/Fremont09/Fremont0960.html |
-| Glendale | Los Angeles | city | No local percentage | 2019-03-14 | https://www.glendaleca.gov/home/showpublisheddocument/49848/637864959401030000 |
-| Hayward | Alameda | city | 5% (any 12-month period (a standing maximum on the Attorney General chart, not a one-year CPI result)) | unsure | https://www.hayward-ca.gov/residents/housing/landlord-rental-resources |
-| Huntington Park | Los Angeles | city | unsure | unsure | https://hpca.gov/849/Learn-about-Rent-Stabilization |
-| Inglewood | Los Angeles | city | unsure | unsure | https://www.cityofinglewood.org/1594/Allowable-Rent-Increases |
-| Larkspur | Marin | city | unsure | unsure | https://www.ci.larkspur.ca.us/878/Eviction-Protections-and-Rent-Regulation |
-| Long Beach | Los Angeles | city | No local percentage | unsure | https://www.longbeach.gov/lbcd/hn/tenant-landlord-resources/ |
-| Los Angeles | Los Angeles | city | LA RSO percentages in the pack; coverage must be confirmed | see pack rules | https://housing.lacity.gov/renter-protections-2 |
-| Los Gatos | Santa Clara | city | unsure | unsure | https://losgatosca.gov/DocumentCenter/View/118/Rental-Dispute-Regulations |
-| Maywood | Los Angeles | city | 3.7% (2026-07-01 through 2027-06-30) | unsure | https://www.cityofmaywood.com/239/Housing-Division |
-| Mountain View | Santa Clara | city | 2.5% (2026-09-01 through 2027-08-31) | unsure | https://www.mountainview.gov/our-city/departments/housing/rent-stabilization/rent-and-allowed-rent-increases |
-| Oakland | Alameda | city | 2.3% (2026-08-01 through 2027-07-31) | unsure | https://www.oaklandca.gov/resources/learn-more-about-allowable-rent-increases |
-| Ojai | Ventura | city | 4% (any 12-month period) | unsure | https://ojai.ca.gov/529/Rent-Stabilization-FAQ |
-| Oxnard | Ventura | city | 4% (any 12-month period) | unsure | https://www.oxnard.org/city-department/housing/rso/rent-stabilization-ordinance/ |
-| Palm Springs | Riverside | city | unsure | unsure | https://www.palmspringsca.gov/government/departments/housing-community-development/rent-control |
-| Pasadena | Los Angeles | city | 2.25% (2025-10-01 through 2026-09-30) | unsure | https://www.cityofpasadena.net/rent-stabilization/info-sheets/rent-levels-and-rent-increases/ |
-| Pomona | Los Angeles | city | 5% (2026-01-01 through 2026-12-31) | unsure | https://www.pomonaca.gov/government/departments/neighborhood-services/rent-stabilization-program |
-| Richmond | Contra Costa | city | 1.5% (2026-09-01 through 2027-08-31) | unsure | https://www.ci.richmond.ca.us/3376/Rent-Increase |
-| Sacramento | Sacramento | city | 8.6% (2026-07-01 through 2027-06-30) | unsure | https://www.cityofsacramento.gov/community-development/code-compliance/rental-info-hub/tenant-protection-program |
-| Salinas | Monterey | city | unsure | unsure | https://www.salinas.gov/Residents/Community/Housing-Community-Development/Rental-Registration-Rent-Stabilization |
-| San Diego | San Diego | city | No local percentage (just cause) | see pack rules | https://sdhc.org/housing-opportunities/tenant-protections/ |
-| San Francisco | San Francisco | city | 1.6% (2026-03-01 through 2027-02-28) | unsure | https://www.sf.gov/reports/march-2023/learn-about-rent-increases-san-francisco |
-| San Jose | Santa Clara | city | 5% (any 12-month period) | unsure | https://www.sanjoseca.gov/your-government/departments-offices/housing/tenants/learn-about-rent-stabilization |
-| San Leandro | Alameda | city | unsure | unsure | https://www.sanleandro.org/1483/Rent-Program |
-| Santa Ana | Orange | city | 2.87% (2026-09-01 through 2027-08-31) | unsure | https://www.santa-ana.org/renter-protections/ |
-| Santa Monica | Los Angeles | city | 2.6% (2026-09-01 through 2027-08-31) | unsure | https://www.santamonica.gov/maximum-lawful-rent |
-| Thousand Oaks | Ventura | city | unsure | unsure | https://toaks.gov/housing |
-| Unincorporated Alameda County | Alameda | unincorporated | No local percentage | unsure | https://www.acgov.org/board/bos_calendar/documents/DocsAgendaReg_02_04_25/GENERAL%20ADMINISTRATION/Set%20Matter%20Calendar/CDA_381856.pdf |
-| Unincorporated Los Angeles County | Los Angeles | unincorporated | RSTPO tier percentages in the pack; tier must be confirmed | see pack rules | https://dcba.lacounty.gov/rentstabilizationprogram/ |
-| Unincorporated Marin County | Marin | unincorporated | No local percentage | unsure | https://www.marincounty.gov/departments/cda/housing-and-grants/renting-marin/just-cause-eviction |
-| Unincorporated Santa Cruz County | Santa Cruz | unincorporated | No local percentage | unsure | https://www.codepublishing.com/CA/SantaCruzCounty/html/SantaCruzCounty08/SantaCruzCounty0843.html |
-| Unincorporated Sonoma County | Sonoma | unincorporated | No local percentage | unsure | https://sonomacounty.gov/tenantprotections |
-| West Hollywood | Los Angeles | city | 2.25% (2025-09-01 through 2026-08-31) | unsure | https://www.weho.org/city-government/rent-stabilization |
+| Place | County | Kind | Cap in this library | Effective date | Verification | Retrieved | Source |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Alameda | Alameda | city | 2.7% (2026-09-01 through 2027-08-31) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://www.alamedarentprogram.org/FAQs#Rent%20Increase%20Overview |
+| Antioch | Contra Costa | city | 2.04% (2026-09-14 through 2026-11-10) | 2022-11-11 | verified; coverage not auto-applied (city-page) | 2026-10-12 | https://www.antiochca.gov/1056/Rent-Program |
+| Baldwin Park | Los Angeles | city | 3.7% (2026-08-01 through 2027-07-31) | unsure | verified; coverage can apply from stated facts | 2026-10-12 | https://www.baldwinpark.com/399/Rent-Stabilization-Ordinance |
+| Bell Gardens | Los Angeles | city | 1.5% (2025-11-01 through 2026-10-31) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://www.bellgardens.org/government/city-departments/community-development/faqs |
+| Berkeley | Alameda | city | 1% (2026-01-01 through 2026-12-31) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://rentboard.berkeleyca.gov/rights-responsibilities/rent-levels/annual-general-adjustment |
+| Beverly Hills | Los Angeles | city | 3.6% (2026-07-01 through 2027-06-30) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://www.beverlyhills.org/1090/Rent-Stabilization-Division |
+| Commerce | Los Angeles | city | unsure | unsure | unsure; coverage not auto-applied (unsure) | 2026-10-12 | https://www.commerceca.gov/city-hall/economic-development-and-planning/housing |
+| Concord | Contra Costa | city | 5% (any 12-month period) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://www.cityofconcord.org/1172/Rent-Stabilization-and-Just-Cause-for-Ev |
+| Cudahy | Los Angeles | city | 3% (2026-07-01 through 2027-06-30) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://www.cityofcudahy.com/432/Rent-Stabilization-and-Tenant-Protection |
+| Culver City | Los Angeles | city | 3.25% (2026-06-01 through 2027-06-30, and the same 3.25% on the city table for 2026-01-01 through 2026-05-31) | 2020-10-30 | verified; coverage can apply from stated facts | 2026-10-12 | https://www.culvercity.org/Services/Housing-Homeless-Human-Services/Rent-Control-Tenant-Protection-Measures |
+| East Palo Alto | San Mateo | city | 2% (2026-07-01 through 2027-06-30) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://www.ci.east-palo-alto.ca.us/rent-stabilization/page/guide-rent-stabilization-rent-increases |
+| Fremont | Alameda | city | No local percentage | unsure | none; coverage not auto-applied (city-page) | 2026-10-12 | https://www.codepublishing.com/CA/Fremont/html/Fremont09/Fremont0960.html |
+| Glendale | Los Angeles | city | No local percentage | 2019-03-14 | none; coverage not auto-applied (city-page) | 2026-10-12 | https://www.glendaleca.gov/home/showpublisheddocument/49848/637864959401030000 |
+| Hayward | Alameda | city | 5% (any 12-month period (a standing maximum on the Attorney General chart, not a one-year CPI result)) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://www.hayward-ca.gov/residents/housing/landlord-rental-resources |
+| Huntington Park | Los Angeles | city | unsure | 2024-12-19 | unsure; coverage not auto-applied (city-page) | 2026-10-12 | https://hpca.gov/849/Learn-about-Rent-Stabilization |
+| Inglewood | Los Angeles | city | 3.7% for 5 or more units; 8.7% for 4 or fewer units (2026-07-01 through 2027-06-30) | unsure | verified; coverage not auto-applied (city-page) | 2026-10-12 | https://www.cityofinglewood.org/1594/Allowable-Rent-Increases |
+| Larkspur | Marin | city | unsure | unsure | unsure; coverage not auto-applied (city-page) | 2026-10-12 | https://www.ci.larkspur.ca.us/878/Eviction-Protections-and-Rent-Regulation |
+| Long Beach | Los Angeles | city | No local percentage | unsure | none; coverage not auto-applied (city-page) | 2026-10-12 | https://www.longbeach.gov/lbcd/hn/tenant-landlord-resources/ |
+| Los Angeles | Los Angeles | city | LA RSO percentages in the pack; coverage must be confirmed | see pack rules | hand-written pack |  | https://housing.lacity.gov/renter-protections-2 |
+| Los Gatos | Santa Clara | city | unsure | 1989-11-20 | unsure; coverage not auto-applied (ordinance) | 2026-10-12 | https://losgatosca.gov/DocumentCenter/View/118/Rental-Dispute-Regulations |
+| Maywood | Los Angeles | city | 3.7% (2026-07-01 through 2027-06-30) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://www.cityofmaywood.com/239/Housing-Division |
+| Mountain View | Santa Clara | city | 2.5% (2026-09-01 through 2027-08-31) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://www.mountainview.gov/our-city/departments/housing/rent-stabilization/rent-and-allowed-rent-increases |
+| Oakland | Alameda | city | 2.3% (2026-08-01 through 2027-07-31) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://www.oaklandca.gov/resources/learn-more-about-allowable-rent-increases |
+| Ojai | Ventura | city | 4% (any 12-month period) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://ojai.ca.gov/529/Rent-Stabilization-FAQ |
+| Oxnard | Ventura | city | 4% (any 12-month period) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://www.oxnard.org/city-department/housing/rso/rent-stabilization-ordinance/ |
+| Palm Springs | Riverside | city | unsure | unsure | unsure; coverage not auto-applied (city-page) | 2026-10-12 | https://www.palmspringsca.gov/government/departments/housing-community-development/rent-control |
+| Pasadena | Los Angeles | city | 2.5% (2026-10-01 through 2027-09-30) | unsure | verified; coverage can apply from stated facts | 2026-10-12 | https://www.cityofpasadena.net/rent-stabilization/info-sheets/rent-levels-and-rent-increases/ |
+| Pomona | Los Angeles | city | 5% (2026-01-01 through 2026-12-31) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://www.pomonaca.gov/government/departments/neighborhood-services/rent-stabilization-program |
+| Richmond | Contra Costa | city | 1.5% (2026-09-01 through 2027-08-31) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://www.ci.richmond.ca.us/3376/Rent-Increase |
+| Sacramento | Sacramento | city | 8.6% (2026-07-01 through 2027-06-30) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://www.cityofsacramento.gov/community-development/code-compliance/rental-info-hub/tenant-protection-program |
+| Salinas | Monterey | city | unsure | 2025-01-01 | unsure; coverage not auto-applied (city-page) | 2026-10-12 | https://www.salinas.gov/Residents/Community/Housing-Community-Development/Rental-Registration-Rent-Stabilization |
+| San Diego | San Diego | city | No local percentage (just cause) | see pack rules | hand-written pack |  | https://sdhc.org/housing-opportunities/tenant-protections/ |
+| San Francisco | San Francisco | city | 1.6% (2026-03-01 through 2027-02-28) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://www.sf.gov/reports/march-2023/learn-about-rent-increases-san-francisco |
+| San Jose | Santa Clara | city | 5% (any 12-month period) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://www.sanjoseca.gov/your-government/departments-offices/housing/tenants/learn-about-rent-stabilization |
+| San Leandro | Alameda | city | unsure | 2027-01-01 | unsure; coverage not auto-applied (city-page) | 2026-10-12 | https://www.sanleandro.org/1483/Rent-Program |
+| Santa Ana | Orange | city | 2.87% (2026-09-01 through 2027-08-31) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://www.santa-ana.org/renter-protections/ |
+| Santa Monica | Los Angeles | city | 2.6% (2026-09-01 through 2027-08-31) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://www.santamonica.gov/maximum-lawful-rent |
+| Thousand Oaks | Ventura | city | unsure | unsure | unsure; coverage not auto-applied (city-page) | 2026-10-12 | https://toaks.gov/housing |
+| Unincorporated Alameda County | Alameda | unincorporated | No local percentage | unsure | none; coverage not auto-applied (city-page) | 2026-10-12 | https://www.acgov.org/board/bos_calendar/documents/DocsAgendaReg_02_04_25/GENERAL%20ADMINISTRATION/Set%20Matter%20Calendar/CDA_381856.pdf |
+| Unincorporated Los Angeles County | Los Angeles | unincorporated | RSTPO tier percentages in the pack; tier must be confirmed | see pack rules | hand-written pack |  | https://dcba.lacounty.gov/rentstabilizationprogram/ |
+| Unincorporated Marin County | Marin | unincorporated | No local percentage | unsure | none; coverage not auto-applied (city-page) | 2026-10-12 | https://www.marincounty.gov/departments/cda/housing-and-grants/renting-marin/just-cause-eviction |
+| Unincorporated Santa Cruz County | Santa Cruz | unincorporated | No local percentage | unsure | none; coverage not auto-applied (city-page) | 2026-10-12 | https://www.codepublishing.com/CA/SantaCruzCounty/html/SantaCruzCounty08/SantaCruzCounty0843.html |
+| Unincorporated Sonoma County | Sonoma | unincorporated | No local percentage | unsure | none; coverage not auto-applied (city-page) | 2026-10-12 | https://sonomacounty.gov/tenantprotections |
+| West Hollywood | Los Angeles | city | 2.75% (2026-09-01 through 2027-08-31) | unsure | verified; coverage not auto-applied (ag-chart) | 2026-10-12 | https://www.weho.org/city-government/rent-stabilization |

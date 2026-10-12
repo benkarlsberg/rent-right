@@ -49,6 +49,7 @@ import { getRule } from "@/lib/rules/library";
 import { suggestPlace } from "@/lib/geo";
 import { detectPlace, localProtectionNote, placeSummary } from "@/lib/rules/detect";
 import { isAllowedJurisdiction } from "@/lib/rules/cities";
+import { parseLocalFacts } from "@/lib/rules/cities/verify";
 import { checkRentIncrease, type Jurisdiction, type RsoStatus, type RstpoTier } from "@/lib/rules/engine";
 import { parseISODate, todayISO } from "@/lib/rules/dates";
 import {
@@ -875,6 +876,7 @@ async function runIncrease(input: Record<string, unknown>) {
     effectiveDate,
     lastIncreaseDate: dateOrNull(input.lastIncreaseDate),
     claimsExemption: input.claimsExemption === true,
+    localFacts: parseLocalFacts(input),
   });
   await saveRentCheck(user.id, unit.id, input, result);
   return increasePayload();

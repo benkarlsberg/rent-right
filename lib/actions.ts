@@ -35,6 +35,7 @@ import {
 import { landlordSaysFixed } from "@/lib/issues";
 import { centsField, dateField, emailValue, field, fileOf, must } from "@/lib/forms";
 import { demandLetter } from "@/lib/letters";
+import { parseLocalFacts } from "@/lib/rules/cities/verify";
 import { checkRentIncrease, type AreaKey, type Jurisdiction, type RsoStatus, type RstpoTier } from "@/lib/rules/engine";
 import { withActor, hasUserActor } from "@/lib/pg";
 import { clearSessionCookie, currentUser, setSessionCookie, writeLocale } from "@/lib/session";
@@ -361,6 +362,12 @@ export async function checkIncrease(form: FormData) {
       effectiveDate: must(form, "effectiveDate", "Effective date"),
       lastIncreaseDate: dateField(form, "lastIncreaseDate"),
       claimsExemption: form.get("claimsExemption") === "on",
+      localFacts: parseLocalFacts({
+        builtYear: field(form, "builtYear"),
+        housingType: field(form, "housingType"),
+        unitCount: field(form, "unitCount"),
+        subsidized: field(form, "subsidized"),
+      }),
     });
     await saveRentCheck(user.id, unit.id, Object.fromEntries(form.entries()), result);
   } catch (error) {
