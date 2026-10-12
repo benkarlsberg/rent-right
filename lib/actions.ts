@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { lookupJurisdiction } from "@/lib/geo";
+import { detectPlace } from "@/lib/rules/detect";
 import {
   acknowledgeCondition,
   addFeedback,
@@ -68,15 +69,21 @@ async function homeUnit() {
 }
 
 function unitInput(form: FormData): UnitInput {
-  const jurisdiction = field(form, "jurisdiction") as Jurisdiction;
-  const allowed: Jurisdiction[] = ["city_la", "la_county_unincorporated", "city_sd", "other_ca", "unsure"];
+  const requested = field(form, "jurisdiction") as Jurisdiction;
+  const allowed: Jurisdiction[] = ["city_la", "la_county_unincorporated", "city_sd", "ca", "other_ca", "unsure"];
+  const street = must(form, "street", "Street address");
+  const city = must(form, "city", "City");
+  const postalCode = field(form, "postalCode");
+  const region = field(form, "region");
+  const detected = detectPlace({ address: street, city, postalCode, region });
+  const jurisdiction = requested && requested !== "unsure" && allowed.includes(requested) ? requested : detected.jurisdiction;
   if (!allowed.includes(jurisdiction)) throw new Error("Choose a jurisdiction.");
   return {
-    street: must(form, "street", "Street address"),
+    street,
     unitNumber: field(form, "unitNumber"),
-    city: must(form, "city", "City"),
-    postalCode: field(form, "postalCode"),
-    region: field(form, "region"),
+    city,
+    postalCode,
+    region,
     jurisdiction,
     jurisdictionConfirmed: form.get("jurisdictionConfirmed") === "on",
     rsoStatus: (field(form, "rsoStatus") || "unsure") as RsoStatus,
@@ -319,11 +326,15 @@ export async function checkIncrease(form: FormData) {
     const lowest = centsField(form, "lowest");
     const proposed = centsField(form, "proposed");
     if (!lowest || !proposed) throw new Error("Enter the current rent and the proposed rent.");
+    const jurisdiction = (field(form, "jurisdiction") || unit.jurisdiction) as Jurisdiction;
+    const place = detectPlace({ address: unit.street, city: unit.city, postalCode: unit.postalCode, region: unit.region });
+    const statewide = jurisdiction === "ca" || jurisdiction === "other_ca";
     const result = checkRentIncrease({
-      jurisdiction: (field(form, "jurisdiction") || unit.jurisdiction) as Jurisdiction,
+      jurisdiction,
       rsoStatus: (field(form, "rsoStatus") || "unsure") as RsoStatus,
       rstpoTier: (field(form, "rstpoTier") || "unsure") as RstpoTier,
-      countyArea: COUNTY_AREAS.find((area) => area === field(form, "countyArea")),
+      countyArea: COUNTY_AREAS.find((area) => area === field(form, "countyArea")) || (statewide ? place.area ?? undefined : undefined),
+      localOrdinanceName: statewide ? place.localOrdinance?.name ?? null : null,
       lowestRentCents: lowest,
       proposedRentCents: proposed,
       noticeDate: dateField(form, "noticeDate") || new Date().toISOString().slice(0, 10),

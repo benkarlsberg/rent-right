@@ -168,6 +168,26 @@ describe("rent increase math", () => {
     expect(result.local).toBeNull();
   });
 
+  it("uses the statewide chart for a California city whose ordinance is not loaded", () => {
+    const result = checkRentIncrease({
+      jurisdiction: "ca",
+      rsoStatus: "unsure",
+      rstpoTier: "unsure",
+      countyArea: "san_francisco_bay",
+      localOrdinanceName: "Oakland",
+      lowestRentCents: 200_000,
+      proposedRentCents: 210_000,
+      noticeDate: "2026-08-01",
+      effectiveDate: "2026-10-01",
+      lastIncreaseDate: null,
+      claimsExemption: false,
+    });
+    expect(result.local).toBeNull();
+    expect(result.ab1482?.ppm).toBe(88_000);
+    expect(result.applicable.ruleId).toBe("CA-CC-1947.12");
+    expect(result.jurisdictionNote).toMatch(/Local rules in Oakland may add protections/);
+  });
+
   it("does not invent a San Diego percentage cap", () => {
     const result = checkRentIncrease({
       jurisdiction: "city_sd",
@@ -249,7 +269,7 @@ describe("jurisdiction hints", () => {
   it("does not treat a named city as City of LA or City of SD", () => {
     expect(inferJurisdiction("123 Main St, San Diego, CA").suggestion).toBe("city_sd");
     expect(inferJurisdiction("123 Main St, Los Angeles, CA").suggestion).toBe("city_la");
-    expect(inferJurisdiction("123 Main St, Santa Monica, CA").suggestion).toBe("other_ca");
+    expect(inferJurisdiction("123 Main St, Santa Monica, CA").suggestion).toBe("ca");
     expect(inferJurisdiction("unincorporated Los Angeles County").suggestion).toBe("la_county_unincorporated");
     expect(inferJurisdiction("").suggestion).toBe("unsure");
   });

@@ -9,6 +9,7 @@ export type Jurisdiction =
   | "city_la"
   | "la_county_unincorporated"
   | "city_sd"
+  | "ca"
   | "other_ca"
   | "unsure";
 
@@ -355,8 +356,10 @@ export type RentIncreaseInput = {
   effectiveDate: string;
   lastIncreaseDate: string | null;
   claimsExemption: boolean;
-  /** Statewide chart area when jurisdiction is other_ca. */
+  /** Statewide chart area when jurisdiction is ca or other_ca. */
   countyArea?: AreaKey;
+  /** Set when the address is in a city whose ordinance is not loaded yet. */
+  localOrdinanceName?: string | null;
 };
 
 export type RentIncreaseResult = {
@@ -397,10 +400,14 @@ export type RentIncreaseResult = {
   jurisdictionNoteEs: string;
 };
 
+function statewide(jurisdiction: Jurisdiction): boolean {
+  return jurisdiction === "ca" || jurisdiction === "other_ca";
+}
+
 function areaFor(input: RentIncreaseInput): AreaKey | null {
   if (input.jurisdiction === "city_la" || input.jurisdiction === "la_county_unincorporated") return "los_angeles_orange";
   if (input.jurisdiction === "city_sd") return "san_diego";
-  if (input.jurisdiction === "other_ca") return input.countyArea ?? "other_ca";
+  if (statewide(input.jurisdiction)) return input.countyArea ?? "other_ca";
   return null;
 }
 
@@ -464,14 +471,17 @@ export function checkRentIncrease(input: RentIncreaseInput): RentIncreaseResult 
       "The City of San Diego ordinance in this library (Municipal Code §§98.0701–98.0709) is a just-cause rule, not a local percentage cap. The percentage used here is the statewide AB 1482 chart for San Diego County. Other cities in the county are not the City of San Diego.";
     jurisdictionNoteEs =
       "La ordenanza de la Ciudad de San Diego en esta biblioteca (Código Municipal §§98.0701–98.0709) es una regla de causa justa, no un tope local de porcentaje. El porcentaje usado aquí es la tabla estatal de AB 1482 para el condado de San Diego. Otras ciudades del condado no son la Ciudad de San Diego.";
-  } else if (input.jurisdiction === "other_ca") {
-    jurisdictionNote =
-      "This checker applied the statewide 'all other counties' chart row. Santa Monica, West Hollywood, Pasadena, Culver City, Beverly Hills, and other cities have their own ordinances that this library does not calculate. If the home is in one of those cities, treat this result as incomplete.";
-    jurisdictionNoteEs =
-      "Esta herramienta aplicó la fila estatal de 'los demás condados'. Santa Mónica, West Hollywood, Pasadena, Culver City, Beverly Hills y otras ciudades tienen ordenanzas propias que esta biblioteca no calcula. Si la vivienda está en una de esas ciudades, tome este resultado como incompleto.";
+  } else if (statewide(input.jurisdiction)) {
+    if (input.localOrdinanceName) {
+      jurisdictionNote = `Statewide California rules are shown. Local rules in ${input.localOrdinanceName} may add protections. This library has not loaded that city's ordinance, so the percentage here is only the statewide chart.`;
+      jurisdictionNoteEs = `Se muestran las reglas estatales de California. Las reglas locales de ${input.localOrdinanceName} pueden añadir protecciones. Esta biblioteca no ha cargado la ordenanza de esa ciudad, así que el porcentaje de aquí es solo la tabla estatal.`;
+    } else {
+      jurisdictionNote = "Statewide California rules are shown. A city ordinance that is not in this library may add protections.";
+      jurisdictionNoteEs = "Se muestran las reglas estatales de California. Una ordenanza de la ciudad que no esté en esta biblioteca puede añadir protecciones.";
+    }
   } else {
-    jurisdictionNote = "Jurisdiction is unknown, so no cap was applied. Choose City of Los Angeles, unincorporated LA County, City of San Diego, or another California location.";
-    jurisdictionNoteEs = "La jurisdicción es desconocida, así que no se aplicó un tope. Elija Ciudad de Los Ángeles, condado no incorporado, Ciudad de San Diego u otro lugar de California.";
+    jurisdictionNote = "Jurisdiction is unknown, so no cap was applied. A California address uses statewide rules until a loaded city matches.";
+    jurisdictionNoteEs = "La jurisdicción es desconocida, así que no se aplicó un tope. Una dirección de California usa las reglas estatales hasta que coincida una ciudad cargada.";
   }
 
   const known: CapQuote[] = [ab1482, local].filter((item): item is CapQuote => !!item && !item.unsure && item.ppm !== null);
@@ -577,49 +587,4 @@ export function pendingReminderSlots(dueDate: string, today: string, alreadySent
     .map((slot) => slot.id);
 }
 
-const OTHER_CITY =
-  /\b(santa monica|west hollywood|beverly hills|pasadena|culver city|inglewood|west hollywood|long beach|burbank|glendale|santa clarita|torrance|pomona|downey|norwalk|el monte|inglewood|huntington park|compton|carson|hawthorne|redondo beach|manhattan beach|malibu|calabasas|agoura hills|westlake village|hidden hills|san fernando|south pasadena|alhambra|monterey park|arcadia|monrovia|azusa|covina|west covina|diamond bar|walnut|san dimas|la verne|claremont|pomona|chula vista|oceanside|escondido|carlsbad|el cajon|vista|san marcos|encinitas|national city|la mesa|santee|poway|coronado|imperial beach|lemon grove|solana beach|del mar)\b/i;
-
-export function inferJurisdiction(address: string): {
-  suggestion: Jurisdiction;
-  confidence: "low" | "medium";
-  notes: string[];
-} {
-  const text = address.trim().toLowerCase();
-  if (!text) return { suggestion: "unsure", confidence: "low", notes: ["No address entered."] };
-  if (/unincorporated/.test(text) && /los angeles/.test(text)) {
-    return {
-      suggestion: "la_county_unincorporated",
-      confidence: "low",
-      notes: ["The words say unincorporated Los Angeles. Confirm on the county district map."],
-    };
-  }
-  if (OTHER_CITY.test(text)) {
-    return {
-      suggestion: "other_ca",
-      confidence: "low",
-      notes: [
-        "This looks like a city with its own ordinance or a city that is not the City of Los Angeles or the City of San Diego. This checker will not apply LA RSO or the San Diego ordinance there.",
-      ],
-    };
-  }
-  if (/san diego/.test(text)) {
-    return {
-      suggestion: "city_sd",
-      confidence: "low",
-      notes: ["'San Diego' can mean the city or somewhere else in the county. Confirm the city limits."],
-    };
-  }
-  if (/los angeles/.test(text)) {
-    return {
-      suggestion: "city_la",
-      confidence: "low",
-      notes: ["A Los Angeles address may still be outside City of LA RSO coverage. Check ZIMAS."],
-    };
-  }
-  return {
-    suggestion: "unsure",
-    confidence: "low",
-    notes: ["No city match. Choose the jurisdiction yourself."],
-  };
-}
+export { inferJurisdiction } from "@/lib/rules/detect";

@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Rent Right",
     short_name: "Rent Right",
-    description: "Free records and general information for Los Angeles and San Diego renters.",
+    description: "Free records and general information for California renters.",
     start_url: "/home",
     display: "standalone",
     background_color: "#f3eee4",

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { Notice } from "@/session";
 import { colors } from "@/theme";
@@ -64,6 +64,18 @@ export function LearnMore({ label, children }: { label?: string; children: React
         <Text style={styles.more}>{open ? "Hide" : label || "Learn more"}</Text>
       </Pressable>
       {open ? <View style={styles.moreBody}>{typeof children === "string" ? <Text style={styles.detail}>{children}</Text> : children}</View> : null}
+    </View>
+  );
+}
+
+export function LocalNote({ note }: { note?: { text: string; url: string } | null }) {
+  if (!note) return null;
+  return (
+    <View style={styles.legal}>
+      <Text style={styles.legalShort}>{note.text}</Text>
+      <Pressable onPress={() => Linking.openURL(note.url)} accessibilityRole="link">
+        <Text style={styles.more}>Learn more</Text>
+      </Pressable>
     </View>
   );
 }
