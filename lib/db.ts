@@ -256,6 +256,15 @@ create table if not exists mailed_notices (
   receipt_file_id text,
   created_at text not null
 );
+create table if not exists chat_drafts (
+  id text primary key,
+  user_id text not null,
+  unit_id text not null,
+  kind text not null,
+  payload text not null,
+  status text not null,
+  created_at text not null
+);
 `;
 
 const globalForDb = globalThis as unknown as { rentRightDb?: DatabaseSync };
@@ -1164,11 +1173,62 @@ export function latestRentCheck(userId: string, unitId: string) {
   return { id: row.id, input: JSON.parse(row.input), result: JSON.parse(row.result) as RentIncreaseResult, createdAt: row.created_at };
 }
 
-export function addAssistantMessage(userId: string, unitId: string | null, role: string, answer: { locale: string; content: string; ruleIds: string[]; unsure: boolean }) {
+export function addAssistantMessage(userId: string, unitId: string | null, role: string, answer: { locale: string; content: string; ruleIds: string[]; unsure: boolean; createdAt?: string }): string {
+  const id = randomUUID();
   run(
     "insert into assistant_messages (id, user_id, unit_id, role, locale, content, rule_ids, unsure, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    [randomUUID(), userId, unitId, role, answer.locale, answer.content, JSON.stringify(answer.ruleIds), answer.unsure ? 1 : 0, new Date().toISOString()],
+    [id, userId, unitId, role, answer.locale, answer.content, JSON.stringify(answer.ruleIds), answer.unsure ? 1 : 0, answer.createdAt || new Date().toISOString()],
   );
+  return id;
+}
+
+export function assistantMessageContent(userId: string, id: string): string | null {
+  const row = one<{ content: string }>("select content from assistant_messages where id = ? and user_id = ?", [id, userId]);
+  return row?.content ?? null;
+}
+
+export function updateAssistantMessage(userId: string, id: string, answer: { content: string; ruleIds: string[]; unsure: boolean }): boolean {
+  const result = run(
+    "update assistant_messages set content = ?, rule_ids = ?, unsure = ? where id = ? and user_id = ? and role = 'assistant'",
+    [answer.content, JSON.stringify(answer.ruleIds), answer.unsure ? 1 : 0, id, userId],
+  );
+  return Number(result.changes) > 0;
+}
+
+export type ChatDraft = {
+  id: string;
+  userId: string;
+  unitId: string;
+  kind: string;
+  payload: Record<string, unknown>;
+  status: string;
+};
+
+export function openChatDraft(userId: string): ChatDraft | null {
+  const row = one<{ id: string; user_id: string; unit_id: string; kind: string; payload: string; status: string }>(
+    "select * from chat_drafts where user_id = ? and status = 'open' order by created_at desc limit 1",
+    [userId],
+  );
+  if (!row) return null;
+  return { id: row.id, userId: row.user_id, unitId: row.unit_id, kind: row.kind, payload: JSON.parse(row.payload) as Record<string, unknown>, status: row.status };
+}
+
+export function createChatDraft(userId: string, unitId: string, kind: string, payload: Record<string, unknown>): ChatDraft {
+  run("update chat_drafts set status = 'cancelled' where user_id = ? and status = 'open'", [userId]);
+  const id = randomUUID();
+  run(
+    "insert into chat_drafts (id, user_id, unit_id, kind, payload, status, created_at) values (?, ?, ?, ?, ?, 'open', ?)",
+    [id, userId, unitId, kind, JSON.stringify(payload), new Date().toISOString()],
+  );
+  return { id, userId, unitId, kind, payload, status: "open" };
+}
+
+export function closeChatDraft(userId: string, id: string, status: "sent" | "done" | "cancelled") {
+  run("update chat_drafts set status = ? where id = ? and user_id = ? and status = 'open'", [status, id, userId]);
+}
+
+export function setChatDraftPayload(userId: string, id: string, payload: Record<string, unknown>) {
+  run("update chat_drafts set payload = ? where id = ? and user_id = ? and status = 'open'", [JSON.stringify(payload), id, userId]);
 }
 
 export function listAssistant(userId: string) {
@@ -1244,6 +1304,7 @@ export async function deleteUserAccount(userId: string) {
     else run("delete from unit_members where unit_id = ? and user_id = ?", [member.unit_id, userId]);
   }
   run("delete from assistant_messages where user_id = ?", [userId]);
+  run("delete from chat_drafts where user_id = ?", [userId]);
   run("delete from notifications where user_id = ?", [userId]);
   run("delete from push_subscriptions where user_id = ?", [userId]);
   run("delete from feedback where user_id = ?", [userId]);
@@ -1268,6 +1329,7 @@ async function deleteUnit(unitId: string) {
   run("delete from landlord_responses where unit_id = ?", [unitId]);
   run("delete from landlord_blocks where unit_id = ?", [unitId]);
   run("delete from mailed_notices where unit_id = ?", [unitId]);
+  run("delete from chat_drafts where unit_id = ?", [unitId]);
   run("delete from invites where unit_id = ?", [unitId]);
   run("delete from unit_members where unit_id = ?", [unitId]);
   run("delete from units where id = ?", [unitId]);

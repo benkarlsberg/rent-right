@@ -16,7 +16,7 @@ export default function Welcome() {
 
   useEffect(() => {
     if (!ready || !token || !me) return;
-    router.replace(me.needsUnit ? "/setup" : "/home");
+    router.replace(me.needsUnit ? "/setup" : "/chat");
   }, [ready, token, me]);
 
   async function demo() {

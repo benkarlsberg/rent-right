@@ -24,7 +24,7 @@ export default function Setup() {
         body: { street, unitNumber, city, landlordName, landlordEmail, rent, jurisdiction: "unsure", postalCode, region: "CA" },
       });
       await signIn(session);
-      router.replace("/home");
+      router.replace("/chat");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save.");
     }

@@ -54,6 +54,8 @@ import { sendTenantEmail } from "@/lib/email";
 import { currentUser } from "@/lib/session";
 import { DEMO_EMAIL, startSampleTenancy } from "@/lib/seed";
 import { appUrl, relayAddress, tx } from "@/lib/text";
+import { parseCard } from "@/lib/chat-card";
+import { runChatTurn } from "@/lib/chat-turn";
 import { askAssistant, emailLandlord, extractPdfOrText, recordLog, runLeaseReview, sampleLeaseText, saveDepositAndDeadline } from "@/lib/workflow";
 
 function json(data: unknown, status = 200) {
@@ -275,6 +277,9 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "POST" && key === "increase") return json(await runIncrease(await readBody(request)));
   if (method === "GET" && key === "assistant") return json(await assistantPayload());
   if (method === "POST" && key === "assistant") return json(await ask(await readBody(request)));
+  if (method === "GET" && key === "thread") return json(await threadPayload());
+  if (method === "POST" && key === "thread") return json(await postThread(await readBody(request)));
+  if (method === "GET" && key === "records") return json(await recordsPayload());
   if (method === "GET" && key === "ledger") return json(await ledgerPayload());
   if (method === "POST" && key === "ledger") return json(await addPayment(await readBody(request)));
   if (method === "POST" && path[0] === "ledger" && path[2] === "void" && path[1]) {
@@ -636,6 +641,102 @@ async function ask(input: Record<string, unknown>) {
   const unit = primaryUnit(user.id);
   await askAssistant(user, unit, text(input.question), user.locale);
   return assistantPayload();
+}
+
+function chips(locale: Locale) {
+  return locale === "es"
+    ? [
+        { label: "Se filtra el fregadero", text: "Se filtra el fregadero" },
+        { label: "Revisar mi contrato", text: "Revisar mi contrato" },
+        { label: "Revisar un aumento", text: "Mi casero subio la renta a $2,100" },
+        { label: "Mi depósito", text: "Me mude, donde esta mi deposito?" },
+      ]
+    : [
+        { label: "My sink is leaking", text: "My sink is leaking" },
+        { label: "Check my lease", text: "Check my lease" },
+        { label: "Check a rent increase", text: "My landlord raised rent to $2,100" },
+        { label: "Where's my deposit?", text: "I moved out, where's my deposit?" },
+      ];
+}
+
+async function threadPayload() {
+  const { user, unit } = await withUnit();
+  const locale = user.locale;
+  const rows = listAssistant(user.id);
+  const items = rows.map((row) => {
+    if (row.role === "user") return { role: "user" as const, text: row.content };
+    const card = parseCard(row.content);
+    if (!card) {
+      return {
+        role: "card" as const,
+        headline: tx(locale, "Note", "Nota"),
+        status: tx(locale, "Saved", "Guardado"),
+        action: null,
+        detail: row.content,
+        ruleId: null,
+        notice: notice(locale),
+      };
+    }
+    return { role: "card" as const, ...card, notice: notice(locale) };
+  });
+  return {
+    landlord: unit.landlordName,
+    items,
+    chips: rows.some((row) => row.role === "user") ? [] : chips(locale),
+    notice: notice(locale),
+  };
+}
+
+async function postThread(input: Record<string, unknown>) {
+  const { user, unit } = await withUnit();
+  const file = input.attachment;
+  const attachment = file && typeof file === "object" && !Array.isArray(file)
+    ? {
+        name: text((file as { name?: unknown }).name) || "upload",
+        mime: text((file as { mime?: unknown }).mime) || "application/octet-stream",
+        base64: text((file as { base64?: unknown }).base64),
+      }
+    : null;
+  if (attachment && attachment.base64.length > 8_000_000) throw new Error("That file is too large.");
+  if (attachment && !attachment.base64) throw new Error("That file was empty.");
+  await runChatTurn(user, unit, {
+    text: text(input.text),
+    action: text(input.action),
+    draftId: text(input.draftId),
+    attachment: attachment?.base64 ? attachment : null,
+  });
+  return threadPayload();
+}
+
+async function recordsPayload() {
+  const { user, unit } = await withUnit();
+  const locale = user.locale;
+  const today = todayISO();
+  const next = listDeadlines(user.id, unit.id).find((item) => item.status === "open" && item.dueDate);
+  const line = next ? dueLine(next.dueDate, today, locale) : null;
+  const review = listLeaseReviews(user.id, unit.id)[0];
+  const finding = review?.result.findings.find((item) => item.label !== "looks_standard") || review?.result.findings[0];
+  return {
+    name: user.name,
+    address: unitAddress(unit),
+    sample: user.email === DEMO_EMAIL,
+    locale,
+    notice: notice(locale),
+    next: next && line
+      ? { title: line.title, status: line.subtitle, detail: `${locale === "es" ? next.explanationEs : next.explanation}\n\n${next.ruleId}` }
+      : null,
+    notes: listLogs(user.id, unit.id).slice(0, 3).map((item) => ({
+      id: item.id,
+      line: `${logKind(item.type, locale)} · ${item.eventDate}`,
+    })),
+    lease: review
+      ? {
+          filename: review.filename || tx(locale, "Lease", "Contrato"),
+          headline: finding ? findingStatus(finding.label, locale) : tx(locale, "Reviewed", "Revisado"),
+          detail: finding ? `${finding.quote}\n\n${finding.ruleId || ""}` : "",
+        }
+      : null,
+  };
 }
 
 async function ledgerPayload() {

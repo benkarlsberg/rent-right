@@ -13,9 +13,11 @@ import {
   saveRentCheck,
 } from "@/lib/db";
 import { randomToken } from "@/lib/crypto";
-import { answerQuestion } from "@/lib/rules/assistant";
+import { serializeCard } from "@/lib/chat-card";
 import { addDays, todayISO } from "@/lib/rules/dates";
-import { checkRentIncrease, repairReminder, retaliationWindow, type RepairSeverity } from "@/lib/rules/engine";
+import { checkRentIncrease, depositReturnDeadline, repairReminder, retaliationWindow, type RepairSeverity } from "@/lib/rules/engine";
+import { dueLine, rentHeadline } from "@/lib/phone";
+import { percentLabel } from "@/lib/format";
 import { appUrl, relayAddress } from "@/lib/text";
 import { landlordMessageBody } from "@/lib/email";
 import { runLeaseReview, sampleLeaseText, saveDepositAndDeadline } from "@/lib/workflow";
@@ -176,18 +178,60 @@ export async function startSampleTenancy(): Promise<string> {
 
   await runLeaseReview(user, unit, sampleLeaseText(), "sample-lease.txt");
 
-  const answer = answerQuestion("How long does my landlord have to return my security deposit?", "en");
-  addAssistantMessage(user.id, unit.id, "user", {
-    locale: "en",
-    content: "How long does my landlord have to return my security deposit?",
-    ruleIds: [],
-    unsure: false,
-  });
-  addAssistantMessage(user.id, unit.id, "assistant", {
-    locale: "en",
-    content: `${answer.text}\n\n${answer.disclaimer}`,
-    ruleIds: answer.ruleIds,
-    unsure: answer.unsure,
+  const stamp = Date.now();
+  const leakReminder = repairReminder(leakDate, "leak");
+  const moveOut = addDays(today, -4);
+  const depositDue = depositReturnDeadline(moveOut);
+  const depositLine = dueLine(depositDue.dueDate, today, "en");
+  const samples: { role: "user" | "assistant"; content: string; ruleId: string | null; unsure: boolean }[] = [
+    { role: "user", content: "My sink is leaking", ruleId: null, unsure: false },
+    {
+      role: "assistant",
+      content: serializeCard({
+        headline: "Repair logged",
+        status: "Sent",
+        action: { id: "open-landlord", label: "Open landlord" },
+        detail: `${leakReminder.explanation}\n\n${leakReminder.computation}\n\nThis sample already has the note in the landlord thread. A new repair stays unsent until you tap Send to landlord.`,
+        ruleId: leakReminder.ruleId,
+      }),
+      ruleId: leakReminder.ruleId,
+      unsure: false,
+    },
+    { role: "user", content: "My landlord raised rent to $2,257.50", ruleId: null, unsure: false },
+    {
+      role: "assistant",
+      content: serializeCard({
+        headline: rentHeadline(increase.applicable.status, "en"),
+        status: increase.applicable.ppm != null ? percentLabel(increase.applicable.ppm) : "No single cap",
+        action: null,
+        detail: [increase.applicable.reason, increase.notice.computation, increase.jurisdictionNote].filter(Boolean).join("\n\n"),
+        ruleId: increase.applicable.ruleId,
+      }),
+      ruleId: increase.applicable.ruleId,
+      unsure: increase.applicable.status === "unsure",
+    },
+    { role: "user", content: "I moved out, where's my deposit?", ruleId: null, unsure: false },
+    {
+      role: "assistant",
+      content: serializeCard({
+        headline: "Deposit",
+        status: `${depositLine.subtitle} · ${depositLine.title}`,
+        action: { id: "letter", label: "Draft a letter" },
+        detail: `${depositDue.explanation}\n\nThe letter is not emailed. You would mail or send it yourself.`,
+        ruleId: depositDue.ruleId,
+      }),
+      ruleId: depositDue.ruleId,
+      unsure: false,
+    },
+  ];
+  samples.forEach((item, index) => {
+    addAssistantMessage(user.id, unit.id, item.role, {
+      locale: "en",
+      content: item.content,
+      ruleIds: item.ruleId ? [item.ruleId] : [],
+      unsure: item.unsure,
+      createdAt: new Date(stamp + index).toISOString(),
+    });
   });
 
   addNotification(
