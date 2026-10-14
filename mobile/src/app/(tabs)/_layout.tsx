@@ -1,22 +1,24 @@
 import { Tabs } from "expo-router";
+import { useSession } from "@/session";
 import { colors } from "@/theme";
 
 export default function TabsLayout() {
+  const session = useSession();
+  const spanish = session.me?.user.locale === "es";
   return (
     <Tabs
-      initialRouteName="home"
+      initialRouteName="chat"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.pine,
         tabBarInactiveTintColor: colors.mute,
-        tabBarStyle: { backgroundColor: "#fffdf8", borderTopColor: colors.line },
+        tabBarStyle: { backgroundColor: "#fffdf8", borderTopColor: colors.line, height: 64, paddingTop: 8, paddingBottom: 8 },
+        tabBarLabelStyle: { fontSize: 16, fontWeight: "600" },
       }}
     >
-      <Tabs.Screen name="home" options={{ title: "Home", tabBarIcon: () => null }} />
-      <Tabs.Screen name="log" options={{ title: "Log", tabBarIcon: () => null }} />
-      <Tabs.Screen name="chat" options={{ title: "Chat", tabBarIcon: () => null }} />
-      <Tabs.Screen name="dates" options={{ title: "Dates", tabBarIcon: () => null }} />
-      <Tabs.Screen name="more" options={{ title: "More", tabBarIcon: () => null }} />
+      <Tabs.Screen name="chat" options={{ title: spanish ? "Chat" : "Chat" }} />
+      <Tabs.Screen name="landlord" options={{ title: spanish ? "Propietario" : "Landlord" }} />
+      <Tabs.Screen name="records" options={{ title: spanish ? "Registros" : "Records" }} />
     </Tabs>
   );
 }

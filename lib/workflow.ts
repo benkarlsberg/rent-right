@@ -40,7 +40,7 @@ import { randomToken } from "@/lib/crypto";
 import { todayISO } from "@/lib/rules/dates";
 
 const EMAIL_DAILY_CAP = 20;
-const CHAT_MONTHLY_CAP = 40;
+export const CHAT_MONTHLY_CAP = 40;
 
 function monthPrefix(now = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -168,7 +168,7 @@ export async function emailLandlord(input: {
       deliveryStatus: "blocked",
       deliveryDetail: "The landlord blocked later mail. Print a letter and mail it yourself.",
     });
-    return;
+    return "blocked";
   }
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   if (countOutboundSince(input.unit.id, since) >= EMAIL_DAILY_CAP) {
@@ -199,6 +199,7 @@ export async function emailLandlord(input: {
     providerId: sent.providerId,
     responseToken: token,
   });
+  return sent.status;
 }
 
 export function saveDepositAndDeadline(user: User, unit: Unit, input: {

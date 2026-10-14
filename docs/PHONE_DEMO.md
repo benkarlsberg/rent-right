@@ -162,7 +162,15 @@ Tap **View a sample Los Angeles tenancy**.
 
 That button calls `POST /api/v1/auth/demo` on your computer and opens a sample home for 1842 N Echo Park Ave, Unit 3. You do not type an email. Tapping it again resets the same sample.
 
-You should land on Home and see short status cards (a repair date, a deposit date, a rent check). The tabs along the bottom are Home, Log, Chat, Dates, and More.
+You should land in the chat. The sample starts with a few example exchanges: a sink leak, a rent check, and a deposit date. Each reply is a short card. The detail and the full disclaimer open from **Learn more**. The short line on the card says “General information, not legal advice.”
+
+The tabs along the bottom are **Chat**, **Landlord**, and **Records**. Chat is the home. Landlord is the thread with Elena Vasquez. Records holds the language switch, a next date, and the records PDF.
+
+A new chat with no messages shows suggestion chips. The sample already has messages, so the chips are hidden until you start a blank tenancy.
+
+Nothing is emailed to the landlord until you tap **Send to landlord** or reply “yes, send it.” A demand letter stays on the phone. Rent Right does not mail it.
+
+The **+** button adds a photo or a lease file. On a phone, photo opens the library. A lease PDF is easiest from the computer browser at the same address Expo prints, with **+** then **Lease or photo**.
 
 ## Troubleshooting
 
