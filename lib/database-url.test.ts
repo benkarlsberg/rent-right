@@ -1,6 +1,6 @@
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
-import { normalizeDatabaseUrl } from "@/lib/pg";
+import { normalizeDatabaseUrl, poolerCandidates } from "@/lib/pg";
 
 describe("normalizeDatabaseUrl", () => {
   it("leaves a local URL unchanged", () => {
@@ -35,5 +35,14 @@ describe("normalizeDatabaseUrl", () => {
 
   it("rejects a project HTTP URL without printing the secret", () => {
     expect(() => normalizeDatabaseUrl("https://abc.supabase.co")).toThrow(/HTTP URL/);
+  });
+
+  it("builds session pooler URLs from a database password", () => {
+    const urls = poolerCandidates("a#b_c-1", "https://abc.supabase.co", "us-east-1");
+    expect(urls).toEqual([
+      "postgresql://postgres.abc:a%23b_c-1@aws-0-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require",
+      "postgresql://postgres.abc:a%23b_c-1@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require",
+      "postgresql://postgres:a%23b_c-1@db.abc.supabase.co:5432/postgres?sslmode=require",
+    ]);
   });
 });

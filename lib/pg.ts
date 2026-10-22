@@ -57,6 +57,17 @@ export async function closeSql(): Promise<void> {
   }
 }
 
+export function poolerCandidates(password: string, supabaseUrl: string, region: string): string[] {
+  const ref = new URL(supabaseUrl).hostname.split(".")[0];
+  const pass = encodeURIComponent(password);
+  const user = encodeURIComponent(`postgres.${ref}`);
+  return [
+    `postgresql://${user}:${pass}@aws-0-${region}.pooler.supabase.com:5432/postgres?sslmode=require`,
+    `postgresql://${user}:${pass}@aws-1-${region}.pooler.supabase.com:5432/postgres?sslmode=require`,
+    `postgresql://postgres:${pass}@db.${ref}.supabase.co:5432/postgres?sslmode=require`,
+  ];
+}
+
 function unwrapDatabaseUrl(raw: string): string {
   let text = raw.replace(/^\uFEFF/, "").trim();
   for (let i = 0; i < 2; i += 1) {
