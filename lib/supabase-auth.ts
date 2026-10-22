@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { appUrl } from "@/lib/text";
 
 export function supabaseAuthConfigured(): boolean {
   return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY);
@@ -15,7 +16,7 @@ function client(key: string): SupabaseClient {
 }
 
 function redirectTo(): string {
-  return `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/auth/verify`;
+  return `${appUrl()}/auth/verify`;
 }
 
 /** Returns a token hash when the service role can mint a link. Otherwise Supabase emails the user. */

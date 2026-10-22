@@ -5,7 +5,9 @@ export function tx(locale: Locale, en: string, es: string): string {
 }
 
 export function appUrl(): string {
-  return (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/$/, "");
+  const env = process.env as Record<string, string | undefined>;
+  const value = env.APP_URL || env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  return value.replace(/\/$/, "");
 }
 
 export function relayDomain(): string {

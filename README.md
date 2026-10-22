@@ -6,7 +6,7 @@ Free records and general legal information for renters in California. It is not 
 
 The short line on a result is “General information, not legal advice.”
 
-**Live demo:** [https://rent-right-web.pages.dev](https://rent-right-web.pages.dev). The API is [https://rent-right.rent-right.workers.dev](https://rent-right.rent-right.workers.dev).
+**Live demo:** [https://app.rentrightportal.com](https://app.rentrightportal.com). The API is [https://api.rentrightportal.com](https://api.rentrightportal.com).
 
 ## Screenshots
 
@@ -134,7 +134,7 @@ Create these accounts. Turn on MFA for Supabase and Cloudflare.
 | [Google AI Studio](https://aistudio.google.com) | Gemini API key. Optional. Paid tier so prompts are not used for training. |
 | [Resend](https://resend.com) | API key and a verified from-address. Optional. Without it, mail is saved and not sent. |
 
-`DATABASE_URL` must be the Supabase **postgres** connection string (direct, or the session pooler). A database password is also accepted: deploy turns it into the session pooler URI using `SUPABASE_URL`. The API sets the `authenticated` role per request so RLS applies. `SUPABASE_ANON_KEY` accepts the publishable key (`sb_publishable_…`). `SUPABASE_SERVICE_ROLE_KEY` accepts the secret key (`sb_secret_…`) and stays on the server. Do not put that secret in the Expo app or any `EXPO_PUBLIC_` / `NEXT_PUBLIC_` variable. When `NEXT_PUBLIC_APP_URL` is empty, deploy sets it to the Worker URL.
+`DATABASE_URL` must be the Supabase **postgres** connection string (direct, or the session pooler). A database password is also accepted: deploy turns it into the session pooler URI using `SUPABASE_URL`. The API sets the `authenticated` role per request so RLS applies. `SUPABASE_ANON_KEY` accepts the publishable key (`sb_publishable_…`). `SUPABASE_SERVICE_ROLE_KEY` accepts the secret key (`sb_secret_…`) and stays on the server. Do not put that secret in the Expo app or any `EXPO_PUBLIC_` / `NEXT_PUBLIC_` variable. Set `NEXT_PUBLIC_APP_URL` to `https://app.rentrightportal.com`. When that secret is empty, deploy uses the same URL. In the Supabase Auth settings, allow `https://app.rentrightportal.com/auth/verify` as a redirect URL.
 
 Add these as **GitHub Actions secrets** on the repository (Settings → Secrets and variables → Actions). The deploy workflow skips cleanly when any required secret is missing.
 
@@ -148,11 +148,11 @@ Add these as **GitHub Actions secrets** on the repository (Settings → Secrets 
 | `DATA_ENCRYPTION_KEY` | Yes | 32-byte base64 key you generate |
 | `AUTH_SECRET` | Yes | Long random string you generate |
 | `SUPABASE_SERVICE_ROLE_KEY` | Recommended | Supabase service role. Server only. |
-| `NEXT_PUBLIC_APP_URL` | Recommended | Public API origin, also baked into the Expo web export as `EXPO_PUBLIC_API_URL` |
+| `NEXT_PUBLIC_APP_URL` | Recommended | `https://app.rentrightportal.com`. Sign-in, invite, and reply links. |
 | `GEMINI_API_KEY` | Optional | Google AI Studio |
 | `RESEND_API_KEY` | Optional | Resend |
 | `RESEND_FROM` | Optional | Verified Resend from-address |
-| `RELAY_DOMAIN` | Optional | Domain for `u-…@domain` relay addresses |
+| `RELAY_DOMAIN` | Optional | `rentrightportal.com`. Deploy uses this when the secret is empty. |
 | `EMAIL_WEBHOOK_SECRET` | Optional | Bearer token for inbound mail and delivery webhooks |
 | `CRON_SECRET` | Optional | Bearer token for `POST /api/cron/reminders` |
 
@@ -175,9 +175,9 @@ Copy `.env.example` to `.env.local`. Do not commit `.env.local`.
 | `DATABASE_URL` | Postgres connection string. Required in production. |
 | `AUTH_SECRET` | Signs the local session token. Required in production. |
 | `DATA_ENCRYPTION_KEY` | 32-byte base64 AES key. Required in production. |
-| `NEXT_PUBLIC_APP_URL` | Absolute URL used in mail and response links. |
+| `NEXT_PUBLIC_APP_URL` | Absolute URL used in mail and response links. Production value: `https://app.rentrightportal.com`. |
 | `EXPO_PUBLIC_API_URL` | Set in `mobile/.env` when the phone cannot infer the API host. |
-| `RELAY_DOMAIN` | Domain for `u-…@domain` relay addresses. |
+| `RELAY_DOMAIN` | Domain for `u-…@domain` relay addresses. Production value: `rentrightportal.com`. |
 | `RESEND_API_KEY`, `RESEND_FROM` | Outbound mail. Blank means the message is saved and marked `local_only`. |
 | `EMAIL_WEBHOOK_SECRET` | Bearer token for inbound mail and provider webhooks. |
 | `GEMINI_API_KEY` | Optional photo OCR and for filling clauses the library left as unsure. |
@@ -212,9 +212,11 @@ Lease review quotes the clause and cites a library rule ID, or it says **unsure*
 
 ## Mail, files, and reminders
 
-Outbound landlord mail is sent from `u-<id>@RELAY_DOMAIN`, with the tenant on CC, and a no-account response link. The daily cap is 20 messages per unit. Nothing is emailed until the tenant confirms. Without Resend, status stays `local_only`.
+Outbound landlord mail uses `From: RESEND_FROM` and `Reply-To: u-<id>@RELAY_DOMAIN`, with the tenant on CC and a no-account response link. Set `RESEND_FROM` to `Rent Right <notices@rentrightportal.com>` and `RELAY_DOMAIN` to `rentrightportal.com`. The local part is `u-` plus eight letters or digits, generated per unit. The daily cap is 20 messages per unit. Nothing is emailed until the tenant confirms. Without Resend, status stays `local_only`. Tenant mail is sent only when both `RESEND_API_KEY` and `RESEND_FROM` are set.
 
-Inbound mail: `POST /api/email/inbound` with `Authorization: Bearer $EMAIL_WEBHOOK_SECRET`. Provider events: `POST /api/email/webhook` with the same bearer token.
+Inbound mail is a JSON POST, not a Cloudflare Email Routing message and not a Resend Svix webhook. `POST /api/email/inbound` with `Authorization: Bearer $EMAIL_WEBHOOK_SECRET` and `{ "from", "to", "subject", "text" }`. `to` may be a string or a list. The handler stores the message when `to` contains `u-` plus letters or digits and that local part belongs to a unit. Anything else returns 202. Delivery events: `POST /api/email/webhook` with the same bearer and `{ "type", "data": { "email_id" } }` (or `data.id`). `type` is `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.opened`, or `email.complained`.
+
+Cloudflare Email Routing can forward that JSON. Catch-all rules exist on the apex domain only, so the relay domain is `rentrightportal.com`. Add a custom address for `notices@rentrightportal.com` that drops mail, and point the catch-all at an Email Worker. The Worker reads `from`, `to`, `subject`, and the text body, then POSTs them to `https://api.rentrightportal.com/api/email/inbound`. Enabling Email Routing writes the apex MX and SPF records. Put Resend's SPF include back into that TXT record or mail from `notices@` fails. Those DNS changes need the dashboard, or Zone → DNS → Edit on the API token.
 
 Reminders run at 7 days, 3 days, and the due day. Call `POST /api/cron/reminders` with `Authorization: Bearer $CRON_SECRET` once a day.
 
