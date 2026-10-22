@@ -3,6 +3,7 @@ name: Deploy
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   check:
@@ -195,6 +196,18 @@ jobs:
             exit 1
           fi
           echo "Web URL: $url"
+      - name: Deploy the inbound mail worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          EMAIL_WEBHOOK_SECRET: ${{ secrets.EMAIL_WEBHOOK_SECRET }}
+        run: |
+          if [ -z "$EMAIL_WEBHOOK_SECRET" ]; then
+            echo "EMAIL_WEBHOOK_SECRET is not set. Skipping the inbound mail worker."
+            exit 0
+          fi
+          npx wrangler deploy --config email/wrangler.jsonc
+          printf '%s' "$EMAIL_WEBHOOK_SECRET" | npx wrangler secret put EMAIL_WEBHOOK_SECRET --config email/wrangler.jsonc
       - name: Remove the resolved database URL
         if: always()
         run: rm -f .database-url

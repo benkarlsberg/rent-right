@@ -1,0 +1,9 @@
+{
+  "name": "rent-right-mail",
+  "main": "worker.ts",
+  "compatibility_date": "2026-10-22",
+  "workers_dev": false,
+  "vars": {
+    "INBOUND_URL": "https://api.rentrightportal.com/api/email/inbound"
+  }
+}

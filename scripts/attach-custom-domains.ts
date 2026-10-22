@@ -39,20 +39,6 @@ function errorText(body: CfBody, status: number): string {
   return errors.map((error) => `${error.code ?? status} ${error.message ?? ""}`.trim()).join("; ");
 }
 
-function needsDns(status: number, detail: string): boolean {
-  const text = detail.toLowerCase();
-  return (
-    status === 401 ||
-    status === 403 ||
-    text.includes("dns") ||
-    text.includes("authentication error") ||
-    text.includes("not authorized") ||
-    text.includes("permission") ||
-    text.includes("10000") ||
-    text.includes("9109")
-  );
-}
-
 class Cf {
   constructor(
     private readonly accountId: string,
@@ -97,8 +83,15 @@ async function attachPages(cf: Cf, accountId: string): Promise<string> {
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${pagesProject}/domains`;
   const listed = await cf.call("GET", endpoint);
   if (!listed.body.success) return `Pages domain list failed: ${errorText(listed.body, listed.status)}`;
-  const names = resultList(listed.body).map((domain) => String(domain.name ?? ""));
-  if (names.includes(appHost)) return `Pages already serves ${appHost}.`;
+  const existing = resultList(listed.body).find((domain) => domain.name === appHost);
+  if (existing) {
+    const status = String(existing.status ?? "active");
+    if (status === "active") return `Pages already serves ${appHost}.`;
+    if (status === "error" || status === "blocked" || status === "deactivated") {
+      return `Pages domain was not attached: status ${status}.`;
+    }
+    return `Attached ${appHost} to Pages (${status}).`;
+  }
   const created = await cf.call("POST", endpoint, { name: appHost });
   if (!created.body.success) return `Pages domain was not attached: ${errorText(created.body, created.status)}`;
   const result = created.body.result as { status?: string } | undefined;
@@ -173,9 +166,25 @@ async function main(): Promise<void> {
     for (const pattern of patterns) notes.push(await ensureRoute(cf, id, pattern));
   }
   const report = notes.map((note) => `- ${note}`).join("\n");
-  const blocked = notes.some((note) => needsDns(0, note) || /was not|failed|not visible|pending|initializing/i.test(note));
-  writeSummary(["### Custom domains", report, blocked ? manualSteps() : "Custom hostnames are attached."].join("\n\n"));
-  if (blocked) process.exitCode = 2;
+  const pagesNote = notes[0] ?? "";
+  const workerNote = notes[1] ?? "";
+  const routeNotes = notes.slice(2);
+  const pagesNeedsDns = /initializing|pending|was not|failed|not visible/i.test(pagesNote);
+  const workerNeedsDns = /was not|failed/i.test(workerNote);
+  const routesFailed = routeNotes.some((note) => /was not|failed/i.test(note));
+  const extra: string[] = [];
+  if (pagesNeedsDns || workerNeedsDns || routesFailed) {
+    extra.push("The API token cannot edit DNS. Use the dashboard, or add Zone → DNS → Edit for rentrightportal.com.");
+  }
+  if (pagesNeedsDns) {
+    extra.push(`DNS → ${zoneName} → Records → Add record → CNAME, Name app, Target ${pagesTarget}, Proxy status Proxied.`);
+    extra.push(`${appHost} is already registered on Pages when the log says Attached. The CNAME is the missing piece.`);
+  }
+  if (workerNeedsDns) {
+    extra.push(`Workers & Pages → ${workerScript} → Settings → Domains & Routes → Add → Custom domain → ${apiHost}.`);
+  }
+  writeSummary(["### Custom domains", report, extra.join("\n") || "Custom hostnames are attached."].join("\n\n"));
+  if (extra.length) process.exitCode = 2;
 }
 
 main().catch((error: unknown) => {
