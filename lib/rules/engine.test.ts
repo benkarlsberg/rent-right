@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { readdirSync, readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 import { DISCLAIMER_EN } from "@/lib/disclaimer";
 import { chainHash, GENESIS_HASH } from "@/lib/hash";
@@ -410,7 +410,12 @@ describe("evidence hash chain", () => {
 
 describe("supabase row level security", () => {
   it("enables RLS and a policy on every tenant table", () => {
-    const sql = readFileSync("supabase/migrations/001_init.sql", "utf8").toLowerCase();
+    const sql = readdirSync("supabase/migrations")
+      .filter((name) => name.endsWith(".sql"))
+      .sort()
+      .map((name) => readFileSync(`supabase/migrations/${name}`, "utf8"))
+      .join("\n")
+      .toLowerCase();
     const tables = [...sql.matchAll(/create table (?:if not exists )?public\.([a-z0-9_]+)/g)].map((match) => match[1]);
     expect(tables.length).toBeGreaterThan(5);
     for (const table of tables) {
@@ -418,5 +423,9 @@ describe("supabase row level security", () => {
       expect(sql).toContain(`on public.${table}`);
     }
     expect(sql).not.toContain("using (true)");
+    const storage = readFileSync("supabase/migrations/003_storage.sql", "utf8").toLowerCase();
+    expect(storage).toContain("tenant-files");
+    expect(storage).toContain("tenant_files_select");
+    expect(storage).toContain("auth.uid()");
   });
 });

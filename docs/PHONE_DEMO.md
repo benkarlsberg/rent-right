@@ -8,7 +8,7 @@ Keep two terminal windows open the whole time. Closing either one stops the demo
 
 ## What to install first
 
-1. **Node.js 22.13 or newer.** Download the installer from [nodejs.org](https://nodejs.org/). Version 24.3 or newer also works. The records server uses Node’s built-in SQLite (`node:sqlite` in `lib/db.ts`), which these versions include. After installing, open a terminal and run:
+1. **Node.js 22.13 or newer.** Download the installer from [nodejs.org](https://nodejs.org/). Version 24.3 or newer also works. After installing, open a terminal and run:
 
    ```bash
    node -v
@@ -23,7 +23,9 @@ Keep two terminal windows open the whole time. Closing either one stops the demo
    git --version
    ```
 
-3. **Expo Go on the phone.** This demo is Expo SDK 57 (`"expo": "~57.0.28"` in `mobile/package.json`). The Expo Go app on the phone has to be the SDK 57 build. An older build shows “Project is incompatible with this version of Expo Go.”
+3. **Docker Desktop.** The records live in Postgres. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), then open it once so it is running. If you already have Postgres, you can skip Docker and set `DATABASE_URL` in `.env.local` instead.
+
+4. **Expo Go on the phone.** This demo is Expo SDK 57 (`"expo": "~57.0.28"` in `mobile/package.json`). The Expo Go app on the phone has to be the SDK 57 build. An older build shows “Project is incompatible with this version of Expo Go.”
 
    - **Android:** Install [Expo Go from the Play Store](https://play.google.com/store/apps/details?id=host.exp.exponent) and update it. If the phone later says the project needs a newer Expo Go, the Play Store copy is behind SDK 57. On the computer, run:
 
@@ -61,7 +63,7 @@ cd rent-right
 Look for a folder named `mobile`. If it is missing, the phone demo is still on the pull-request branch. Run:
 
 ```bash
-git checkout cursor/rent-right-mvp-2143
+git checkout main
 ```
 
 You should now see `mobile` next to `package.json`.
@@ -90,12 +92,12 @@ On Windows PowerShell, that copy is `Copy-Item .env.example .env.local`.
 In the `rent-right` folder:
 
 ```bash
+docker compose up -d
+npm run db:migrate
 npm run dev
 ```
 
-That command is `next dev -H 0.0.0.0`. The server listens on every network interface, on **port 3000**, so the phone can reach it. Leave this window open.
-
-Node 22 prints `ExperimentalWarning: SQLite is an experimental feature`. That warning is expected. The server is still running.
+`docker compose up -d` starts Postgres. `npm run db:migrate` creates the tables. `npm run dev` is `next dev -H 0.0.0.0`. The server listens on every network interface, on **port 3000**, so the phone can reach it. Leave this window open. Run `npm run db:migrate` again after you pull new code.
 
 On the computer, open [http://localhost:3000](http://localhost:3000). The page says “The app is on your phone.”
 

@@ -8,7 +8,7 @@ export default async function RespondPage({ params, searchParams }: { params: Pr
   const { token } = await params;
   const query = await searchParams;
   const locale = await readLocale();
-  const message = messageByToken(token);
+  const message = await messageByToken(token);
   return (
     <main id="main" className="mx-auto max-w-lg px-4 py-10">
       <p className="serif text-3xl text-pine">Rent Right</p>

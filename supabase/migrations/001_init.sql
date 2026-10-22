@@ -1,23 +1,26 @@
--- Rent Right production schema for Supabase Postgres.
--- The local app uses SQLite with the same relationships so it runs without a cloud account.
--- Apply this file in the Supabase SQL editor or CLI. Enable MFA on the Supabase dashboard account.
--- Service-role keys bypass RLS; the Next.js server must still filter by membership.
+-- Rent Right schema for Supabase Postgres.
+-- Local dev and CI apply supabase/local/00_auth.sql first, then these migrations.
+-- Enable MFA on the Supabase dashboard account.
+-- The database owner bypasses RLS. Authenticated requests set role `authenticated`.
+-- A service-role key bypasses RLS. Do not put it in the browser.
 
 create extension if not exists pgcrypto;
 
 create or replace function public.is_unit_member(target_unit uuid)
 returns boolean
-language sql
+language plpgsql
 stable
 security definer
 set search_path = public
 as $$
-  select exists (
+begin
+  return exists (
     select 1
     from public.unit_members m
     where m.unit_id = target_unit
       and m.user_id = auth.uid()
   );
+end;
 $$;
 
 create table public.profiles (

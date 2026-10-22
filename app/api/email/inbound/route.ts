@@ -17,9 +17,9 @@ export async function POST(request: Request) {
   const to = Array.isArray(body.to) ? body.to.join(",") : body.to;
   const match = to.match(/u-[a-z0-9]+/i);
   if (!match) return new Response("No relay address", { status: 202 });
-  const unit = unitByRelay(match[0].toLowerCase());
+  const unit = await unitByRelay(match[0].toLowerCase());
   if (!unit) return new Response("Unknown unit", { status: 202 });
-  insertMessage({
+  await insertMessage({
     unitId: unit.id,
     userId: null,
     direction: "inbound",
@@ -30,9 +30,9 @@ export async function POST(request: Request) {
     deliveryStatus: "received",
     deliveryDetail: "Inbound relay message.",
   });
-  for (const userId of unitMemberUserIds(unit.id)) {
-    const user = getUser(userId);
-    addNotification(userId, "Landlord reply", body.subject || "New reply in your log", "/messages");
+  for (const userId of await unitMemberUserIds(unit.id)) {
+    const user = await getUser(userId);
+    await addNotification(userId, "Landlord reply", body.subject || "New reply in your log", "/messages");
     if (user) await sendTenantEmail(user.email, "Rent Right: a reply was logged", body.text || "A reply was logged. Open the app to read it.");
   }
   return new Response("ok");

@@ -91,8 +91,8 @@ function localeOf(user: User | null, input?: Record<string, unknown>): Locale {
   return user?.locale === "es" ? "es" : "en";
 }
 
-function sessionPayload(user: User) {
-  const unit = primaryUnit(user.id);
+async function sessionPayload(user: User) {
+  const unit = await primaryUnit(user.id);
   return {
     token: signSession(user.id),
     user: publicUser(user),
@@ -132,7 +132,7 @@ async function actor(): Promise<User> {
 
 async function withUnit(): Promise<{ user: User; unit: Unit }> {
   const user = await actor();
-  const unit = primaryUnit(user.id);
+  const unit = await primaryUnit(user.id);
   if (!unit) throw new Error("Add your unit first.");
   return { user, unit };
 }
@@ -187,7 +187,9 @@ function unitLocal(unit: Unit, locale: Locale) {
 
 export async function handlePhone(request: Request, path: string[]): Promise<Response> {
   try {
-    return await route(request, path);
+    const user = await currentUser();
+    const { runAsUser } = await import("@/lib/session");
+    return await runAsUser(user, () => route(request, path));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Something went wrong.";
     const status = message === "Sign in required." ? 401 : 400;
@@ -211,42 +213,44 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "POST" && key === "auth/magic") {
     const input = await readBody(request);
     const email = emailValue(text(input.email));
-    const { token } = createMagicLink(email);
-    if (process.env.RESEND_API_KEY && process.env.RESEND_FROM) {
+    const { token, supabase } = await createMagicLink(email);
+    if (token && process.env.RESEND_API_KEY && process.env.RESEND_FROM) {
       const link = `${appUrl()}/auth/verify?token=${token}`;
       await sendTenantEmail(email, "Your Rent Right sign-in link", `Sign in: ${link}\nThis link expires in 30 minutes.`);
       return json({ sent: true });
     }
+    if (supabase && !token) return json({ sent: true });
     return json({ sent: false, devToken: token });
   }
 
   if (method === "POST" && key === "auth/verify") {
     const input = await readBody(request);
-    const user = consumeMagicLink(text(input.token));
-    return json(sessionPayload(user));
+    const user = await consumeMagicLink(text(input.token));
+    return json(await sessionPayload(user));
   }
 
   if (method === "POST" && key === "auth/demo") {
     const id = await startSampleTenancy();
-    const user = getUser(id);
+    const user = await getUser(id);
     if (!user) throw new Error("Could not open the sample.");
-    return json(sessionPayload(user));
+    return json(await sessionPayload(user));
   }
 
   if (method === "GET" && key === "me") {
     const user = await actor();
-    return json(sessionPayload(user));
+    return json(await sessionPayload(user));
   }
 
   if (method === "POST" && key === "unit") {
     const user = await actor();
     const body = await readBody(request);
     const input = unitInput(body);
-    if (text(body.name)) updateUser(user.id, { name: text(body.name) });
-    const existing = primaryUnit(user.id);
-    const unit = existing ? updateUnit(user.id, existing.id, input) : createUnit(user.id, input);
-    const fresh = getUser(user.id)!;
-    return json({ ...sessionPayload(fresh), unit: publicUnit(unit) });
+    if (text(body.name)) await updateUser(user.id, { name: text(body.name) });
+    const existing = await primaryUnit(user.id);
+    const unit = existing ? await updateUnit(user.id, existing.id, input) : await createUnit(user.id, input);
+    const fresh = await getUser(user.id);
+    if (!fresh) throw new Error("Sign in required.");
+    return json({ ...(await sessionPayload(fresh)), unit: publicUnit(unit) });
   }
 
   if (method === "GET" && key === "home") return json(await homePayload());
@@ -256,7 +260,7 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "POST" && key === "lease/feedback") {
     const { user } = await withUnit();
     const input = await readBody(request);
-    addFeedback(user.id, text(input.reviewId), text(input.note) || "This looks wrong.");
+    await addFeedback(user.id, text(input.reviewId), text(input.note) || "This looks wrong.");
     return json({ ok: true });
   }
   if (method === "GET" && key === "log") return json(await logPayload());
@@ -268,7 +272,7 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "POST" && path[0] === "dates" && path[1]) {
     const user = await actor();
     const input = await readBody(request);
-    setDeadlineStatus(user.id, path[1], input.status === "done" ? "done" : "open");
+    await setDeadlineStatus(user.id, path[1], input.status === "done" ? "done" : "open");
     return json(await datesPayload());
   }
   if (method === "GET" && key === "deposit") return json(await depositPayload());
@@ -284,7 +288,7 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "POST" && key === "ledger") return json(await addPayment(await readBody(request)));
   if (method === "POST" && path[0] === "ledger" && path[2] === "void" && path[1]) {
     const user = await actor();
-    voidLedger(user.id, path[1]);
+    await voidLedger(user.id, path[1]);
     return json(await ledgerPayload());
   }
   if (method === "GET" && key === "condition") return json(await conditionPayload());
@@ -293,7 +297,7 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "POST" && key === "settings") return json(await saveSettings(await readBody(request)));
   if (method === "POST" && key === "invite") {
     const { user, unit } = await withUnit();
-    const token = createInvite(user.id, unit.id);
+    const token = await createInvite(user.id, unit.id);
     return json({ link: `${appUrl()}/invite/${token}` });
   }
   if (method === "POST" && key === "account/delete") {
@@ -311,9 +315,9 @@ async function homePayload() {
   const { user, unit } = await withUnit();
   const locale = user.locale;
   const today = todayISO();
-  const deadlines = listDeadlines(user.id, unit.id).filter((item) => item.status === "open");
-  const logs = listLogs(user.id, unit.id);
-  const rent = latestRentCheck(user.id, unit.id);
+  const deadlines = (await listDeadlines(user.id, unit.id)).filter((item) => item.status === "open");
+  const logs = await listLogs(user.id, unit.id);
+  const rent = await latestRentCheck(user.id, unit.id);
   const cards: { id: string; href: string; kicker: string; title: string; subtitle: string; detail: string; tone: string }[] = [];
 
   const upcoming = deadlines.find((item) => item.dueDate && item.dueDate >= today) || deadlines[deadlines.length - 1];
@@ -374,7 +378,7 @@ async function homePayload() {
 async function leasePayload() {
   const { user, unit } = await withUnit();
   const locale = user.locale;
-  const reviews = listLeaseReviews(user.id, unit.id).slice(0, 3).map((review) => ({
+  const reviews = (await listLeaseReviews(user.id, unit.id)).slice(0, 3).map((review) => ({
     id: review.id,
     filename: review.filename,
     when: formatTimestamp(review.createdAt, locale),
@@ -418,7 +422,7 @@ async function logPayload() {
   const { user, unit } = await withUnit();
   const locale = user.locale;
   return {
-    items: listLogs(user.id, unit.id).map((entry) => ({
+    items: (await listLogs(user.id, unit.id)).map((entry) => ({
       id: entry.id,
       kind: logKind(entry.type, locale),
       date: formatDate(entry.eventDate, locale),
@@ -430,7 +434,7 @@ async function logPayload() {
 async function logDetail(id: string) {
   const { user } = await withUnit();
   const locale = user.locale;
-  const entry = getLog(user.id, id);
+  const entry = await getLog(user.id, id);
   const flag = entry.flags.retaliation as { flagged?: boolean; explanation?: string; explanationEs?: string; ruleId?: string } | undefined;
   return {
     id: entry.id,
@@ -474,7 +478,7 @@ async function chatPayload() {
   const locale = user.locale;
   return {
     landlord: unit.landlordName || unit.landlordEmail,
-    items: listMessages(user.id, unit.id).map((message) => {
+    items: (await listMessages(user.id, unit.id)).map((message) => {
       const preview = chatPreview(message.body);
       return {
         id: message.id,
@@ -508,7 +512,7 @@ async function datesPayload() {
   const today = todayISO();
   return {
     notice: notice(locale),
-    items: listDeadlines(user.id, unit.id).map((item) => {
+    items: (await listDeadlines(user.id, unit.id)).map((item) => {
       const line = dueLine(item.dueDate, today, locale);
       return {
         id: item.id,
@@ -525,8 +529,8 @@ async function datesPayload() {
 async function depositPayload() {
   const { user, unit } = await withUnit();
   const locale = user.locale;
-  const deposit = getDeposit(user.id, unit.id);
-  const deadline = listDeadlines(user.id, unit.id).find((item) => item.kind === "deposit" && item.status === "open");
+  const deposit = await getDeposit(user.id, unit.id);
+  const deadline = (await listDeadlines(user.id, unit.id)).find((item) => item.kind === "deposit" && item.status === "open");
   const line = dueLine(deadline?.dueDate || null, todayISO(), locale);
   return {
     title: deadline ? line.title : tx(locale, "No move-out date", "Sin fecha de salida"),
@@ -542,7 +546,7 @@ async function depositPayload() {
 
 async function saveDepositForm(input: Record<string, unknown>) {
   const { user, unit } = await withUnit();
-  saveDepositAndDeadline(user, unit, {
+  await saveDepositAndDeadline(user, unit, {
     amountCents: dollars(input.amount),
     receivedDate: dateOrNull(input.receivedDate),
     moveOutDate: dateOrNull(input.moveOutDate),
@@ -556,7 +560,7 @@ async function saveDepositForm(input: Record<string, unknown>) {
 async function increasePayload() {
   const { user, unit } = await withUnit();
   const locale = user.locale;
-  const saved = latestRentCheck(user.id, unit.id);
+  const saved = await latestRentCheck(user.id, unit.id);
   const result = saved?.result;
   return {
     jurisdiction: unit.jurisdiction,
@@ -606,15 +610,16 @@ async function runIncrease(input: Record<string, unknown>) {
     lastIncreaseDate: dateOrNull(input.lastIncreaseDate),
     claimsExemption: input.claimsExemption === true,
   });
-  saveRentCheck(user.id, unit.id, input, result);
+  await saveRentCheck(user.id, unit.id, input, result);
   return increasePayload();
 }
 
-function assistantCards(user: User) {
+async function assistantCards(user: User) {
   const locale = user.locale;
-  return listAssistant(user.id).map((row) => {
+  const rows = await listAssistant(user.id);
+  return rows.map((row) => {
     if (row.role === "user") return { role: "user" as const, text: row.content };
-    const ids = JSON.parse(row.rule_ids) as string[];
+    const ids = Array.isArray(row.rule_ids) ? row.rule_ids.map(String) : JSON.parse(String(row.rule_ids || "[]")) as string[];
     const rules = ids.map((id) => getRule(id)).filter((rule) => rule != null);
     const handoff = /cannot tell you what to do|no puede decirle qué hacer/i.test(row.content);
     const unsure = row.unsure === 1 || rules.length === 0;
@@ -633,12 +638,12 @@ function assistantCards(user: User) {
 
 async function assistantPayload() {
   const user = await actor();
-  return { items: assistantCards(user), notice: notice(user.locale) };
+  return { items: await assistantCards(user), notice: notice(user.locale) };
 }
 
 async function ask(input: Record<string, unknown>) {
   const user = await actor();
-  const unit = primaryUnit(user.id);
+  const unit = await primaryUnit(user.id);
   await askAssistant(user, unit, text(input.question), user.locale);
   return assistantPayload();
 }
@@ -662,7 +667,7 @@ function chips(locale: Locale) {
 async function threadPayload() {
   const { user, unit } = await withUnit();
   const locale = user.locale;
-  const rows = listAssistant(user.id);
+  const rows = await listAssistant(user.id);
   const items = rows.map((row) => {
     if (row.role === "user") return { role: "user" as const, text: row.content };
     const card = parseCard(row.content);
@@ -712,9 +717,10 @@ async function recordsPayload() {
   const { user, unit } = await withUnit();
   const locale = user.locale;
   const today = todayISO();
-  const next = listDeadlines(user.id, unit.id).find((item) => item.status === "open" && item.dueDate);
+  const next = (await listDeadlines(user.id, unit.id)).find((item) => item.status === "open" && item.dueDate);
   const line = next ? dueLine(next.dueDate, today, locale) : null;
-  const review = listLeaseReviews(user.id, unit.id)[0];
+  const reviews = await listLeaseReviews(user.id, unit.id);
+  const review = reviews[0];
   const finding = review?.result.findings.find((item) => item.label !== "looks_standard") || review?.result.findings[0];
   return {
     name: user.name,
@@ -725,7 +731,7 @@ async function recordsPayload() {
     next: next && line
       ? { title: line.title, status: line.subtitle, detail: `${locale === "es" ? next.explanationEs : next.explanation}\n\n${next.ruleId}` }
       : null,
-    notes: listLogs(user.id, unit.id).slice(0, 3).map((item) => ({
+    notes: (await listLogs(user.id, unit.id)).slice(0, 3).map((item) => ({
       id: item.id,
       line: `${logKind(item.type, locale)} · ${item.eventDate}`,
     })),
@@ -743,7 +749,7 @@ async function ledgerPayload() {
   const { user, unit } = await withUnit();
   const locale = user.locale;
   return {
-    items: listLedger(user.id, unit.id).map((row) => ({
+    items: (await listLedger(user.id, unit.id)).map((row) => ({
       id: row.id,
       amount: formatMoney(row.amount_cents, locale),
       date: formatDate(row.paid_on, locale),
@@ -757,7 +763,7 @@ async function addPayment(input: Record<string, unknown>) {
   const { user, unit } = await withUnit();
   const amount = dollars(input.amount);
   if (!amount) throw new Error("Enter the amount you paid.");
-  addLedger(user.id, unit.id, {
+  await addLedger(user.id, unit.id, {
     amountCents: amount,
     periodStart: dateOrNull(input.periodStart),
     periodEnd: dateOrNull(input.periodEnd),
@@ -776,7 +782,7 @@ async function conditionPayload() {
   const locale = user.locale;
   return {
     rooms: ROOMS,
-    reports: listConditions(user.id, unit.id).map((report) => ({
+    reports: (await listConditions(user.id, unit.id)).map((report) => ({
       id: report.id,
       kind: report.kind === "move_out" ? tx(locale, "Move-out", "Salida") : tx(locale, "Move-in", "Entrada"),
       when: formatTimestamp(report.createdAt, locale),
@@ -806,7 +812,7 @@ async function saveCondition(input: Record<string, unknown>) {
       room.photoFileId = await saveFile(user.id, unit.id, `${room.room}.jpg`, "image/jpeg", Buffer.from(match.photoBase64, "base64"));
     }
   }
-  insertCondition(user.id, unit.id, text(input.kind) === "move_out" ? "move_out" : "move_in", rooms, text(input.notes));
+  await insertCondition(user.id, unit.id, text(input.kind) === "move_out" ? "move_out" : "move_in", rooms, text(input.notes));
   return conditionPayload();
 }
 
@@ -829,12 +835,13 @@ async function packetPayload() {
 async function saveSettings(input: Record<string, unknown>) {
   const user = await actor();
   const locale: Locale = input.locale === "es" ? "es" : input.locale === "en" ? "en" : user.locale;
-  updateUser(user.id, {
+  await updateUser(user.id, {
     name: text(input.name) || user.name,
     phone: text(input.phone),
     locale,
     lowBandwidth: input.lowBandwidth === true,
   });
-  const fresh = getUser(user.id)!;
+  const fresh = await getUser(user.id);
+  if (!fresh) throw new Error("Sign in required.");
   return sessionPayload(fresh);
 }

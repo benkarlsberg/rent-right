@@ -21,6 +21,6 @@ export async function POST(request: Request) {
   };
   const status = map[body.type];
   if (!status) return new Response("ignored", { status: 202 });
-  updateMessageStatus(id, status, body.type, body.type === "email.opened");
+  await updateMessageStatus(id, status, body.type, body.type === "email.opened");
   return new Response("ok");
 }

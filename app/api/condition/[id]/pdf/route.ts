@@ -1,12 +1,13 @@
 import { getCondition } from "@/lib/db";
 import { renderPdf } from "@/lib/pdf";
-import { currentUser } from "@/lib/session";
+import { adoptActor, currentUser } from "@/lib/session";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const user = await currentUser();
   if (!user) return new Response("Sign in required.", { status: 401 });
+  adoptActor(user.id);
   const { id } = await context.params;
-  const report = getCondition(user.id, id);
+  const report = await getCondition(user.id, id);
   const lines = [
     `# ${report.kind} condition report`,
     `Stored ${report.createdAt}`,
