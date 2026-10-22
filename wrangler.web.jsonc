@@ -1,0 +1,9 @@
+{
+  "name": "rent-right-web",
+  "compatibility_date": "2026-10-22",
+  "workers_dev": true,
+  "assets": {
+    "directory": "mobile/dist",
+    "not_found_handling": "single-page-application"
+  }
+}

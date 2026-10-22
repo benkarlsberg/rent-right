@@ -131,15 +131,36 @@ jobs:
           npm ci
           npx expo export --platform web
       - name: Create the Pages project
+        id: pages
+        continue-on-error: true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx wrangler pages project create rent-right-web --production-branch main || echo "Pages project already exists."
+        run: npx tsx scripts/create-pages-project.ts
       - name: Deploy Expo web to Pages
+        if: steps.pages.outcome == 'success'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx wrangler pages deploy mobile/dist --project-name rent-right-web --branch main --commit-dirty=true
+        run: |
+          set -o pipefail
+          npx wrangler pages deploy mobile/dist --project-name rent-right-web --branch main --commit-dirty=true | tee pages.log
+          url=$(grep -oE 'https://[A-Za-z0-9.-]+\.pages\.dev' pages.log | head -1 || true)
+          echo "Web URL: ${url:-https://rent-right-web.pages.dev}"
+      - name: Deploy Expo web as a static Worker
+        if: steps.pages.outcome != 'success'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -o pipefail
+          npx wrangler deploy --config wrangler.web.jsonc | tee web.log
+          url=$(grep -oE 'https://[A-Za-z0-9.-]+\.workers\.dev' web.log | head -1 || true)
+          if [ -z "$url" ]; then
+            echo "Could not read the web URL from the deploy log."
+            exit 1
+          fi
+          echo "Web URL: $url"
       - name: Remove the resolved database URL
         if: always()
         run: rm -f .database-url
