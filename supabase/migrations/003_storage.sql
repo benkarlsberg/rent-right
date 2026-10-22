@@ -47,4 +47,7 @@ begin
       for select to authenticated
       using (id = 'tenant-files');
   end if;
+exception
+  when insufficient_privilege then
+    raise notice 'storage policies were left unchanged';
 end $$;

@@ -9,18 +9,33 @@ type Scope = { userId: string | null };
 const actors = new AsyncLocalStorage<Scope>();
 let pool: Sql | null = null;
 
+const connectionHint = "Use the Supabase Postgres URI (direct or session pooler, port 5432).";
+
+export function normalizeDatabaseUrl(raw: string): string {
+  const text = unwrapDatabaseUrl(raw);
+  if (!text) throw new Error("DATABASE_URL is required. Use local Postgres or the Supabase connection string.");
+  const extracted = extractConnection(text, raw);
+  const rebuilt = rebuildUserinfo(extracted);
+  assertDriverAccepts(rebuilt, raw);
+  return withSupabaseSsl(rebuilt);
+}
+
 export function databaseUrl(): string {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is required. Use local Postgres or the Supabase connection string.");
-  return url;
+  return normalizeDatabaseUrl(url);
 }
 
 export function getSql(): Sql {
   if (!pool) {
-    pool = postgres(databaseUrl(), {
+    const url = databaseUrl();
+    const parsed = new URL(url);
+    const transactionPool = parsed.port === "6543" || parsed.searchParams.get("pgbouncer") === "true";
+    pool = postgres(url, {
       max: 8,
       idle_timeout: 20,
-      connect_timeout: 15,
+      connect_timeout: 20,
+      prepare: !transactionPool,
       onnotice: () => {},
       types: {
         bigint: {
@@ -40,6 +55,106 @@ export async function closeSql(): Promise<void> {
     await pool.end({ timeout: 5 });
     pool = null;
   }
+}
+
+function unwrapDatabaseUrl(raw: string): string {
+  let text = raw.replace(/^\uFEFF/, "").trim();
+  for (let i = 0; i < 2; i += 1) {
+    text = text.replace(/^(?:export\s+)?DATABASE_URL\s*=\s*/i, "").trim();
+    const wrapped = text.match(/^(["'“”])([\s\S]*)\1$/);
+    if (wrapped) text = wrapped[2].trim();
+  }
+  return text.replace(/^jdbc:/i, "").trim();
+}
+
+function extractConnection(text: string, raw: string): string {
+  if (/^postgres(?:ql)?:\/\//i.test(text)) return text;
+  const embedded = text.match(/postgres(?:ql)?:\/\/\S+/i);
+  if (embedded) return embedded[0];
+  if (/(^|\s)(?:host|user|password)\s*=/i.test(text)) return libpqToUrl(text, raw);
+  if (/^https?:\/\//i.test(text)) {
+    throw new Error(`DATABASE_URL is an HTTP URL, not a Postgres connection string (${describeDatabaseUrl(raw)}). ${connectionHint}`);
+  }
+  throw new Error(`DATABASE_URL is not a valid Postgres connection string (${describeDatabaseUrl(raw)}). ${connectionHint}`);
+}
+
+function libpqToUrl(text: string, raw: string): string {
+  const values = new Map<string, string>();
+  const pattern = /([A-Za-z_]+)\s*=\s*(?:'([^']*)'|"([^"]*)"|(\S+))/g;
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    for (const match of trimmed.matchAll(pattern)) {
+      values.set(match[1].toLowerCase(), match[2] ?? match[3] ?? match[4] ?? "");
+    }
+  }
+  const host = values.get("host");
+  const user = values.get("user") ?? values.get("username");
+  if (!host || !user) {
+    throw new Error(`DATABASE_URL is missing host or user (${describeDatabaseUrl(raw)}). ${connectionHint}`);
+  }
+  const pass = values.get("password") ?? values.get("pass") ?? "";
+  const port = values.get("port") ?? "5432";
+  const database = values.get("dbname") ?? values.get("database") ?? "postgres";
+  const sslmode = values.get("sslmode");
+  const query = sslmode ? `?sslmode=${encodeURIComponent(sslmode)}` : "";
+  return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${host}:${port}/${database}${query}`;
+}
+
+function rebuildUserinfo(url: string): string {
+  const match = url.match(/^(postgres(?:ql)?):\/\/([\s\S]+)$/i);
+  if (!match) return url;
+  const scheme = match[1].toLowerCase();
+  const rest = match[2];
+  const at = rest.lastIndexOf("@");
+  if (at === -1) return `${scheme}://${rest}`;
+  const userinfo = rest.slice(0, at);
+  const after = rest.slice(at + 1);
+  const colon = userinfo.indexOf(":");
+  const user = colon === -1 ? userinfo : userinfo.slice(0, colon);
+  const pass = colon === -1 ? "" : userinfo.slice(colon + 1);
+  const encodedUser = encodeURIComponent(safeDecode(user));
+  const encodedPass = encodeURIComponent(safeDecode(pass));
+  const auth = colon === -1 ? encodedUser : `${encodedUser}:${encodedPass}`;
+  return `${scheme}://${auth}@${after}`;
+}
+
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function withSupabaseSsl(url: string): string {
+  if (!/supabase\.(co|com)/i.test(url)) return url;
+  if (/[?&]sslmode=/i.test(url)) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}sslmode=require`;
+}
+
+function assertDriverAccepts(url: string, raw: string): void {
+  try {
+    let host = url.slice(url.indexOf("://") + 3).split(/[?/]/)[0];
+    host = decodeURIComponent(host.slice(host.indexOf("@") + 1));
+    new URL(url.replace(host, host.split(",")[0]));
+  } catch {
+    throw new Error(`DATABASE_URL is not a valid Postgres connection string (${describeDatabaseUrl(raw)}). ${connectionHint}`);
+  }
+}
+
+function describeDatabaseUrl(raw: string): string {
+  const scheme = raw.trim().match(/^([A-Za-z][A-Za-z0-9+.-]*):/);
+  return [
+    `length=${raw.length}`,
+    `scheme=${scheme ? scheme[1].toLowerCase() : "none"}`,
+    `lines=${raw.split(/\r?\n/).length}`,
+    `whitespace=${/\s/.test(raw)}`,
+    `quotes=${/["'“”]/.test(raw)}`,
+    `at=${(raw.match(/@/g) ?? []).length}`,
+    `hash=${raw.includes("#")}`,
+    `brackets=${/[[\]]/.test(raw)}`,
+  ].join(", ");
 }
 
 function placeholders(sql: string): string {
