@@ -1,15 +1,16 @@
 import { getLog, primaryUnit, unitAddress } from "@/lib/db";
 import { certifiedMailLetter } from "@/lib/letters";
 import { renderPdf } from "@/lib/pdf";
-import { currentUser } from "@/lib/session";
+import { adoptActor, currentUser } from "@/lib/session";
 
 export async function GET(request: Request) {
   const user = await currentUser();
   if (!user) return new Response("Sign in required.", { status: 401 });
-  const unit = primaryUnit(user.id);
+  adoptActor(user.id);
+  const unit = await primaryUnit(user.id);
   if (!unit) return new Response("Add a unit first.", { status: 400 });
   const logId = new URL(request.url).searchParams.get("log") || "";
-  const entry = getLog(user.id, logId);
+  const entry = await getLog(user.id, logId);
   const text = certifiedMailLetter({
     letterDate: new Date().toISOString().slice(0, 10),
     tenantName: user.name || user.email,

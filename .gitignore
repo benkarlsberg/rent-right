@@ -12,3 +12,6 @@ data/blobs
 next-env.d.ts
 .DS_Store
 coverage
+.open-next
+.wrangler
+worker-secrets.json

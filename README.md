@@ -1,136 +1,236 @@
 # Rent Right
 
-**On your own iPhone or Android:** follow the [phone demo guide](docs/PHONE_DEMO.md). It walks through Node, Git, Expo Go, the same Wi-Fi, and **View a sample Los Angeles tenancy** without assuming you write code.
+Free records and general legal information for renters in California. It is not a law firm. Nothing in the app is legal advice, and using it does not create an attorney-client relationship.
 
-Free records and general legal information for renters anywhere in California. Statewide rules apply to every California address. Local placeholder packs are loaded for jurisdictions with their own tenant ordinances, including the City of Los Angeles, unincorporated Los Angeles County, and the City of San Diego. The full list is [docs/COVERAGE.md](docs/COVERAGE.md). Counties without an unincorporated ordinance are marked state law only. It is not a law firm. Nothing in the app is legal advice, and using it does not create an attorney-client relationship.
+> This is general legal information, not legal advice, and no attorney-client relationship is created. Laws change and depend on your facts. For advice, contact a licensed California attorney or legal aid.
 
-Phase 1 covers the product plan’s “now” features only: email sign-in, a unit profile, lease review grounded in a versioned rules library, a timestamped request and notice log, landlord email through a per-unit relay, deadline tracking, a photo condition report, a 21-day security-deposit tracker with a letter the tenant sends, an AB 1482 / LA RSO rent-increase checker, an English and Spanish rights assistant, a rent ledger, and a factual evidence packet. There are no landlord ratings, no texts to landlords, no service referrals, and no paid features.
+The short line on a result is “General information, not legal advice.”
 
-## What runs locally
+**Live demo:** [demo link placeholder](https://demo.rentright.example) — not deployed yet. The URL will replace this once Cloudflare and Supabase secrets are set. See [What Ben needs to go live](#what-ben-needs-to-go-live).
 
-`npm run dev` uses **SQLite** (`node:sqlite`) at `data/rent-right.sqlite`. No Supabase, Resend, Gemini, or R2 account is required.
+## Screenshots
 
-`supabase/migrations/001_init.sql` is the Postgres schema for a later Supabase deploy. It enables row-level security on every table and does not use a public `using (true)` policy. **The Next.js server does not connect to Supabase.** Membership checks in `lib/db.ts` are the access control for the local app. When you do host Postgres, turn on MFA for the Supabase dashboard, and do not put the service-role key in the browser. A service-role key bypasses RLS.
+The phone opens on a chat. The sample Los Angeles tenancy is Maya Chen at 1842 N Echo Park Ave, Unit 3.
 
-Lease text, message bodies, and uploaded files are encrypted with AES-256-GCM before they are stored. Without `DATA_ENCRYPTION_KEY`, development uses a key derived from `AUTH_SECRET` and prints a warning. Production throws if either secret is missing.
+![Chat with the sample tenancy](docs/images/chat.webp)
 
-The renter UI is an Expo app in `mobile/` (iOS, Android, and Expo web). The Next.js process is the API: auth, the rules engine, SQLite, encryption, and landlord email. `http://localhost:3000` is only a short note plus landlord reply links, terms, and privacy.
+A repair stays “Not sent” until the tenant confirms. After confirmation the card shows the email was saved, and nothing is sent unless Resend is configured.
 
-## Setup
+![Repair email after confirmation](docs/images/repair-confirmed.webp)
+
+![Records for the sample tenancy](docs/images/records.webp)
+
+## Architecture
+
+```mermaid
+flowchart LR
+  phone["Expo app\niOS, Android, web"]
+  worker["Next.js API\nCloudflare Worker via OpenNext"]
+  db["Supabase Postgres\nRLS on every tenant table"]
+  auth["Supabase Auth\nmagic link"]
+  mail["Resend\noptional"]
+  model["Gemini\noptional"]
+  files["Encrypted files\nlocal disk, R2, or private tenant-files bucket"]
+
+  phone -->|"HTTPS /api/v1"| worker
+  worker --> db
+  worker --> auth
+  worker --> mail
+  worker --> model
+  worker --> files
+```
+
+The Expo app is the renter interface. The Next.js server is the API: auth, the rules engine, Postgres, encryption, and landlord email. `http://localhost:3000` is a short note plus landlord reply links, terms, and privacy.
+
+Deadlines, caps, and coverage come from the rules engine. A model may choose an intent or explain a library answer. It does not invent a date, a percentage, or a citation. Every result quotes a library rule ID or says unsure.
+
+## Demo walkthrough
+
+1. Start Postgres, migrate, and run the API (`docker compose up -d`, `npm run db:migrate`, `npm run dev`).
+2. In `mobile/`, run `npx expo start` and open Expo web or Expo Go. The phone guide is [docs/PHONE_DEMO.md](docs/PHONE_DEMO.md).
+3. On the welcome screen, tap **View a sample Los Angeles tenancy**. That resets `demo@rentright.local` (Maya Chen, 1842 N Echo Park Ave Unit 3, landlord Elena Vasquez).
+4. The chat shows the repair, the rent increase, and the deposit cards. Open **Learn more** for the full disclaimer and the rule.
+5. Describe a new repair, for example “The kitchen sink is leaking.” The card says **Not sent**. Nothing is emailed.
+6. Tap **Send to landlord**. The card updates to **Saved** when Resend is unset. The message is stored on the Landlord tab. With Resend configured, the same confirmation is what actually sends it.
+7. Paste a lease or use the sample lease. The review quotes a library rule ID or **Unsure**. Identical text is cached.
+
+Magic links last 30 minutes. Without Resend and without Supabase, the phone signs you in directly. Limit is 5 links per email per hour.
+
+## Feature status
+
+| Feature | Status |
+| --- | --- |
+| Chat-first phone (Chat, Landlord, Records) | Done |
+| Sample Los Angeles tenancy | Done |
+| Email magic link (local HMAC, or Supabase Auth when configured) | Done |
+| Unit profile and roommate invite | Done |
+| Lease review grounded in the rules library | Done |
+| Repair log with confirm-before-send | Done |
+| Landlord relay email | Done locally; delivery needs Resend |
+| Deadline tracker, deposit countdown, rent ledger | Done |
+| Condition report and factual evidence packet | Done |
+| Demand letter the tenant fills and sends themselves | Done |
+| English and Spanish UI | Done |
+| Statewide rules and local placeholder packs | Done, pending clinic review |
+| Postgres, migrations, RLS, encrypted message bodies and files | Done |
+| GitHub Actions CI | Done |
+| Cloudflare Worker + Pages deploy | Configured; waits on secrets |
+| Live public demo | Placeholder |
+| Clinic-approved rule text and cap percentages | Later |
+| Volunteer Spanish legal review | Later |
+| Photo OCR | Placeholder unless `GEMINI_API_KEY` is set |
+| Web push | Later (VAPID names are reserved) |
+| Landlord ratings, SMS, referrals, paid features | Later — out of scope |
+
+Every library entry is `placeholder: true`, `clinicReview: "pending_clinic_review"`, `spanishReview: "pending_volunteer_review"`, version `2026-10-12-draft1`. The phone shows “Rules pending clinic review.” Do not treat the percentages or clause labels as approved legal advice. Coverage is listed in [docs/COVERAGE.md](docs/COVERAGE.md).
+
+## Local setup
+
+Node.js 22.13 or newer.
 
 ```bash
 npm install
+cd mobile && npm install && cd ..
+docker compose up -d
 cp .env.example .env.local
+npm run db:migrate
 npm test
 npm run dev
+```
+
+`DATABASE_URL` defaults to `postgres://rent:rent@127.0.0.1:5432/rent_right` when it is unset in development. Tests use `rent_right_test` on that same server so they do not wipe the dev database. Create it once:
+
+```bash
+docker compose exec postgres createdb -U rent rent_right_test
+```
+
+Seed only the synthetic sample tenancy:
+
+```bash
+npm run db:seed
 ```
 
 In a second terminal:
 
 ```bash
 cd mobile
-npm install
 npx expo start
 ```
 
-Then:
+Without Docker, point `DATABASE_URL` at any Postgres 16 database and run `npm run db:migrate`. On a hosted Supabase project, `supabase db push` applies `supabase/migrations`. The local auth stub in `supabase/local/00_auth.sql` is applied only when `auth.uid()` does not already exist, so it is not loaded on hosted Supabase.
 
-- **Your phone:** [docs/PHONE_DEMO.md](docs/PHONE_DEMO.md). This app is Expo SDK 57, so Expo Go on the phone needs to be the SDK 57 build. Keep the phone on the same Wi-Fi. The app calls port 3000 on the computer running Metro. `npm run dev` listens on all interfaces so the phone can reach it.
-- **iOS Simulator** (macOS): press `i` in the Expo terminal.
-- **Android emulator:** press `a`. The emulator reaches the API at `http://10.0.2.2:3000` unless you set `EXPO_PUBLIC_API_URL`.
-- **Browser preview:** press `w`, or run `npx expo start --web`.
+Lease text is not stored in full. Message bodies and uploaded files are encrypted with AES-256-GCM before they are stored. Without `DATA_ENCRYPTION_KEY`, development uses a key derived from `AUTH_SECRET` and prints a warning. Production throws if either secret is missing.
 
-If Metro and the API are on different hosts, set `EXPO_PUBLIC_API_URL` in `mobile/.env` (for example `http://192.168.1.20:3000`).
+The private storage bucket is `tenant-files`. Object names are `{user_id}/{file_id}`. Bytes stay encrypted by the app. Row level security is enabled on every tenant table and on that bucket.
 
-On the welcome screen, **View a sample Los Angeles tenancy** resets `demo@rentright.local` (Maya Chen, 1842 N Echo Park Ave, Unit 3) with a lease review, a repair log, a rent-increase notice inside 180 days of that repair, a chat thread of the relay mail, a deposit countdown, a rent check, a ledger, and a move-in condition report.
+## What Ben needs to go live
 
-Magic links last 30 minutes. Without `RESEND_API_KEY` and `RESEND_FROM`, the phone signs you in directly. With Resend, the email link opens `/open` and shows a code you can paste on the welcome screen. Limit is 5 links per email per hour.
+Create these accounts. Turn on MFA for Supabase and Cloudflare.
 
-Legal results show one short line, “General information, not legal advice.” **Learn more** opens the full disclaimer. Citations, rule explanations, and email footers work the same way. Landlord mail is a chat: you on the right, the landlord on the left. Sending still writes the timestamped relay email.
-
-## Environment
-
-Copy `.env.example` to `.env.local`. Do not commit `.env.local` or any real secret.
-
-| Variable | Role |
+| Account | What to create |
 | --- | --- |
-| `AUTH_SECRET` | Signs the session token (phone `Authorization: Bearer`, and the browser cookie for landlord links). Required in production. |
-| `EXPO_PUBLIC_API_URL` | Optional. Set in `mobile/.env` when the phone cannot infer the API host. |
-| `DATA_ENCRYPTION_KEY` | 32-byte base64 AES key. Required in production. |
-| `NEXT_PUBLIC_APP_URL` | Absolute URL used in mail and response links. Default `http://localhost:3000`. |
-| `DATABASE_PATH` | SQLite file. Default `data/rent-right.sqlite`. |
-| `RELAY_DOMAIN` | Domain for `u-…@domain` relay addresses. |
-| `RESEND_API_KEY`, `RESEND_FROM` | Outbound mail. Blank means the message is saved and marked `local_only`. |
-| `EMAIL_WEBHOOK_SECRET` | Bearer token for `POST /api/email/inbound` and `POST /api/email/webhook`. |
-| `GEMINI_API_KEY` | Optional. Paid Gemini tier for photo OCR and for filling clauses the library left as unsure. |
-| `OPENAI_API_KEY` | Optional fallback when Gemini is unset. |
-| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | Optional Cloudflare R2. Blank stores encrypted blobs in `data/blobs/`. |
-| `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Documented for a future Postgres deploy. Not read at boot. |
-| `CRON_SECRET` | Bearer token for `POST /api/cron/reminders`. |
-| `VAPID_*` | Reserved. Reminders are in-app, plus email when Resend is set. Web push is not wired. |
+| [Supabase](https://supabase.com) | Project. Auth email provider. Postgres. Run the migrations. Private bucket `tenant-files` (the migration creates the policies when the storage tables exist). |
+| [Cloudflare](https://dash.cloudflare.com) | Account. API token with Workers and Pages edit permission. Note the account ID. |
+| [Google AI Studio](https://aistudio.google.com) | Gemini API key. Optional. Paid tier so prompts are not used for training. |
+| [Resend](https://resend.com) | API key and a verified from-address. Optional. Without it, mail is saved and not sent. |
 
-Generate a key:
+`DATABASE_URL` must be the Supabase **postgres** connection string (direct, or the session pooler). The API sets the `authenticated` role per request so RLS applies. Do not use the anon key as `DATABASE_URL`. Do not put `SUPABASE_SERVICE_ROLE_KEY` in the Expo app or any `EXPO_PUBLIC_` / `NEXT_PUBLIC_` variable.
+
+Add these as **GitHub Actions secrets** on the repository (Settings → Secrets and variables → Actions). The deploy workflow skips cleanly when any required secret is missing.
+
+| GitHub secret | Required to deploy | Where it comes from |
+| --- | --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Yes | Cloudflare API token |
+| `CLOUDFLARE_ACCOUNT_ID` | Yes | Cloudflare account ID |
+| `DATABASE_URL` | Yes | Supabase postgres URI |
+| `SUPABASE_URL` | Yes | Supabase project URL |
+| `SUPABASE_ANON_KEY` | Yes | Supabase anon key |
+| `DATA_ENCRYPTION_KEY` | Yes | 32-byte base64 key you generate |
+| `AUTH_SECRET` | Yes | Long random string you generate |
+| `SUPABASE_SERVICE_ROLE_KEY` | Recommended | Supabase service role. Server only. |
+| `NEXT_PUBLIC_APP_URL` | Recommended | Public API origin, also baked into the Expo web export as `EXPO_PUBLIC_API_URL` |
+| `GEMINI_API_KEY` | Optional | Google AI Studio |
+| `RESEND_API_KEY` | Optional | Resend |
+| `RESEND_FROM` | Optional | Verified Resend from-address |
+| `RELAY_DOMAIN` | Optional | Domain for `u-…@domain` relay addresses |
+| `EMAIL_WEBHOOK_SECRET` | Optional | Bearer token for inbound mail and delivery webhooks |
+| `CRON_SECRET` | Optional | Bearer token for `POST /api/cron/reminders` |
+
+After the secrets exist, a push to `main` builds the OpenNext Worker, deploys it, exports Expo web, and deploys that static site to Cloudflare Pages project `rent-right-web`. CI on pull requests does not deploy. CI runs lint, typecheck, unit and integration tests against Postgres 16, `next build`, and `npx expo export --platform web`.
+
+Workers reach Postgres over TCP. Use the Supabase session pooler (or Cloudflare Hyperdrive pointed at it) as `DATABASE_URL`. The transaction pooler on port 6543 is a poor fit for the role-switching the API does.
+
+Generate the encryption key:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
+## Environment
+
+Copy `.env.example` to `.env.local`. Do not commit `.env.local`.
+
+| Variable | Role |
+| --- | --- |
+| `DATABASE_URL` | Postgres connection string. Required in production. |
+| `AUTH_SECRET` | Signs the local session token. Required in production. |
+| `DATA_ENCRYPTION_KEY` | 32-byte base64 AES key. Required in production. |
+| `NEXT_PUBLIC_APP_URL` | Absolute URL used in mail and response links. |
+| `EXPO_PUBLIC_API_URL` | Set in `mobile/.env` when the phone cannot infer the API host. |
+| `RELAY_DOMAIN` | Domain for `u-…@domain` relay addresses. |
+| `RESEND_API_KEY`, `RESEND_FROM` | Outbound mail. Blank means the message is saved and marked `local_only`. |
+| `EMAIL_WEBHOOK_SECRET` | Bearer token for inbound mail and provider webhooks. |
+| `GEMINI_API_KEY` | Optional photo OCR and for filling clauses the library left as unsure. |
+| `OPENAI_API_KEY` | Optional fallback when Gemini is unset. |
+| `R2_*` | Optional Cloudflare R2. Blank stores encrypted blobs in `data/blobs/`. |
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Turn on Supabase Auth. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-only. Mints magic links. Bypasses RLS if misused. |
+| `CRON_SECRET` | Bearer token for the reminder job. |
+| `VAPID_*` | Reserved. Web push is not wired. |
+
 ## Rules library
 
-`lib/rules/library.ts` assembles version `2026-10-12-draft1`. Statewide rules are `lib/rules/cities/statewide.ts`. Each loaded city is one file under `lib/rules/cities/` that exports `pack`. Every entry is a **placeholder**: `placeholder: true`, `clinicReview: "pending_clinic_review"`, and `spanishReview: "pending_volunteer_review"`. Each entry cites an official government URL. The phone shows “Rules pending clinic review.” The full clinic note opens from Learn more. Do not treat the percentages or clause labels as approved legal advice.
+`lib/rules/library.ts` assembles version `2026-10-12-draft1`. Statewide rules are `lib/rules/cities/statewide.ts`. Each loaded city is one file under `lib/rules/cities/` that exports `pack`. Statute text for the statewide rent cap is Civil Code §1947.12.
 
 ### Adding a city
 
-Hand-written packs for the City of Los Angeles, unincorporated Los Angeles County, and the City of San Diego stay in their own files. Every other loaded ordinance is a record in `lib/rules/cities/catalog.ts`. `buildPack` turns that record into a placeholder rule with `clinicReview: "pending_clinic_review"`.
+Hand-written packs for the City of Los Angeles, unincorporated Los Angeles County, and the City of San Diego stay in their own files. Every other loaded ordinance is a record in `lib/rules/cities/catalog.ts`.
 
-1. Add a record to `ORDINANCES`. Cite the official page in `sourceUrl`. Set `effectiveDate` only when that page states one. Otherwise leave it null and say the effective date is unsure in `adoptedNote`.
-2. Set `capStatus` to `"published"` only when the Attorney General chart, or the official page, states one percentage and the window it belongs to. Copy that figure. Do not invent one. If the chart says to check with the city, gives more than one figure, or the base is not current rent, set `capStatus` to `"unsure"` and do not put a percentage in the record. A just-cause or harassment ordinance with no local percentage uses `"none"`.
-3. If the unincorporated county has its own ordinance, set `match` to `"unincorporated"` and point that county at the pack in `lib/rules/cities/counties.ts`. A county with no such ordinance stays `state-law-only`.
-4. Regenerate `docs/COVERAGE.md` with `npx vite-node --config vitest.config.ts scripts/render-coverage.ts` so the coverage test stays in lockstep.
+1. Add a record to `ORDINANCES`. Cite the official page in `sourceUrl`. Set `effectiveDate` only when that page states one.
+2. Set `capStatus` to `"published"` only when the Attorney General chart, or the official page, states one percentage and the window it belongs to. Copy that figure. Do not invent one.
+3. Regenerate `docs/COVERAGE.md` with `npx tsx scripts/render-coverage.ts` so the coverage test stays in lockstep.
 
-`local-directory.ts` is only for an ordinance that should show the one-line phone note before a pack exists. It is empty while every reviewed city is packed.
-
-`detectPlace` in `lib/rules/detect.ts` reads the city, the ZIP, and the address. A loaded pack wins. An unincorporated county pack matches only when the address says unincorporated. Any other California address uses statewide rules and the AB 1482 chart row for the county area. An address that is not in California stays unsure, and no cap is applied.
-
-The deterministic engine in `lib/rules/engine.ts` owns dates and rent caps. The model is not allowed to invent a rule ID.
+The deterministic engine owns dates and rent caps.
 
 - Deposit return is 21 calendar days from move-out (Civil Code §1950.5), rule `CA-CC-1950.5`.
-- Repair reminders use a 30-day product preset under §1942, and shorter presets (3 days for no heat, water, electricity, or a gas leak; 7 days for a leak, mold, or pests). Those shorter numbers are labeled as product presets, not statutory deadlines.
-- Entry notice uses 24 hours (§1954).
 - A rent increase of 10% or less uses a 30-day notice; above 10% uses 90 days (§827).
-- Three-day notice math skips weekends and the placeholder judicial-holiday list and returns unsure outside 2026–2027.
-- A notice inside 180 days of a logged repair is flagged (§1942.5). The flag does not say retaliation occurred.
-- AB 1482 percentages are stored by period and county area, and they apply everywhere in California. A date outside the table is unsure. LA RSO is 3% only inside the published windows in the library, and only when the unit is marked covered. Unincorporated LA County uses the RSTPO tier the tenant selects; the app does not verify the tier. City of San Diego has just cause in the library and uses the AB 1482 percentage, not a local cap. A catalog pack with no local percentage does the same. A catalog pack with a published or unsure local cap does not state a single allowed rent, because coverage of the unit is not confirmed. The chart figure, when there is one, stays in the library rule.
-- If jurisdiction or coverage is unknown, the checker does not state a single allowed rent. A claimed exemption does not change an over-cap result into within-cap.
+- AB 1482 percentages are stored by period and county area. A date outside the table is unsure.
+- A claimed exemption does not change an over-cap result into within-cap.
+- If jurisdiction or coverage is unknown, the checker does not state a single allowed rent.
 
-The phone opens on a chat. You describe a repair, a lease, a rent increase, or a deposit, and the assistant routes that to the existing tools. Deadlines, caps, and coverage come from the rules engine. A model may choose an intent or explain a library answer. It does not invent a date, a percentage, or a citation. Nothing is emailed to a landlord until you tap **Send to landlord** or confirm in the chat. A demand letter is filled from your words and is not sent by the app.
-
-Lease review quotes the clause and cites a library rule ID, or it says **unsure**. On the phone, the status is the headline and the quote, citation, and explanation open from Learn more. Identical text is cached and does not count against the 3 new reviews per month. Rights answers show a short headline from the library (40 questions a month). Eviction-strategy questions hand off to legal aid and do not give steps. The full disclaimer, opened from every legal result, is:
-
-> This is general legal information, not legal advice, and no attorney-client relationship is created. Laws change and depend on your facts. For advice, contact a licensed California attorney or legal aid.
+Lease review quotes the clause and cites a library rule ID, or it says **unsure**. Eviction-strategy questions hand off to legal aid and do not give steps.
 
 ## Mail, files, and reminders
 
-Outbound landlord mail is sent from `u-<id>@RELAY_DOMAIN`, with the tenant on CC, and a no-account response link (acknowledge, schedule, fixed, dispute, block non-essential mail, or report abuse). The daily cap is 20 messages per unit. The footer is “Sent with Rent Right, free for renters.” Delivery status is stored on the message. Open events from the webhook are marked indicative only. Without Resend, status stays `local_only`.
+Outbound landlord mail is sent from `u-<id>@RELAY_DOMAIN`, with the tenant on CC, and a no-account response link. The daily cap is 20 messages per unit. Nothing is emailed until the tenant confirms. Without Resend, status stays `local_only`.
 
-Inbound mail: `POST /api/email/inbound` with `Authorization: Bearer $EMAIL_WEBHOOK_SECRET` and JSON `{ "from", "to", "subject", "text" }`. `to` must contain the unit’s `u-…` local part. Provider events: `POST /api/email/webhook` with the same bearer token.
+Inbound mail: `POST /api/email/inbound` with `Authorization: Bearer $EMAIL_WEBHOOK_SECRET`. Provider events: `POST /api/email/webhook` with the same bearer token.
 
-Reminders run at 7 days, 3 days, and the due day (the due-day slot also fires one day late so a missed day is not dropped, and older slots are not replayed). Call `POST /api/cron/reminders` with `Authorization: Bearer $CRON_SECRET` once a day.
+Reminders run at 7 days, 3 days, and the due day. Call `POST /api/cron/reminders` with `Authorization: Bearer $CRON_SECRET` once a day.
 
-Uploaded PDFs are read with `pdfjs-dist` when the file has selectable text. Photos are read only when `GEMINI_API_KEY` is set. Otherwise paste the lease text. Before any model call, email addresses, phone numbers, and SSN-like strings are redacted. A model may only attach a rule ID that already exists in the library, and only to a clause the deterministic pass left as unsure.
-
-Demand letters and certified-mail letters are templates. The app does not send them. The tenant’s explanation must be at least 20 characters. The evidence packet is a factual compilation: it does not state liability, recommend a claim, or suggest strategy.
+Demand letters and certified-mail letters are templates. The app does not send them. The evidence packet is a factual compilation: it does not state liability, recommend a claim, or suggest strategy.
 
 ## Privacy
 
-Settings includes a JSON export (`GET /api/export`) and account deletion. The confirmation word is `DELETE`. Deleting the last member of a unit deletes that unit’s records. A roommate who remains keeps the shared unit. Roommates join only by an invite link.
+Settings includes a JSON export (`GET /api/export`) and account deletion. The confirmation word is `DELETE`. Deleting the last member of a unit deletes that unit’s records. A roommate who remains keeps the shared unit.
 
 ## Scripts
 
 - `npm run dev` — API on port 3000
-- `npm test` — rules engine, lease review, phone presentation, and RLS-schema tests (Vitest)
-- `npm run lint` — ESLint for the server
+- `npm run db:migrate` — apply `supabase/migrations`
+- `npm run db:seed` — synthetic Los Angeles sample only
+- `npm test` — unit tests plus Postgres isolation and workflow tests
+- `npm run lint` — ESLint
+- `npm run typecheck` — `tsc --noEmit`
 - `npm run build` — production API build
-- `cd mobile && npx expo start` — Expo Go, simulator, or web
-
-SQLite prints an experimental warning from Node. That is expected on Node 22.
+- `cd mobile && npx expo export --platform web` — static phone web build

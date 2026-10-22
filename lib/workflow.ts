@@ -72,7 +72,7 @@ export async function recordLog(input: {
     flags.entry = entryNoticeCheck(input.noticeAt, input.entryAt);
   }
   if ((input.noticeKind === "rent_increase" || input.noticeKind === "eviction") && input.eventDate) {
-    const repairs = listLogs(input.user.id, input.unit.id).filter((entry) => entry.type === "repair");
+    const repairs = (await listLogs(input.user.id, input.unit.id)).filter((entry) => entry.type === "repair");
     const hits = repairs
       .map((entry) => ({ entry, window: retaliationWindow(entry.eventDate, input.eventDate) }))
       .filter((item) => item.window.flagged)
@@ -84,7 +84,7 @@ export async function recordLog(input: {
       };
     }
   }
-  const entry = insertLog({
+  const entry = await insertLog({
     unitId: input.unit.id,
     userId: input.user.id,
     type: input.type,
@@ -100,7 +100,7 @@ export async function recordLog(input: {
 
   if (input.type === "repair" && input.severity) {
     const reminder = repairReminder(input.eventDate, input.severity as RepairSeverity);
-    insertDeadline({
+    await insertDeadline({
       unitId: input.unit.id,
       ruleId: reminder.ruleId,
       kind: "repair",
@@ -117,7 +117,7 @@ export async function recordLog(input: {
 
   if (input.noticeKind === "pay_or_quit_3day") {
     const counted = threeDayNoticeDeadline(input.eventDate);
-    insertDeadline({
+    await insertDeadline({
       unitId: input.unit.id,
       ruleId: counted.ruleId,
       kind: "notice_3day",
@@ -154,8 +154,8 @@ export async function emailLandlord(input: {
   if (!input.unit.landlordEmail) {
     throw new Error("Add the landlord's email on your unit before sending.");
   }
-  if (isBlocked(input.unit.id)) {
-    insertMessage({
+  if (await isBlocked(input.unit.id)) {
+    await insertMessage({
       unitId: input.unit.id,
       userId: input.user.id,
       logEntryId: input.logEntryId,
@@ -171,7 +171,7 @@ export async function emailLandlord(input: {
     return "blocked";
   }
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  if (countOutboundSince(input.unit.id, since) >= EMAIL_DAILY_CAP) {
+  if (await countOutboundSince(input.unit.id, since) >= EMAIL_DAILY_CAP) {
     throw new Error("This unit reached the daily email limit (20). Use a printed letter.");
   }
   const token = randomToken();
@@ -184,7 +184,7 @@ export async function emailLandlord(input: {
     subject: input.subject,
     text: body,
   });
-  insertMessage({
+  await insertMessage({
     unitId: input.unit.id,
     userId: input.user.id,
     logEntryId: input.logEntryId,
@@ -202,7 +202,7 @@ export async function emailLandlord(input: {
   return sent.status;
 }
 
-export function saveDepositAndDeadline(user: User, unit: Unit, input: {
+export async function saveDepositAndDeadline(user: User, unit: Unit, input: {
   amountCents: number | null;
   receivedDate: string | null;
   moveOutDate: string | null;
@@ -210,11 +210,11 @@ export function saveDepositAndDeadline(user: User, unit: Unit, input: {
   landlordDeductions: string;
   tenantNotes: string;
 }) {
-  saveDeposit(user.id, unit.id, input);
+  await saveDeposit(user.id, unit.id, input);
   if (input.moveOutDate) {
     const due = depositReturnDeadline(input.moveOutDate);
-    replaceOpenDeadline(unit.id, "deposit");
-    insertDeadline({
+    await replaceOpenDeadline(unit.id, "deposit");
+    await insertDeadline({
       unitId: unit.id,
       ruleId: due.ruleId,
       kind: "deposit",
@@ -234,9 +234,9 @@ export async function runLeaseReview(user: User, unit: Unit, text: string, filen
   const cleaned = redactPii(text).trim();
   if (cleaned.length < 40) throw new Error("No lease text was found. Paste the text or upload a PDF with selectable text.");
   const textHash = leaseTextHash(cleaned, LIBRARY_VERSION, unit.rentCents, unit.jurisdiction);
-  const cached = findCachedReview(unit.id, textHash, LIBRARY_VERSION);
+  const cached = await findCachedReview(unit.id, textHash, LIBRARY_VERSION);
   if (cached) {
-    const id = saveLeaseReview({
+    const id = await saveLeaseReview({
       unitId: unit.id,
       userId: user.id,
       filename,
@@ -244,11 +244,11 @@ export async function runLeaseReview(user: User, unit: Unit, text: string, filen
       rulesVersion: LIBRARY_VERSION,
       model: cached.model,
       cached: true,
-      result: JSON.parse(cached.result),
+      result: typeof cached.result === "string" ? JSON.parse(cached.result) : cached.result,
     });
     return id;
   }
-  if (countLeaseReviewsThisMonth(user.id, monthPrefix()) >= LEASE_REVIEW_MONTHLY_CAP) {
+  if (await countLeaseReviewsThisMonth(user.id, monthPrefix()) >= LEASE_REVIEW_MONTHLY_CAP) {
     throw new Error("This free account can run 3 new lease reviews per month. An identical lease does not count again.");
   }
   let review = reviewLease(cleaned, { monthlyRentCents: unit.rentCents, jurisdiction: unit.jurisdiction });
@@ -273,7 +273,7 @@ export async function runLeaseReview(user: User, unit: Unit, text: string, filen
       model = completed.model;
     }
   }
-  return saveLeaseReview({
+  return await saveLeaseReview({
     unitId: unit.id,
     userId: user.id,
     filename,
@@ -292,10 +292,10 @@ export function sampleLeaseText(): string {
 export async function askAssistant(user: User, unit: Unit | null, question: string, locale: Locale) {
   const trimmed = question.trim();
   if (trimmed.length < 8) throw new Error("Ask a full question.");
-  if (countAssistantThisMonth(user.id, monthPrefix()) >= CHAT_MONTHLY_CAP) {
+  if (await countAssistantThisMonth(user.id, monthPrefix()) >= CHAT_MONTHLY_CAP) {
     throw new Error("This free account reached 40 questions this month.");
   }
-  addAssistantMessage(user.id, unit?.id || null, "user", { locale, content: trimmed, ruleIds: [], unsure: false });
+  await addAssistantMessage(user.id, unit?.id || null, "user", { locale, content: trimmed, ruleIds: [], unsure: false });
   const selected = selectRules(trimmed);
   let answer = answerQuestion(trimmed, locale);
   if (selected.rules.length > 0 && (process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY)) {
@@ -307,7 +307,7 @@ export async function askAssistant(user: User, unit: Unit | null, question: stri
     const ids = (completed?.json as { ruleIds?: string[] } | undefined)?.ruleIds;
     if (completed && Array.isArray(ids)) answer = answerFromModelIds(trimmed, locale, selected.rules, ids);
   }
-  addAssistantMessage(user.id, unit?.id || null, "assistant", {
+  await addAssistantMessage(user.id, unit?.id || null, "assistant", {
     locale,
     content: `${answer.text}\n\n${answer.disclaimer}`,
     ruleIds: answer.ruleIds,
@@ -346,17 +346,17 @@ export async function dispatchReminders(today = todayISO()) {
   const { openDeadlines, reminderSlotsSent, markReminder, unitMemberUserIds } = await import("@/lib/db");
   const { sendTenantEmail } = await import("@/lib/email");
   let sent = 0;
-  for (const deadline of openDeadlines()) {
+  for (const deadline of await openDeadlines()) {
     if (!deadline.due_date) continue;
-    const slots = pendingReminderSlots(deadline.due_date, today, reminderSlotsSent(deadline.id));
+    const slots = pendingReminderSlots(deadline.due_date, today, await reminderSlotsSent(deadline.id));
     if (slots.length === 0) continue;
-    const users = unitMemberUserIds(deadline.unit_id);
+    const users = await unitMemberUserIds(deadline.unit_id);
     for (const slot of slots) {
       for (const userId of users) {
-        const user = getUser(userId);
+        const user = await getUser(userId);
         if (!user) continue;
         const title = slot === "0d" ? "A tracked date is today" : `A tracked date is ${slot === "7d" ? "7" : "3"} days away`;
-        addNotification(userId, title, deadline.explanation, "/deadlines");
+        await addNotification(userId, title, deadline.explanation, "/deadlines");
         await sendTenantEmail(
           user.email,
           `Rent Right: ${title}`,
@@ -364,7 +364,7 @@ export async function dispatchReminders(today = todayISO()) {
         );
         sent += 1;
       }
-      markReminder(deadline.id, slot, "in_app_email");
+      await markReminder(deadline.id, slot, "in_app_email");
     }
   }
   return sent;

@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rent_right
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d rent_right"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/rent_right
+      AUTH_SECRET: ci-auth-secret
+      DATA_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install API dependencies
+        run: npm ci
+      - name: Install Expo dependencies
+        working-directory: mobile
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck API
+        run: npm run typecheck
+      - name: Typecheck Expo
+        run: npx tsc --noEmit -p mobile/tsconfig.json
+      - name: Unit and integration tests
+        run: npm test
+      - name: Production API build
+        run: npm run build
+      - name: Expo web export
+        working-directory: mobile
+        env:
+          CI: "1"
+          EXPO_NO_TELEMETRY: "1"
+        run: npx expo export --platform web

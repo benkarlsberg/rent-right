@@ -3,6 +3,10 @@ import { cookies, headers } from "next/headers";
 import { readSession, signSession } from "@/lib/crypto";
 import { getUser, type User } from "@/lib/db";
 import type { Locale } from "@/lib/disclaimer";
+import { adoptActor, withActor } from "@/lib/pg";
+import { userIdFromSupabaseToken } from "@/lib/supabase-auth";
+
+export { adoptActor };
 
 const SESSION = "rr_session";
 
@@ -11,9 +15,14 @@ export async function currentUser(): Promise<User | null> {
   const headerList = await headers();
   const header = headerList.get("authorization");
   const bearer = header?.match(/^Bearer\s+(\S+)/i)?.[1];
-  const id = readSession(bearer || jar.get(SESSION)?.value);
+  const token = bearer || jar.get(SESSION)?.value;
+  const id = readSession(token) || (await userIdFromSupabaseToken(token));
   if (!id) return null;
-  return getUser(id);
+  return await getUser(id);
+}
+
+export async function runAsUser<T>(user: User | null, fn: () => Promise<T>): Promise<T> {
+  return withActor(user?.id ?? null, fn);
 }
 
 export async function setSessionCookie(userId: string) {

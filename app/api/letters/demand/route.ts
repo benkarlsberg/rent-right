@@ -1,14 +1,15 @@
 import { getDeposit, primaryUnit, unitAddress } from "@/lib/db";
 import { demandLetter } from "@/lib/letters";
 import { renderPdf } from "@/lib/pdf";
-import { currentUser } from "@/lib/session";
+import { adoptActor, currentUser } from "@/lib/session";
 
 export async function GET(request: Request) {
   const user = await currentUser();
   if (!user) return new Response("Sign in required.", { status: 401 });
-  const unit = primaryUnit(user.id);
+  adoptActor(user.id);
+  const unit = await primaryUnit(user.id);
   if (!unit) return new Response("Add a unit first.", { status: 400 });
-  const deposit = getDeposit(user.id, unit.id);
+  const deposit = await getDeposit(user.id, unit.id);
   const notes = new URL(request.url).searchParams.get("notes") || "";
   try {
     const text = demandLetter({
@@ -24,7 +25,8 @@ export async function GET(request: Request) {
       disputeNotes: notes,
       letterDate: new Date().toISOString().slice(0, 10),
     });
-    const due = (await import("@/lib/db")).listDeadlines(user.id, unit.id).find((item) => item.kind === "deposit" && item.dueDate);
+    const { listDeadlines } = await import("@/lib/db");
+    const due = (await listDeadlines(user.id, unit.id)).find((item) => item.kind === "deposit" && item.dueDate);
     const withDue = due?.dueDate ? text.replace("[21 days after move-out]", due.dueDate) : text;
     const pdf = await renderPdf("Security deposit letter", withDue.split("\n"));
     return new Response(Buffer.from(pdf), {

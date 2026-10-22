@@ -34,8 +34,7 @@ import {
 import { centsField, dateField, emailValue, field, fileOf, must } from "@/lib/forms";
 import { demandLetter } from "@/lib/letters";
 import { checkRentIncrease, type AreaKey, type Jurisdiction, type RsoStatus, type RstpoTier } from "@/lib/rules/engine";
-import { clearSessionCookie, setSessionCookie, writeLocale } from "@/lib/session";
-import { currentUser } from "@/lib/session";
+import { adoptActor, clearSessionCookie, currentUser, setSessionCookie, writeLocale } from "@/lib/session";
 import { DEMO_EMAIL, startSampleTenancy } from "@/lib/seed";
 import { appUrl } from "@/lib/text";
 import { sendTenantEmail } from "@/lib/email";
@@ -59,12 +58,13 @@ const COUNTY_AREAS: AreaKey[] = [
 async function actor() {
   const user = await currentUser();
   if (!user) redirect("/login");
+  adoptActor(user.id);
   return user;
 }
 
 async function homeUnit() {
   const user = await actor();
-  const unit = primaryUnit(user.id);
+  const unit = await primaryUnit(user.id);
   if (!unit) redirect("/onboarding");
   return { user, unit };
 }
@@ -100,7 +100,8 @@ function unitInput(form: FormData): UnitInput {
 export async function requestMagicLink(form: FormData) {
   const email = emailValue(must(form, "email", "Email"));
   try {
-    const { token } = createMagicLink(email);
+    const { token, supabase } = await createMagicLink(email);
+    if (supabase && !token) redirect("/login?sent=1");
     const link = `${appUrl()}/auth/verify?token=${token}`;
     if (process.env.RESEND_API_KEY && process.env.RESEND_FROM) {
       await sendTenantEmail(email, "Your Rent Right sign-in link", `Sign in: ${link}\nThis link expires in 30 minutes.`);
@@ -131,10 +132,10 @@ export async function saveOnboarding(form: FormData) {
   const user = await actor();
   try {
     const input = unitInput(form);
-    if (field(form, "name")) updateUser(user.id, { name: field(form, "name") });
-    const existing = primaryUnit(user.id);
-    if (existing) updateUnit(user.id, existing.id, input);
-    else createUnit(user.id, input);
+    if (field(form, "name")) await updateUser(user.id, { name: field(form, "name") });
+    const existing = await primaryUnit(user.id);
+    if (existing) await updateUnit(user.id, existing.id, input);
+    else await createUnit(user.id, input);
   } catch (error) {
     fail("/onboarding", error);
   }
@@ -145,14 +146,14 @@ export async function saveSettings(form: FormData) {
   const { user, unit } = await homeUnit();
   try {
     const locale = field(form, "locale") === "es" ? "es" : "en";
-    updateUser(user.id, {
+    await updateUser(user.id, {
       name: field(form, "name"),
       phone: field(form, "phone"),
       locale,
       lowBandwidth: form.get("lowBandwidth") === "on",
     });
     await writeLocale(locale);
-    if (unit.role === "owner") updateUnit(user.id, unit.id, unitInput(form));
+    if (unit.role === "owner") await updateUnit(user.id, unit.id, unitInput(form));
   } catch (error) {
     fail("/settings", error);
   }
@@ -164,7 +165,7 @@ export async function setLanguage(form: FormData) {
   const locale: Locale = field(form, "locale") === "es" ? "es" : "en";
   await writeLocale(locale);
   const user = await currentUser();
-  if (user) updateUser(user.id, { locale });
+  if (user) await updateUser(user.id, { locale });
   redirect(field(form, "next") || "/home");
 }
 
@@ -240,7 +241,7 @@ export async function reviewSample() {
 export async function sendFeedback(form: FormData) {
   const user = await actor();
   try {
-    addFeedback(user.id, must(form, "reviewId", "Review"), must(form, "note", "Note"));
+    await addFeedback(user.id, must(form, "reviewId", "Review"), must(form, "note", "Note"));
   } catch (error) {
     fail("/lease", error);
   }
@@ -250,7 +251,7 @@ export async function sendFeedback(form: FormData) {
 export async function saveDepositForm(form: FormData) {
   const { user, unit } = await homeUnit();
   try {
-    saveDepositAndDeadline(user, unit, {
+    await saveDepositAndDeadline(user, unit, {
       amountCents: centsField(form, "amount"),
       receivedDate: dateField(form, "receivedDate"),
       moveOutDate: dateField(form, "moveOutDate"),
@@ -267,7 +268,7 @@ export async function saveDepositForm(form: FormData) {
 export async function prepareDemand(form: FormData): Promise<void> {
   const { user, unit } = await homeUnit();
   const { getDeposit, unitAddress } = await import("@/lib/db");
-  const deposit = getDeposit(user.id, unit.id);
+  const deposit = await getDeposit(user.id, unit.id);
   try {
     demandLetter({
       tenantName: user.name || user.email,
@@ -295,7 +296,7 @@ export async function addPayment(form: FormData) {
     const receiptFileId = receipt
       ? await saveFile(user.id, unit.id, receipt.name, receipt.type || "image/jpeg", Buffer.from(await receipt.arrayBuffer()))
       : null;
-    addLedger(user.id, unit.id, {
+    await addLedger(user.id, unit.id, {
       amountCents: centsField(form, "amount") || 0,
       periodStart: dateField(form, "periodStart"),
       periodEnd: dateField(form, "periodEnd"),
@@ -313,7 +314,7 @@ export async function addPayment(form: FormData) {
 export async function voidPayment(form: FormData) {
   const user = await actor();
   try {
-    voidLedger(user.id, must(form, "id", "Payment"));
+    await voidLedger(user.id, must(form, "id", "Payment"));
   } catch (error) {
     fail("/ledger", error);
   }
@@ -342,7 +343,7 @@ export async function checkIncrease(form: FormData) {
       lastIncreaseDate: dateField(form, "lastIncreaseDate"),
       claimsExemption: form.get("claimsExemption") === "on",
     });
-    saveRentCheck(user.id, unit.id, Object.fromEntries(form.entries()), result);
+    await saveRentCheck(user.id, unit.id, Object.fromEntries(form.entries()), result);
   } catch (error) {
     fail("/increase", error);
   }
@@ -385,7 +386,7 @@ export async function saveCondition(form: FormData) {
         room.photoFileId = await saveFile(user.id, unit.id, photo.name, photo.type || "image/jpeg", Buffer.from(await photo.arrayBuffer()));
       }
     }
-    insertCondition(user.id, unit.id, field(form, "kind") === "move_out" ? "move_out" : "move_in", rooms, field(form, "notes"));
+    await insertCondition(user.id, unit.id, field(form, "kind") === "move_out" ? "move_out" : "move_in", rooms, field(form, "notes"));
   } catch (error) {
     fail("/condition/new", error);
   }
@@ -395,7 +396,7 @@ export async function saveCondition(form: FormData) {
 export async function toggleDeadline(form: FormData) {
   const user = await actor();
   try {
-    setDeadlineStatus(user.id, must(form, "id", "Deadline"), field(form, "status") === "done" ? "done" : "open");
+    await setDeadlineStatus(user.id, must(form, "id", "Deadline"), field(form, "status") === "done" ? "done" : "open");
   } catch (error) {
     fail("/deadlines", error);
   }
@@ -405,7 +406,7 @@ export async function toggleDeadline(form: FormData) {
 export async function inviteRoommate() {
   const { user, unit } = await homeUnit();
   try {
-    const token = createInvite(user.id, unit.id);
+    const token = await createInvite(user.id, unit.id);
     redirect(`/settings?invite=${encodeURIComponent(`${appUrl()}/invite/${token}`)}`);
   } catch (error) {
     fail("/settings", error);
@@ -419,7 +420,7 @@ export async function markMailed(form: FormData) {
     const receiptFileId = receipt
       ? await saveFile(user.id, unit.id, receipt.name, receipt.type || "image/jpeg", Buffer.from(await receipt.arrayBuffer()))
       : null;
-    logMailed(user.id, unit.id, field(form, "logId") || null, receiptFileId);
+    await logMailed(user.id, unit.id, field(form, "logId") || null, receiptFileId);
   } catch (error) {
     fail("/letters", error);
   }
@@ -427,21 +428,22 @@ export async function markMailed(form: FormData) {
 }
 
 export async function landlordReply(form: FormData) {
+  adoptActor(null);
   const token = must(form, "token", "Link");
-  const message = messageByToken(token);
+  const message = await messageByToken(token);
   if (!message) fail(`/r/${token}`, new Error("This link is not valid."));
   const action = field(form, "action");
   const note = field(form, "note");
   try {
     if (action === "block") {
-      blockLandlord(message.unitId, note || "Blocked from the response link.");
+      await blockLandlord(message.unitId, note || "Blocked from the response link.");
     } else if (action === "abuse") {
-      reportAbuse(message.unitId, "landlord-link", note || "Abuse report from the response link.");
+      await reportAbuse(message.unitId, "landlord-link", note || "Abuse report from the response link.");
     } else if (["acknowledge", "schedule", "fixed", "dispute"].includes(action)) {
-      addLandlordResponse(message.unitId, message.id, action, note);
-      const unit = peekUnit(message.unitId);
+      await addLandlordResponse(message.unitId, message.id, action, note);
+      const unit = await peekUnit(message.unitId);
       if (unit) {
-        insertLog({
+        await insertLog({
           unitId: unit.id,
           userId: unit.createdBy,
           type: "conversation",
@@ -459,9 +461,10 @@ export async function landlordReply(form: FormData) {
 }
 
 export async function ackReport(form: FormData) {
+  adoptActor(null);
   const token = must(form, "token", "Link");
   try {
-    acknowledgeCondition(token, must(form, "name", "Name"));
+    await acknowledgeCondition(token, must(form, "name", "Name"));
   } catch (error) {
     fail(`/ack/${token}`, error);
   }
@@ -471,7 +474,7 @@ export async function ackReport(form: FormData) {
 export async function resendLogEmail(form: FormData) {
   const { user, unit } = await homeUnit();
   try {
-    const log = getLog(user.id, must(form, "logId", "Log"));
+    const log = await getLog(user.id, must(form, "logId", "Log"));
     await emailLandlord({
       user,
       unit,

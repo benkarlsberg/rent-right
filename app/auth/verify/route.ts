@@ -7,12 +7,12 @@ import { setSessionCookie } from "@/lib/session";
 export async function GET(request: Request) {
   const token = new URL(request.url).searchParams.get("token") || "";
   try {
-    const user = consumeMagicLink(token);
+    const user = await consumeMagicLink(token);
     await setSessionCookie(user.id);
     const jar = await cookies();
     const invite = jar.get("rr_invite")?.value;
     if (invite) {
-      try { acceptInvite(user.id, invite); } catch { /* invite may be expired */ }
+      try { await acceptInvite(user.id, invite); } catch { /* invite may be expired */ }
       jar.delete("rr_invite");
     }
     const session = signSession(user.id);

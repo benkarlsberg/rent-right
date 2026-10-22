@@ -35,19 +35,19 @@ function monthPrefix(now = new Date()): string {
   return `${parts}-01`;
 }
 
-function remember(user: User, unit: Unit, role: "user" | "assistant", content: string, ruleId: string | null, unsure: boolean): string {
-  return addAssistantMessage(user.id, unit.id, role, { locale: user.locale, content, ruleIds: ruleId ? [ruleId] : [], unsure });
+async function remember(user: User, unit: Unit, role: "user" | "assistant", content: string, ruleId: string | null, unsure: boolean): Promise<string> {
+  return await addAssistantMessage(user.id, unit.id, role, { locale: user.locale, content, ruleIds: ruleId ? [ruleId] : [], unsure });
 }
 
-function say(user: User, unit: Unit, card: ChatCard): string {
-  return remember(user, unit, "assistant", serializeCard(card), card.ruleId, card.status.toLowerCase().includes("unsure") || card.headline.toLowerCase().includes("not sure"));
+async function say(user: User, unit: Unit, card: ChatCard): Promise<string> {
+  return await remember(user, unit, "assistant", serializeCard(card), card.ruleId, card.status.toLowerCase().includes("unsure") || card.headline.toLowerCase().includes("not sure"));
 }
 
-function asked(user: User, unit: Unit, text: string) {
-  if (countAssistantThisMonth(user.id, monthPrefix()) >= CHAT_MONTHLY_CAP) {
+async function asked(user: User, unit: Unit, text: string) {
+  if (await countAssistantThisMonth(user.id, monthPrefix()) >= CHAT_MONTHLY_CAP) {
     throw new Error("This free account reached 40 questions this month.");
   }
-  addAssistantMessage(user.id, unit.id, "user", { locale: user.locale, content: text, ruleIds: [], unsure: false });
+  await addAssistantMessage(user.id, unit.id, "user", { locale: user.locale, content: text, ruleIds: [], unsure: false });
 }
 
 export async function runChatTurn(user: User, unit: Unit, input: {
@@ -63,18 +63,18 @@ export async function runChatTurn(user: User, unit: Unit, input: {
     return;
   }
   if (action === "letter") {
-    asked(user, unit, text || tx(user.locale, "Draft a letter", "Redactar una carta"));
+    await asked(user, unit, text || tx(user.locale, "Draft a letter", "Redactar una carta"));
     await askForLetter(user, unit);
     return;
   }
   if (!text && !input.attachment) throw new Error(tx(user.locale, "Say what you need.", "Diga qué necesita."));
-  asked(user, unit, text || input.attachment?.name || tx(user.locale, "Attachment", "Archivo"));
+  await asked(user, unit, text || input.attachment?.name || tx(user.locale, "Attachment", "Archivo"));
   if (input.attachment && looksLikeLease(text, input.attachment)) {
     await reviewAttachment(user, unit, input.attachment);
     return;
   }
 
-  const pending = openChatDraft(user.id);
+  const pending = await openChatDraft(user.id);
   const pendingKind = pending && pending.unitId === unit.id ? (pending.kind as "repair" | "rent_date" | "deposit_date" | "letter") : null;
   let plan = planTurn(text, pendingKind);
   if (plan.type === "rights" || plan.type === "unclear") {
@@ -85,7 +85,7 @@ export async function runChatTurn(user: User, unit: Unit, input: {
     plan = planFromIntent("repair", text || "Photo attached from the chat.");
   }
   if (plan.type !== "confirm_send" && plan.type !== "continue_date" && plan.type !== "letter_text" && pending) {
-    closeChatDraft(user.id, pending.id, "cancelled");
+    await closeChatDraft(user.id, pending.id, "cancelled");
   }
   await execute(user, unit, plan, pending, input.attachment || null, text);
 }
@@ -98,9 +98,9 @@ function looksLikeLease(text: string, file: { name: string; mime: string }): boo
 }
 
 async function confirmSend(user: User, unit: Unit, draftId: string) {
-  const draft = openChatDraft(user.id);
+  const draft = await openChatDraft(user.id);
   if (!draft || draft.kind !== "repair" || draft.id !== draftId || draft.unitId !== unit.id) {
-    say(user, unit, {
+    await say(user, unit, {
       headline: tx(user.locale, "Nothing to send", "Nada para enviar"),
       status: tx(user.locale, "Not sent", "No enviado"),
       action: null,
@@ -121,16 +121,16 @@ async function confirmSend(user: User, unit: Unit, draftId: string) {
     ruleId: null,
   };
   const messageId = typeof draft.payload.cardMessageId === "string" ? draft.payload.cardMessageId : "";
-  const stored = messageId ? assistantMessageContent(user.id, messageId) : null;
+  const stored = messageId ? await assistantMessageContent(user.id, messageId) : null;
   const next = stored ? cardAfterSend(stored, confirmed) : stored;
   const replaced = stored && next && next !== stored
-    ? updateAssistantMessage(user.id, messageId, { content: next, ruleIds: [], unsure: false })
+    ? await updateAssistantMessage(user.id, messageId, { content: next, ruleIds: [], unsure: false })
     : false;
-  if (!replaced) say(user, unit, confirmed);
-  closeChatDraft(user.id, draft.id, "sent");
+  if (!replaced) await say(user, unit, confirmed);
+  await closeChatDraft(user.id, draft.id, "sent");
 }
 
-async function execute(user: User, unit: Unit, plan: TurnPlan, pending: ReturnType<typeof openChatDraft>, attachment: { name: string; mime: string; base64: string } | null, text: string) {
+async function execute(user: User, unit: Unit, plan: TurnPlan, pending: Awaited<ReturnType<typeof openChatDraft>>, attachment: { name: string; mime: string; base64: string } | null, text: string) {
   if (plan.type === "confirm_send") {
     await confirmSend(user, unit, pending?.kind === "repair" ? pending.id : "");
     return;
@@ -139,17 +139,17 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: ReturnTy
     const proposed = numberOrNull(pending.payload.proposedCents);
     const lowest = numberOrNull(pending.payload.lowestCents) ?? unit.rentCents;
     await runRent(user, unit, lowest, proposed, resolveDay(plan.date));
-    closeChatDraft(user.id, pending.id, "done");
+    await closeChatDraft(user.id, pending.id, "done");
     return;
   }
   if (plan.type === "continue_date" && pending?.kind === "deposit_date") {
     await runDeposit(user, unit, resolveDay(plan.date));
-    closeChatDraft(user.id, pending.id, "done");
+    await closeChatDraft(user.id, pending.id, "done");
     return;
   }
   if (plan.type === "letter_text" && pending?.kind === "letter") {
     await writeLetter(user, unit, plan.text);
-    closeChatDraft(user.id, pending.id, "done");
+    await closeChatDraft(user.id, pending.id, "done");
     return;
   }
   if (plan.type === "repair") {
@@ -157,7 +157,7 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: ReturnTy
     return;
   }
   if (plan.type === "lease") {
-    say(user, unit, {
+    await say(user, unit, {
       headline: tx(user.locale, "Add your lease", "Agregue su contrato"),
       status: tx(user.locale, "Not reviewed", "Sin revisión"),
       action: null,
@@ -168,7 +168,7 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: ReturnTy
   }
   if (plan.type === "rent") {
     if (plan.proposedCents == null) {
-      say(user, unit, {
+      await say(user, unit, {
         headline: tx(user.locale, "Need the new rent", "Falta la renta nueva"),
         status: tx(user.locale, "Not checked", "Sin revisión"),
         action: null,
@@ -179,8 +179,8 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: ReturnTy
     }
     const lowest = plan.lowestCents ?? unit.rentCents;
     if (!plan.effectiveDate) {
-      const draft = createChatDraft(user.id, unit.id, "rent_date", { proposedCents: plan.proposedCents, lowestCents: lowest });
-      say(user, unit, {
+      const draft = await createChatDraft(user.id, unit.id, "rent_date", { proposedCents: plan.proposedCents, lowestCents: lowest });
+      await say(user, unit, {
         headline: tx(user.locale, "Need a start date", "Falta la fecha de inicio"),
         status: formatMoney(plan.proposedCents, user.locale),
         action: null,
@@ -198,13 +198,13 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: ReturnTy
   }
   if (plan.type === "deposit") {
     if (!plan.moveOutDate) {
-      createChatDraft(user.id, unit.id, "deposit_date", {});
-      const existing = listDeadlines(user.id, unit.id).find((item) => item.kind === "deposit" && item.status === "open");
+      await createChatDraft(user.id, unit.id, "deposit_date", {});
+      const existing = (await listDeadlines(user.id, unit.id)).find((item) => item.kind === "deposit" && item.status === "open");
       if (existing) {
-        sayDeposit(user, unit, existing.dueDate, existing.explanation, existing.explanationEs, existing.ruleId);
+        await sayDeposit(user, unit, existing.dueDate, existing.explanation, existing.explanationEs, existing.ruleId);
         return;
       }
-      say(user, unit, {
+      await say(user, unit, {
         headline: tx(user.locale, "Need your move-out date", "Falta la fecha de salida"),
         status: tx(user.locale, "Not counted", "Sin conteo"),
         action: null,
@@ -217,7 +217,7 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: ReturnTy
     return;
   }
   if (plan.type === "packet") {
-    say(user, unit, {
+    await say(user, unit, {
       headline: tx(user.locale, "Records PDF", "PDF de registros"),
       status: tx(user.locale, "Facts only", "Solo hechos"),
       action: { id: "download-packet", label: tx(user.locale, "Download", "Descargar") },
@@ -227,9 +227,9 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: ReturnTy
     return;
   }
   if (plan.type === "deadlines") {
-    const next = listDeadlines(user.id, unit.id).find((item) => item.status === "open" && item.dueDate);
+    const next = (await listDeadlines(user.id, unit.id)).find((item) => item.status === "open" && item.dueDate);
     if (!next) {
-      say(user, unit, {
+      await say(user, unit, {
         headline: tx(user.locale, "No open date", "Sin fecha abierta"),
         status: tx(user.locale, "Nothing due", "Nada pendiente"),
         action: null,
@@ -239,7 +239,7 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: ReturnTy
       return;
     }
     const line = dueLine(next.dueDate, todayISO(), user.locale);
-    say(user, unit, {
+    await say(user, unit, {
       headline: line.title,
       status: line.subtitle,
       action: null,
@@ -252,7 +252,7 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: ReturnTy
     await answerRights(user, unit, text);
     return;
   }
-  say(user, unit, {
+  await say(user, unit, {
     headline: tx(user.locale, "Try a task", "Pruebe una tarea"),
     status: tx(user.locale, "Not sure", "No se puede precisar"),
     action: null,
@@ -269,7 +269,7 @@ async function answerRights(user: User, unit: Unit, question: string) {
     : answer.unsure || !rule
       ? tx(user.locale, "Unsure", "No se puede precisar")
       : user.locale === "es" ? rule.titleEs : rule.titleEn;
-  say(user, unit, {
+  await say(user, unit, {
     headline,
     status: answer.ruleIds[0] || tx(user.locale, "Unsure", "No se puede precisar"),
     action: null,
@@ -300,24 +300,24 @@ async function logRepair(user: User, unit: Unit, summary: string, severity: Repa
     noticeAt: null,
   });
   const reminder = repairReminder(todayISO(), severity);
-  const draft = createChatDraft(user.id, unit.id, "repair", {
+  const draft = await createChatDraft(user.id, unit.id, "repair", {
     logId: entry.id,
     subject: tx(user.locale, `${room || "Home"} repair`, `Reparación: ${room || "vivienda"}`),
     text: summary,
   });
-  const messageId = say(user, unit, {
+  const messageId = await say(user, unit, {
     headline: tx(user.locale, "Repair logged", "Reparación anotada"),
     status: tx(user.locale, "Not sent", "No enviado"),
     action: { id: `send:${draft.id}`, label: tx(user.locale, "Send to landlord", "Enviar al propietario") },
     detail: `${user.locale === "es" ? reminder.explanationEs : reminder.explanation}\n\n${reminder.computation}\n\n${tx(user.locale, "Nothing was emailed. Send only if you want the landlord to get this note.", "No se envió ningún correo. Envíe solo si quiere que el propietario reciba esta nota.")}`,
     ruleId: reminder.ruleId,
   });
-  setChatDraftPayload(user.id, draft.id, { ...draft.payload, cardMessageId: messageId });
+  await setChatDraftPayload(user.id, draft.id, { ...draft.payload, cardMessageId: messageId });
 }
 
 async function runRent(user: User, unit: Unit, lowest: number | null, proposed: number | null, effectiveDate: string) {
   if (lowest == null || proposed == null) {
-    say(user, unit, {
+    await say(user, unit, {
       headline: tx(user.locale, "Need both rents", "Faltan las dos rentas"),
       status: tx(user.locale, "Not checked", "Sin revisión"),
       action: null,
@@ -340,9 +340,9 @@ async function runRent(user: User, unit: Unit, lowest: number | null, proposed: 
     lastIncreaseDate: null,
     claimsExemption: false,
   });
-  saveRentCheck(user.id, unit.id, { source: "chat", effectiveDate }, result);
+  await saveRentCheck(user.id, unit.id, { source: "chat", effectiveDate }, result);
   const status = result.applicable.ppm != null ? percentLabel(result.applicable.ppm) : tx(user.locale, "No single cap", "Sin un solo tope");
-  say(user, unit, {
+  await say(user, unit, {
     headline: rentHeadline(result.applicable.status, user.locale),
     status,
     action: null,
@@ -358,8 +358,8 @@ async function runRent(user: User, unit: Unit, lowest: number | null, proposed: 
 }
 
 async function runDeposit(user: User, unit: Unit, moveOutDate: string) {
-  const existing = getDeposit(user.id, unit.id);
-  saveDepositAndDeadline(user, unit, {
+  const existing = await getDeposit(user.id, unit.id);
+  await saveDepositAndDeadline(user, unit, {
     amountCents: existing?.amount_cents ?? unit.depositCents,
     receivedDate: existing?.received_date ?? unit.moveInDate,
     moveOutDate,
@@ -368,12 +368,12 @@ async function runDeposit(user: User, unit: Unit, moveOutDate: string) {
     tenantNotes: existing?.tenant_notes || "",
   });
   const due = depositReturnDeadline(moveOutDate);
-  sayDeposit(user, unit, due.dueDate, due.explanation, due.explanationEs, due.ruleId);
+  await sayDeposit(user, unit, due.dueDate, due.explanation, due.explanationEs, due.ruleId);
 }
 
-function sayDeposit(user: User, unit: Unit, dueDate: string | null, explanation: string, explanationEs: string, ruleId: string) {
+async function sayDeposit(user: User, unit: Unit, dueDate: string | null, explanation: string, explanationEs: string, ruleId: string) {
   const line = dueLine(dueDate, todayISO(), user.locale);
-  say(user, unit, {
+  await say(user, unit, {
     headline: tx(user.locale, "Deposit", "Depósito"),
     status: `${line.subtitle} · ${line.title}`,
     action: { id: "letter", label: tx(user.locale, "Draft a letter", "Redactar una carta") },
@@ -383,8 +383,8 @@ function sayDeposit(user: User, unit: Unit, dueDate: string | null, explanation:
 }
 
 async function askForLetter(user: User, unit: Unit) {
-  createChatDraft(user.id, unit.id, "letter", {});
-  say(user, unit, {
+  await createChatDraft(user.id, unit.id, "letter", {});
+  await say(user, unit, {
     headline: tx(user.locale, "Your words", "Sus palabras"),
     status: tx(user.locale, "Not created", "Sin crear"),
     action: null,
@@ -394,13 +394,13 @@ async function askForLetter(user: User, unit: Unit) {
 }
 
 async function writeLetter(user: User, unit: Unit, text: string) {
-  const deposit = getDeposit(user.id, unit.id);
-  const deadline = listDeadlines(user.id, unit.id).find((item) => item.kind === "deposit" && item.status === "open");
+  const deposit = await getDeposit(user.id, unit.id);
+  const deadline = (await listDeadlines(user.id, unit.id)).find((item) => item.kind === "deposit" && item.status === "open");
   const addressMatch = text.match(/forwarding address is\s+(.+)/i);
   const forwarding = (addressMatch?.[1] || deposit?.forwarding_address || "").trim();
   const notes = text.replace(/forwarding address is\s+.+/i, "").trim();
   if (!deadline?.dueDate || !deadline.anchorDate || !deposit?.amount_cents) {
-    say(user, unit, {
+    await say(user, unit, {
       headline: tx(user.locale, "Letter not created", "Carta sin crear"),
       status: tx(user.locale, "Need a move-out date", "Falta la salida"),
       action: null,
@@ -410,7 +410,7 @@ async function writeLetter(user: User, unit: Unit, text: string) {
     return;
   }
   if (!forwarding || notes.length < 20) {
-    say(user, unit, {
+    await say(user, unit, {
       headline: tx(user.locale, "Letter not created", "Carta sin crear"),
       status: tx(user.locale, "Need your words", "Faltan sus palabras"),
       action: null,
@@ -432,7 +432,7 @@ async function writeLetter(user: User, unit: Unit, text: string) {
     disputeNotes: notes,
     letterDate: todayISO(),
   });
-  say(user, unit, {
+  await say(user, unit, {
     headline: tx(user.locale, "Letter ready", "Carta lista"),
     status: tx(user.locale, "Not sent", "No enviado"),
     action: null,
@@ -446,9 +446,9 @@ async function reviewAttachment(user: User, unit: Unit, file: { name: string; mi
   await saveFile(user.id, unit.id, file.name || "lease", file.mime || "application/octet-stream", bytes);
   const extracted = await extractPdfOrText(bytes, file.mime || "", file.name || "lease.txt");
   const id = await runLeaseReview(user, unit, extracted, file.name || "lease.txt");
-  const review = listLeaseReviews(user.id, unit.id).find((item) => item.id === id);
+  const review = (await listLeaseReviews(user.id, unit.id)).find((item) => item.id === id);
   const finding = review?.result.findings.find((item) => item.label !== "looks_standard") || review?.result.findings[0];
-  say(user, unit, {
+  await say(user, unit, {
     headline: finding ? findingStatus(finding.label, user.locale) : tx(user.locale, "Reviewed", "Revisado"),
     status: review ? tx(user.locale, `${review.result.findings.length} clauses`, `${review.result.findings.length} cláusulas`) : tx(user.locale, "Reviewed", "Revisado"),
     action: null,

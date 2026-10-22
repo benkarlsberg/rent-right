@@ -20,16 +20,18 @@ import { dueLine, rentHeadline } from "@/lib/phone";
 import { percentLabel } from "@/lib/format";
 import { appUrl, relayAddress } from "@/lib/text";
 import { landlordMessageBody } from "@/lib/email";
+import { hasUserActor, withActor } from "@/lib/pg";
 import { runLeaseReview, sampleLeaseText, saveDepositAndDeadline } from "@/lib/workflow";
 
 export const DEMO_EMAIL = "demo@rentright.local";
 
 export async function startSampleTenancy(): Promise<string> {
-  const existing = getUserByEmail(DEMO_EMAIL);
+  if (hasUserActor()) return withActor(null, () => startSampleTenancy());
+  const existing = await getUserByEmail(DEMO_EMAIL);
   if (existing) await deleteUserAccount(existing.id);
-  const user = createNamedUser(DEMO_EMAIL, "Maya Chen", "en");
+  const user = await createNamedUser(DEMO_EMAIL, "Maya Chen", "en");
   const today = todayISO();
-  const unit = createUnit(user.id, {
+  const unit = await createUnit(user.id, {
     street: "1842 N Echo Park Ave",
     unitNumber: "3",
     city: "Los Angeles",
@@ -48,7 +50,7 @@ export async function startSampleTenancy(): Promise<string> {
   });
 
   const oldDate = addDays(today, -40);
-  const oldRepair = insertLog({
+  const oldRepair = await insertLog({
     unitId: unit.id,
     userId: user.id,
     type: "repair",
@@ -60,7 +62,7 @@ export async function startSampleTenancy(): Promise<string> {
   });
 
   const leakDate = addDays(today, -2);
-  const leak = insertLog({
+  const leak = await insertLog({
     unitId: unit.id,
     userId: user.id,
     type: "repair",
@@ -73,7 +75,7 @@ export async function startSampleTenancy(): Promise<string> {
 
   const noticeDate = addDays(today, -1);
   const window = retaliationWindow(oldDate, noticeDate);
-  insertLog({
+  await insertLog({
     unitId: unit.id,
     userId: user.id,
     type: "notice_received",
@@ -89,7 +91,7 @@ export async function startSampleTenancy(): Promise<string> {
     { date: leakDate, severity: "leak" as RepairSeverity, source: leak.id },
   ]) {
     const reminder = repairReminder(item.date, item.severity);
-    insertDeadline({
+    await insertDeadline({
       unitId: unit.id,
       ruleId: reminder.ruleId,
       kind: "repair",
@@ -106,7 +108,7 @@ export async function startSampleTenancy(): Promise<string> {
 
   const token = randomToken();
   const responseUrl = `${appUrl()}/r/${token}`;
-  insertMessage({
+  await insertMessage({
     unitId: unit.id,
     userId: user.id,
     logEntryId: leak.id,
@@ -121,7 +123,7 @@ export async function startSampleTenancy(): Promise<string> {
     responseToken: token,
     createdAt: `${leakDate}T18:05:00.000Z`,
   });
-  insertMessage({
+  await insertMessage({
     unitId: unit.id,
     userId: null,
     logEntryId: leak.id,
@@ -136,7 +138,7 @@ export async function startSampleTenancy(): Promise<string> {
     createdAt: `${addDays(today, -1)}T16:00:00.000Z`,
   });
 
-  saveDepositAndDeadline(user, unit, {
+  await saveDepositAndDeadline(user, unit, {
     amountCents: 215_000,
     receivedDate: "2024-08-01",
     moveOutDate: addDays(today, -4),
@@ -156,10 +158,10 @@ export async function startSampleTenancy(): Promise<string> {
     lastIncreaseDate: "2025-08-01",
     claimsExemption: false,
   });
-  saveRentCheck(user.id, unit.id, { sample: true }, increase);
+  await saveRentCheck(user.id, unit.id, { sample: true }, increase);
 
   for (const paid of [addDays(today, -70), addDays(today, -40), addDays(today, -10)]) {
-    addLedger(user.id, unit.id, {
+    await addLedger(user.id, unit.id, {
       amountCents: 215_000,
       periodStart: paid,
       periodEnd: addDays(paid, 30),
@@ -170,7 +172,7 @@ export async function startSampleTenancy(): Promise<string> {
     });
   }
 
-  insertCondition(user.id, unit.id, "move_in", [
+  await insertCondition(user.id, unit.id, "move_in", [
     { room: "Kitchen", condition: "fair", issues: ["fixtures"], notes: "Slow drain. Photographed the cabinet.", photoFileId: null },
     { room: "Bathroom", condition: "good", issues: [], notes: "Clean at move-in.", photoFileId: null },
     { room: "Living room", condition: "good", issues: [], notes: "Small scuff on the west wall.", photoFileId: null },
@@ -224,17 +226,17 @@ export async function startSampleTenancy(): Promise<string> {
       unsure: false,
     },
   ];
-  samples.forEach((item, index) => {
-    addAssistantMessage(user.id, unit.id, item.role, {
+  for (const [index, item] of samples.entries()) {
+    await addAssistantMessage(user.id, unit.id, item.role, {
       locale: "en",
       content: item.content,
       ruleIds: item.ruleId ? [item.ruleId] : [],
       unsure: item.unsure,
       createdAt: new Date(stamp + index).toISOString(),
     });
-  });
+  }
 
-  addNotification(
+  await addNotification(
     user.id,
     "Repair reminder",
     "The kitchen leak reminder is coming up. The date was computed from the day you logged the request.",

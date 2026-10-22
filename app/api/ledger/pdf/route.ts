@@ -1,14 +1,15 @@
 import { listLedger, primaryUnit, unitAddress } from "@/lib/db";
 import { formatMoney } from "@/lib/format";
 import { renderPdf } from "@/lib/pdf";
-import { currentUser } from "@/lib/session";
+import { adoptActor, currentUser } from "@/lib/session";
 
 export async function GET() {
   const user = await currentUser();
   if (!user) return new Response("Sign in required.", { status: 401 });
-  const unit = primaryUnit(user.id);
+  adoptActor(user.id);
+  const unit = await primaryUnit(user.id);
   if (!unit) return new Response("Add a unit first.", { status: 400 });
-  const rows = listLedger(user.id, unit.id);
+  const rows = await listLedger(user.id, unit.id);
   const lines = [
     "# Rent ledger",
     "Payments the tenant entered. Rent Right did not collect this money.",
