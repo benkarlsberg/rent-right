@@ -154,6 +154,13 @@ function describeDatabaseUrl(raw: string): string {
     `at=${(raw.match(/@/g) ?? []).length}`,
     `hash=${raw.includes("#")}`,
     `brackets=${/[[\]]/.test(raw)}`,
+    `underscore=${raw.includes("_")}`,
+    `hyphen=${raw.includes("-")}`,
+    `dot=${raw.includes(".")}`,
+    `digit=${/\d/.test(raw)}`,
+    `sbPrefix=${raw.startsWith("sb_")}`,
+    `publishableLabel=${raw === "sb_publishable_"}`,
+    `regionLabel=${/^aws-\d-[a-z]+(?:-[a-z]+)*-\d+$/.test(raw)}`,
   ].join(", ");
 }
 
