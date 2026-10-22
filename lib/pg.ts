@@ -31,10 +31,12 @@ export function getSql(): Sql {
     const url = databaseUrl();
     const parsed = new URL(url);
     const transactionPool = parsed.port === "6543" || parsed.searchParams.get("pgbouncer") === "true";
+    const cloudflare = typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers";
     pool = postgres(url, {
-      max: 8,
+      max: cloudflare ? 1 : 8,
       idle_timeout: 20,
-      connect_timeout: 20,
+      connect_timeout: cloudflare ? 10 : 20,
+      fetch_types: !cloudflare,
       prepare: !transactionPool,
       onnotice: () => {},
       types: {

@@ -67,6 +67,7 @@ jobs:
           NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          OPEN_NEXT_CLOUDFLARE: "1"
         run: |
           if [ -f .database-url ]; then export DATABASE_URL="$(cat .database-url)"; fi
           npx opennextjs-cloudflare build

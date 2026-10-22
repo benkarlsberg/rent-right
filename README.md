@@ -6,7 +6,7 @@ Free records and general legal information for renters in California. It is not 
 
 The short line on a result is “General information, not legal advice.”
 
-**Live demo:** [demo link placeholder](https://demo.rentright.example) — not deployed yet. The URL will replace this once Cloudflare and Supabase secrets are set. See [What Ben needs to go live](#what-ben-needs-to-go-live).
+**Live demo:** [https://rent-right-web.pages.dev](https://rent-right-web.pages.dev). The API is [https://rent-right.rent-right.workers.dev](https://rent-right.rent-right.workers.dev).
 
 ## Screenshots
 
@@ -134,7 +134,7 @@ Create these accounts. Turn on MFA for Supabase and Cloudflare.
 | [Google AI Studio](https://aistudio.google.com) | Gemini API key. Optional. Paid tier so prompts are not used for training. |
 | [Resend](https://resend.com) | API key and a verified from-address. Optional. Without it, mail is saved and not sent. |
 
-`DATABASE_URL` must be the Supabase **postgres** connection string (direct, or the session pooler). The API sets the `authenticated` role per request so RLS applies. Do not use the anon key as `DATABASE_URL`. Do not put `SUPABASE_SERVICE_ROLE_KEY` in the Expo app or any `EXPO_PUBLIC_` / `NEXT_PUBLIC_` variable.
+`DATABASE_URL` must be the Supabase **postgres** connection string (direct, or the session pooler). A database password is also accepted: deploy turns it into the session pooler URI using `SUPABASE_URL`. The API sets the `authenticated` role per request so RLS applies. `SUPABASE_ANON_KEY` accepts the publishable key (`sb_publishable_…`). `SUPABASE_SERVICE_ROLE_KEY` accepts the secret key (`sb_secret_…`) and stays on the server. Do not put that secret in the Expo app or any `EXPO_PUBLIC_` / `NEXT_PUBLIC_` variable. When `NEXT_PUBLIC_APP_URL` is empty, deploy sets it to the Worker URL.
 
 Add these as **GitHub Actions secrets** on the repository (Settings → Secrets and variables → Actions). The deploy workflow skips cleanly when any required secret is missing.
 
