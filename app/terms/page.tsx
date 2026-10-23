@@ -1,9 +1,9 @@
-import Link from "next/link";
+import { Logo } from "@/components/logo";
 
 export default function TermsPage() {
   return (
     <main id="main" className="mx-auto max-w-2xl px-4 py-10">
-      <Link href="/" className="serif text-3xl text-pine">Rent Right</Link>
+      <Logo />
       <h1 className="mt-4 text-4xl">Terms of use (draft)</h1>
       <p className="note-gold mt-4 text-sm">Draft for clinic review. Not a final terms of service. California limits some waivers, including waivers of public injunctive relief.</p>
       <div className="mt-4 space-y-3 text-sm leading-6">

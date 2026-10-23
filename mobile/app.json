@@ -7,7 +7,12 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "backgroundColor": "#f6f5f2",
+    "backgroundColor": "#F8FAF9",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F8FAF9"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "local.rentright.app"
@@ -15,7 +20,7 @@
     "android": {
       "package": "local.rentright.app",
       "adaptiveIcon": {
-        "backgroundColor": "#0f5c4c",
+        "backgroundColor": "#F8FAF9",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -24,7 +29,13 @@
     },
     "web": {
       "bundler": "metro",
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "name": "Rent Right",
+      "shortName": "Rent Right",
+      "themeColor": "#0B5C6E",
+      "backgroundColor": "#F8FAF9",
+      "display": "standalone",
+      "lang": "en"
     },
     "plugins": [
       "expo-router",

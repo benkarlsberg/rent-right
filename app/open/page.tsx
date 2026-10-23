@@ -1,8 +1,10 @@
+import { Logo } from "@/components/logo";
+
 export default async function OpenPage({ searchParams }: { searchParams: Promise<{ error?: string; session?: string; invite?: string }> }) {
   const params = await searchParams;
   return (
     <main id="main" className="mx-auto max-w-md px-5 py-16">
-      <p className="serif text-4xl text-pine">Rent Right</p>
+      <Logo />
       <h1 className="mt-4 text-3xl">Open the phone app</h1>
       {params.error && <p className="note-clay mt-4" role="alert">{params.error}</p>}
       {params.session && (

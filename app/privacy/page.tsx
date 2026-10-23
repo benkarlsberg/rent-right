@@ -1,9 +1,9 @@
-import Link from "next/link";
+import { Logo } from "@/components/logo";
 
 export default function PrivacyPage() {
   return (
     <main id="main" className="mx-auto max-w-2xl px-4 py-10">
-      <Link href="/" className="serif text-3xl text-pine">Rent Right</Link>
+      <Logo />
       <h1 className="mt-4 text-4xl">Privacy notice (draft)</h1>
       <p className="note-gold mt-4 text-sm">Draft for review. Rent Right does not sell or share personal information for cross-context advertising.</p>
       <div className="mt-4 space-y-3 text-sm leading-6">

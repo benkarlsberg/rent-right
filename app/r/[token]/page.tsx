@@ -1,3 +1,4 @@
+import { Logo } from "@/components/logo";
 import { landlordReply } from "@/lib/actions";
 import { Disclaimer } from "@/components/ui";
 import { messageByToken } from "@/lib/db";
@@ -11,7 +12,7 @@ export default async function RespondPage({ params, searchParams }: { params: Pr
   const message = await messageByToken(token);
   return (
     <main id="main" className="mx-auto max-w-lg px-4 py-10">
-      <p className="serif text-3xl text-pine">Rent Right</p>
+      <Logo />
       <h1 className="mt-4 text-4xl">{tx(locale, "Respond without an account", "Responder sin cuenta")}</h1>
       {!message && <p className="note-clay mt-4">{tx(locale, "This link is not valid.", "Este enlace no es válido.")}</p>}
       {query.done && <p className="note-pine mt-4" role="status">{tx(locale, "Recorded with a timestamp.", "Quedó registrado con fecha y hora.")}</p>}

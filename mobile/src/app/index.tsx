@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/api";
 import type { Me } from "@/session";
 import { useSession } from "@/session";
+import { Logo } from "@/logo";
 import { colors } from "@/theme";
 import { Button, ErrorLine, Field } from "@/ui";
 
@@ -99,7 +100,9 @@ export default function Welcome() {
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.body}>
-        <Text accessibilityRole="header" style={styles.name}>Rent Right</Text>
+        <View accessibilityRole="header" style={styles.brand}>
+          <Logo width={280} />
+        </View>
         <Text style={styles.prop}>Keep your rental records and talk to your landlord, all in one place.</Text>
         {sent ? (
           <View>
@@ -152,10 +155,10 @@ export default function Welcome() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper, paddingHorizontal: 24 },
-  body: { flex: 1, paddingTop: 48 },
+  body: { flex: 1, paddingTop: 36 },
   loading: { color: colors.mute, fontSize: 16, marginTop: 48 },
-  name: { fontSize: 40, lineHeight: 46, color: colors.ink, fontWeight: "600", letterSpacing: -0.6 },
-  prop: { fontSize: 18, lineHeight: 26, color: colors.ink, marginTop: 12 },
+  brand: { marginBottom: 8 },
+  prop: { fontSize: 18, lineHeight: 26, color: colors.ink, marginTop: 16 },
   confirmTitle: { fontSize: 22, lineHeight: 28, color: colors.ink, fontWeight: "600", marginTop: 28 },
   confirm: { fontSize: 16, lineHeight: 24, color: colors.mute, marginTop: 8 },
   or: { color: colors.mute, fontSize: 14, textAlign: "center", marginTop: 16 },

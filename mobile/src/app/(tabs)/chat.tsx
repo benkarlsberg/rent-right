@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/api";
 import { saveAuthorizedFile } from "@/files";
 import type { Notice } from "@/session";
+import { Logo } from "@/logo";
 import { colors } from "@/theme";
 import { ErrorLine, LearnMore } from "@/ui";
 import { useLoad } from "@/use-load";
@@ -96,7 +97,9 @@ export default function AssistantChat() {
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
-      <Text style={styles.title}>Rent Right</Text>
+      <View style={styles.brand} accessibilityRole="header">
+        <Logo width={236} />
+      </View>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <FlatList
           data={items}
@@ -155,7 +158,7 @@ export default function AssistantChat() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper },
-  title: { fontSize: 32, fontWeight: "600", color: colors.ink, letterSpacing: -0.4, paddingHorizontal: 24, paddingTop: 16, paddingBottom: 8 },
+  brand: { paddingHorizontal: 24, paddingTop: 12, paddingBottom: 8 },
   list: { paddingHorizontal: 24, paddingBottom: 24, flexGrow: 1 },
   intro: { fontSize: 22, color: colors.ink, marginTop: 24, lineHeight: 30 },
   support: { fontSize: 16, lineHeight: 24, color: colors.mute, marginTop: 8 },

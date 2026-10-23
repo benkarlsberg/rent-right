@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Logo } from "@/components/logo";
 import { ClinicNote, Disclaimer } from "@/components/ui";
 import { LIBRARY_VERSION } from "@/lib/disclaimer";
 import { RULES } from "@/lib/rules/library";
@@ -9,7 +9,7 @@ export default async function RulesPage() {
   const locale = await readLocale();
   return (
     <main id="main" className="mx-auto max-w-3xl px-4 py-8">
-      <Link href="/" className="serif text-3xl text-pine">Rent Right</Link>
+      <Logo />
       <h1 className="mt-4 text-4xl">{tx(locale, "Rules library", "Biblioteca de reglas")} {LIBRARY_VERSION}</h1>
       <div className="mt-4 space-y-3"><ClinicNote locale={locale} /><Disclaimer locale={locale} /></div>
       <div className="mt-6 space-y-4">

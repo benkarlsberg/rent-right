@@ -1,3 +1,4 @@
+import { Logo } from "@/components/logo";
 import { ackReport } from "@/lib/actions";
 import { Disclaimer } from "@/components/ui";
 import { readLocale } from "@/lib/session";
@@ -9,7 +10,7 @@ export default async function AckPage({ params, searchParams }: { params: Promis
   const locale = await readLocale();
   return (
     <main id="main" className="mx-auto max-w-lg px-4 py-10">
-      <p className="serif text-3xl text-pine">Rent Right</p>
+      <Logo />
       <h1 className="mt-4 text-4xl">{tx(locale, "Acknowledge a condition report", "Acusar un reporte del estado")}</h1>
       <p className="mt-2 text-sm text-mute">{tx(locale, "This records your name and the time. It is not a legal admission beyond what you type.", "Esto guarda su nombre y la hora. No es una admisión legal más allá de lo que usted escribe.")}</p>
       {query.done && <p className="note-pine mt-4" role="status">{tx(locale, "Acknowledgment saved.", "Acuse guardado.")}</p>}

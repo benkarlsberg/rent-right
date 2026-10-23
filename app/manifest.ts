@@ -7,9 +7,14 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Free records and general information for California renters.",
     start_url: "/home",
     display: "standalone",
-    background_color: "#f3eee4",
-    theme_color: "#0f5c4c",
+    background_color: "#F8FAF9",
+    theme_color: "#0B5C6E",
     lang: "en",
-    icons: [{ src: "/icon", sizes: "64x64", type: "image/png" }],
+    icons: [
+      { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/icons/icon-maskable-192.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
+      { src: "/icons/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    ],
   };
 }

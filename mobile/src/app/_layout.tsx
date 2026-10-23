@@ -15,6 +15,7 @@ export default function RootLayout() {
             headerStyle: { backgroundColor: colors.paper },
             headerShadowVisible: false,
             headerTintColor: colors.pine,
+            headerTitleStyle: { color: colors.ink, fontWeight: "600" },
             contentStyle: { backgroundColor: colors.paper },
           }}
         >
@@ -37,7 +38,7 @@ export default function RootLayout() {
   );
   if (Platform.OS !== "web") return app;
   return (
-    <View style={{ flex: 1, backgroundColor: "#eceae6", alignItems: "center" }}>
+    <View style={{ flex: 1, backgroundColor: "#E6F0EE", alignItems: "center" }}>
       <View style={{ width: "100%", maxWidth: 420, flex: 1 }}>{app}</View>
     </View>
   );

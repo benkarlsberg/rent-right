@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Figtree, Fraunces } from "next/font/google";
 import { currentUser, readLocale } from "@/lib/session";
 import "./globals.css";
@@ -10,6 +10,11 @@ export const metadata: Metadata = {
   title: { default: "Rent Right", template: "%s · Rent Right" },
   description: "Free records and general legal information for California renters. Not a law firm.",
   applicationName: "Rent Right",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0B5C6E",
+  colorScheme: "light",
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
