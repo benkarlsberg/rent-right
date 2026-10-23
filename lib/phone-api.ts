@@ -624,7 +624,7 @@ async function runIncrease(input: Record<string, unknown>) {
 
 async function assistantCards(user: User) {
   const locale = user.locale;
-  const rows = await listAssistant(user.id);
+  const rows = await listAssistant(user.id, "visible");
   return rows.map((row) => {
     if (row.role === "user") return { role: "user" as const, text: row.content };
     const ids = Array.isArray(row.rule_ids) ? row.rule_ids.map(String) : JSON.parse(String(row.rule_ids || "[]")) as string[];
@@ -675,7 +675,7 @@ function chips(locale: Locale) {
 async function threadPayload() {
   const { user, unit } = await withUnit();
   const locale = user.locale;
-  const rows = await listAssistant(user.id);
+  const rows = await listAssistant(user.id, "visible");
   const items = rows.map((row) => {
     if (row.role === "user") return { role: "user" as const, text: row.content };
     const card = parseCard(row.content);

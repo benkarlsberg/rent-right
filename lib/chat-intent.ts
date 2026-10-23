@@ -21,7 +21,7 @@ export type TurnPlan =
 
 const INTENTS = ["repair", "lease", "rent", "deposit", "packet", "deadlines", "rights", "unclear"] as const;
 
-const REPAIR = /\b(leak|leaking|drip|dripping|sink|mold|mould|pest|roach|heater|heat|repair|broken|faucet|toilet|water|electricity|power|gas|gotera|fregadero|filtra|filtrando|moho|plaga|cucaracha|calefaccion|fuga|agua|luz)\b/;
+const REPAIR = /\b(leak|leaking|drip|dripping|sink|mold|mould|pest|roach|heater|heat|repair|broken|faucet|toilet|water|electricity|power|gas|gotera|fregadero|filtra|filtrando|moho|plaga|cucaracha|calefaccion|fuga|agua|luz|request a fix|request a repair|like to request a fix|like to ask for a fix|arreglar|arreglo|reparar|reparacion)\b/;
 const RENT = /\b(rent increase|raised rent|raise rent|raising rent|new rent|aumento|subio el alquiler|subio la renta|aumento de renta)\b/;
 const DEPOSIT = /\b(deposit|security deposit|deposito|moved out|move out|moving out|me mude)\b/;
 const LEASE = /\b(lease|contrato|rental agreement)\b/;
@@ -121,10 +121,34 @@ export function planFromIntent(intent: ChatIntent, text: string): TurnPlan {
   return { type: "unclear" };
 }
 
+const HARD_SWITCH = /^(never\s*mind|start over|forget (?:it|that)|olv[ií]dalo|empezar de nuevo)\b[,.\s]*/i;
+const SOFT_SWITCH = /^(actually|instead)\b[,.\s]*/i;
+
+export function leadingSwitch(text: string): { kind: "hard" | "soft" | null; rest: string } {
+  const trimmed = text.trim();
+  const hard = trimmed.match(HARD_SWITCH);
+  if (hard) return { kind: "hard", rest: trimmed.slice(hard[0].length).trim() };
+  const soft = trimmed.match(SOFT_SWITCH);
+  if (soft) return { kind: "soft", rest: trimmed.slice(soft[0].length).trim() };
+  return { kind: null, rest: trimmed };
+}
+
+function switchedPlan(text: string): TurnPlan | null {
+  const switched = leadingSwitch(text);
+  if (!switched.kind) return null;
+  if (!switched.rest) return { type: "unclear" };
+  const intent = detectIntent(switched.rest, null);
+  if (intent !== "rights" && intent !== "unclear" && intent !== "confirm") return planFromIntent(intent, switched.rest);
+  if (switched.kind === "hard") return { type: "unclear" };
+  return null;
+}
+
 export function planTurn(text: string, pending: PendingKind): TurnPlan {
   const trimmed = text.trim();
   if (pending === "repair" && isConfirm(trimmed)) return { type: "confirm_send" };
   if (isConfirm(trimmed)) return { type: "unclear" };
+  const changed = switchedPlan(trimmed);
+  if (changed) return changed;
   const date = extractDate(trimmed);
   if (pending === "rent_date" || pending === "deposit_date") {
     const intent = detectIntent(trimmed, null);

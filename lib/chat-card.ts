@@ -4,6 +4,7 @@ export type ChatCard = {
   headline: string;
   status: string;
   action: ChatAction | null;
+  actions?: ChatAction[];
   detail: string;
   ruleId: string | null;
 };
@@ -25,10 +26,14 @@ export function parseCard(content: string): ChatCard | null {
     const value = JSON.parse(content) as Partial<ChatCard> & { v?: number };
     if (value.v !== 1 || typeof value.headline !== "string" || typeof value.status !== "string" || typeof value.detail !== "string") return null;
     const action = value.action && typeof value.action.id === "string" && typeof value.action.label === "string" ? value.action : null;
+    const actions = Array.isArray(value.actions)
+      ? value.actions.filter((item): item is ChatAction => Boolean(item) && typeof item.id === "string" && typeof item.label === "string")
+      : [];
     return {
       headline: value.headline,
       status: value.status,
       action,
+      actions: actions.length ? actions : undefined,
       detail: value.detail,
       ruleId: typeof value.ruleId === "string" ? value.ruleId : null,
     };

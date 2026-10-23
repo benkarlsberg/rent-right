@@ -141,6 +141,51 @@ describe("renter workflows", () => {
     expect(JSON.stringify(short.json)).toMatch(/No lease text/i);
   });
 
+  it("switches topic, then archives the chat without deleting records", async () => {
+    const email = `switch-${Date.now()}@example.com`;
+    const magic = await api("POST", "auth/magic", { email });
+    const session = await api("POST", "auth/verify", { token: magic.json?.devToken });
+    const token = String(session.json?.token);
+    await api("POST", "unit", {
+      name: "Ada Tenant",
+      street: "10 Main St",
+      city: "Los Angeles",
+      postalCode: "90026",
+      landlordName: "Pat Landlord",
+      landlordEmail: "pat@example.com",
+      rent: "2000",
+    }, token);
+
+    const waiting = await api("POST", "thread", { text: "My landlord raised rent to $2,100" }, token);
+    expect(waiting.status).toBe(200);
+    expect(JSON.stringify(waiting.json)).toMatch(/start date/i);
+
+    const switched = await api("POST", "thread", { text: "Nevermind, I'd like to request a fix" }, token);
+    expect(switched.status).toBe(200);
+    const cards = switched.json?.items as { headline?: string; actions?: { id: string; label: string }[]; action?: { id: string } | null }[];
+    expect(cards.some((item) => item.headline === "Unsure")).toBe(false);
+    expect(cards.some((item) => item.action?.id.startsWith("send:") || item.headline === "Repair logged")).toBe(true);
+
+    const vague = await api("POST", "thread", { text: "purple balloons on the ceiling" }, token);
+    const vagueCards = vague.json?.items as { actions?: { label: string }[] }[];
+    const suggestions = vagueCards.at(-1)?.actions?.map((action) => action.label) || [];
+    expect(suggestions).toEqual(expect.arrayContaining(["My sink is leaking", "Check my lease", "Check a rent increase", "Where's my deposit?", "Start over"]));
+
+    const records = await api("GET", "records", undefined, token);
+    expect((records.json?.notes as { line: string }[]).length).toBeGreaterThan(0);
+
+    const cleared = await api("POST", "thread", { action: "clear" }, token);
+    expect(cleared.status).toBe(200);
+    expect(cleared.json?.items).toEqual([]);
+    expect((cleared.json?.chips as unknown[]).length).toBeGreaterThan(0);
+    const stillThere = await api("GET", "records", undefined, token);
+    expect((stillThere.json?.notes as { line: string }[]).length).toBeGreaterThan(0);
+    const kept = await getSql()<{ n: number }[]>`
+      select count(*)::int as n from assistant_messages where archived_at is not null
+    `;
+    expect(kept[0]?.n).toBeGreaterThan(0);
+  });
+
   it("loads the synthetic Los Angeles sample tenancy", async () => {
     const id = await startSampleTenancy();
     const user = await getUser(id);

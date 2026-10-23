@@ -78,6 +78,16 @@ describe("chat intent", () => {
     expect(planTurn("2026-11-01", "rent_date")).toEqual({ type: "continue_date", date: "2026-11-01" });
     expect(planTurn("the bathroom faucet is dripping", "rent_date").type).toBe("repair");
   });
+
+  it("drops the current flow when the tenant changes topic", () => {
+    const repair = planTurn("Nevermind, I'd like to request a fix", "rent_date");
+    expect(repair).toMatchObject({ type: "repair" });
+    expect(repair.type === "repair" && repair.summary).toBe("I'd like to request a fix");
+    expect(planTurn("Nevermind, I'd like to request a fix", "letter").type).toBe("repair");
+    expect(planTurn("Nevermind", "deposit_date").type).toBe("unclear");
+    expect(planTurn("Check my lease", "letter").type).toBe("lease");
+    expect(planTurn("instead check a rent increase to $2,100", "repair")).toMatchObject({ type: "rent", proposedCents: 210_000 });
+  });
 });
 
 describe("chat card after send", () => {

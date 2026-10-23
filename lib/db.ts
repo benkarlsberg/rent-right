@@ -1026,11 +1026,18 @@ export async function setChatDraftPayload(userId: string, id: string, payload: R
   await run("update chat_drafts set payload = ? where id = ? and user_id = ? and status = 'open'", [JSON.stringify(payload), id, userId]);
 }
 
-export async function listAssistant(userId: string) {
+export async function listAssistant(userId: string, scope: "visible" | "all" = "all") {
+  const visible = scope === "visible" ? " and archived_at is null" : "";
   return await all<{ role: string; content: string; rule_ids: string; unsure: number; created_at: string; locale: string }>(
-    "select * from assistant_messages where user_id = ? order by created_at asc",
+    `select * from assistant_messages where user_id = ?${visible} order by created_at asc`,
     [userId],
   );
+}
+
+export async function archiveChat(userId: string) {
+  const now = new Date().toISOString();
+  await run("update assistant_messages set archived_at = ? where user_id = ? and archived_at is null", [now, userId]);
+  await run("update chat_drafts set status = 'cancelled' where user_id = ? and status = 'open'", [userId]);
 }
 
 export async function countAssistantThisMonth(userId: string, monthStart: string) {

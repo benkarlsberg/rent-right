@@ -2,6 +2,7 @@ import { cardAfterSend, serializeCard, type ChatCard } from "@/lib/chat-card";
 import { planFromIntent, planTurn, repairFacts, resolveIntent, type TurnPlan } from "@/lib/chat-intent";
 import {
   addAssistantMessage,
+  archiveChat,
   assistantMessageContent,
   closeChatDraft,
   countAssistantThisMonth,
@@ -56,8 +57,13 @@ export async function runChatTurn(user: User, unit: Unit, input: {
   draftId?: string;
   attachment?: { name: string; mime: string; base64: string } | null;
 }): Promise<void> {
-  const text = (input.text || "").trim();
+  let text = (input.text || "").trim();
   const action = (input.action || "").trim();
+  if (action === "clear") {
+    await archiveChat(user.id);
+    return;
+  }
+  if (action.startsWith("prompt:")) text = action.slice("prompt:".length).trim();
   if (action === "send") {
     await confirmSend(user, unit, input.draftId || "");
     return;
@@ -252,23 +258,45 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: Awaited<
     await answerRights(user, unit, text);
     return;
   }
-  await say(user, unit, {
-    headline: tx(user.locale, "Try a task", "Pruebe una tarea"),
-    status: tx(user.locale, "Not sure", "No se puede precisar"),
+  await say(user, unit, suggestionCard(user));
+}
+
+function suggestionCard(user: User): ChatCard {
+  const spanish = user.locale === "es";
+  return {
+    headline: tx(user.locale, "What do you want to do?", "¿Qué quiere hacer?"),
+    status: tx(user.locale, "Nothing was sent.", "No se envió nada."),
     action: null,
-    detail: tx(user.locale, "You can report a repair, check a lease, check a rent increase, or ask about a deposit. Nothing was sent.", "Puede reportar una reparación, revisar un contrato, revisar un aumento o preguntar por un depósito. No se envió nada."),
+    actions: spanish
+      ? [
+          { id: "prompt:Se filtra el fregadero", label: "Se filtra el fregadero" },
+          { id: "prompt:Revisar mi contrato", label: "Revisar mi contrato" },
+          { id: "prompt:Mi casero subio la renta a $2,100", label: "Revisar un aumento" },
+          { id: "prompt:Me mude, donde esta mi deposito?", label: "¿Dónde está mi depósito?" },
+          { id: "reset", label: "Empezar de nuevo" },
+        ]
+      : [
+          { id: "prompt:My sink is leaking", label: "My sink is leaking" },
+          { id: "prompt:Check my lease", label: "Check my lease" },
+          { id: "prompt:My landlord raised rent to $2,100", label: "Check a rent increase" },
+          { id: "prompt:I moved out, where's my deposit?", label: "Where's my deposit?" },
+          { id: "reset", label: "Start over" },
+        ],
+    detail: tx(user.locale, "Pick one, or describe it in your own words.", "Elija una, o descríbala con sus palabras."),
     ruleId: null,
-  });
+  };
 }
 
 async function answerRights(user: User, unit: Unit, question: string) {
   const answer = answerQuestion(question, user.locale);
   const rule = answer.ruleIds[0] ? getRule(answer.ruleIds[0]) : undefined;
+  if (!answer.handoff && (answer.unsure || !rule)) {
+    await say(user, unit, suggestionCard(user));
+    return;
+  }
   const headline = answer.handoff
     ? tx(user.locale, "Contact legal aid", "Contacte asistencia legal")
-    : answer.unsure || !rule
-      ? tx(user.locale, "Unsure", "No se puede precisar")
-      : user.locale === "es" ? rule.titleEs : rule.titleEn;
+    : user.locale === "es" ? rule!.titleEs : rule!.titleEn;
   await say(user, unit, {
     headline,
     status: answer.ruleIds[0] || tx(user.locale, "Unsure", "No se puede precisar"),

@@ -102,10 +102,10 @@ export default function Records() {
           <Pressable
             style={styles.textButton}
             accessibilityRole="button"
-            accessibilityLabel="Sign out"
+            accessibilityLabel="Log out"
             onPress={async () => { await signOut(); router.replace("/"); }}
           >
-            <Text style={styles.textButtonLabel}>Sign out</Text>
+            <Text style={styles.textButtonLabel}>Log out</Text>
           </Pressable>
           <LearnMore label="Account">
             <Muted>{me?.user.email}</Muted>
