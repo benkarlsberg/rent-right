@@ -4,10 +4,9 @@ import postgres from "postgres";
 type Sql = ReturnType<typeof postgres>;
 type Tx = postgres.TransactionSql;
 
-type Scope = { userId: string | null };
+type Scope = { userId: string | null; sql?: Sql; opening?: Promise<Sql> };
 
 const actors = new AsyncLocalStorage<Scope>();
-const requestClients = new AsyncLocalStorage<Sql>();
 let pool: Sql | null = null;
 
 function cloudflareRuntime(): boolean {
@@ -55,7 +54,7 @@ function createSql(url: string, hyperdrive: boolean): Sql {
 
 export function getSql(): Sql {
   if (cloudflareRuntime()) {
-    const current = requestClients.getStore();
+    const current = actors.getStore()?.sql;
     if (current) return current;
     throw new Error("Database client is not ready.");
   }
@@ -63,16 +62,28 @@ export function getSql(): Sql {
   return pool;
 }
 
-async function client(): Promise<Sql> {
-  if (!cloudflareRuntime()) return getSql();
-  const current = requestClients.getStore();
-  if (current) return current;
+async function openHyperdrive(): Promise<Sql> {
   const { env } = await import("cloudflare:workers");
   const binding = env.HYPERDRIVE?.connectionString;
   if (!binding) throw new Error("Database binding is not configured.");
-  const sql = createSql(binding, true);
-  requestClients.enterWith(sql);
-  return sql;
+  return createSql(binding, true);
+}
+
+async function client(): Promise<Sql> {
+  if (!cloudflareRuntime()) return getSql();
+  const scope = actors.getStore();
+  if (scope?.sql) return scope.sql;
+  if (scope?.opening) return scope.opening;
+  const opening = openHyperdrive();
+  if (scope) scope.opening = opening;
+  try {
+    const sql = await opening;
+    if (scope) scope.sql = sql;
+    return sql;
+  } catch (error) {
+    if (scope) scope.opening = undefined;
+    throw error;
+  }
 }
 
 export async function closeSql(): Promise<void> {
@@ -244,6 +255,13 @@ export function hasUserActor(): boolean {
 }
 
 export function adoptActor(userId: string | null) {
+  const current = actors.getStore();
+  if (current) {
+    current.userId = userId;
+    return;
+  }
+  // Workers implements AsyncLocalStorage.run and omits enterWith.
+  if (cloudflareRuntime()) return;
   actors.enterWith({ userId });
 }
 
@@ -255,7 +273,15 @@ async function applyRole(tx: Tx, userId: string | null) {
 export async function withActor<T>(userId: string | null, fn: () => Promise<T>): Promise<T> {
   const current = actors.getStore();
   if (current && current.userId === userId) return fn();
-  return actors.run({ userId }, fn);
+  const scope: Scope = { userId };
+  try {
+    return await actors.run(scope, fn);
+  } finally {
+    const sql = scope.sql;
+    scope.sql = undefined;
+    scope.opening = undefined;
+    if (sql) await sql.end({ timeout: 1 }).catch(() => {});
+  }
 }
 
 export async function asUser<T>(userId: string, fn: () => Promise<T>): Promise<T> {
@@ -273,13 +299,19 @@ function readResult(result: unknown): { rows: Record<string, unknown>[]; count: 
 
 async function execute(sql: string, params: unknown[]): Promise<{ rows: Record<string, unknown>[]; count: number }> {
   const text = placeholders(sql);
-  const userId = actors.getStore()?.userId ?? null;
+  const scope = actors.getStore();
+  const userId = scope?.userId ?? null;
   const db = await client();
-  if (!userId) return readResult(await db.unsafe(text, params as never[]));
-  return db.begin(async (tx) => {
-    await applyRole(tx, userId);
-    return readResult(await tx.unsafe(text, params as never[]));
-  }) as Promise<{ rows: Record<string, unknown>[]; count: number }>;
+  const transient = cloudflareRuntime() && !scope;
+  try {
+    if (!userId) return readResult(await db.unsafe(text, params as never[]));
+    return await (db.begin(async (tx) => {
+      await applyRole(tx, userId);
+      return readResult(await tx.unsafe(text, params as never[]));
+    }) as Promise<{ rows: Record<string, unknown>[]; count: number }>);
+  } finally {
+    if (transient) await db.end({ timeout: 1 }).catch(() => {});
+  }
 }
 
 export async function all<T>(sql: string, params: unknown[] = []): Promise<T[]> {

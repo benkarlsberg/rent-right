@@ -1,5 +1,6 @@
 import { getUser, insertMessage, unitByRelay, unitMemberUserIds, addNotification } from "@/lib/db";
 import { sendTenantEmail } from "@/lib/email";
+import { withActor } from "@/lib/pg";
 import { relayAddress } from "@/lib/text";
 
 export async function POST(request: Request) {
@@ -17,6 +18,7 @@ export async function POST(request: Request) {
   const to = Array.isArray(body.to) ? body.to.join(",") : body.to;
   const match = to.match(/u-[a-z0-9]+/i);
   if (!match) return new Response("No relay address", { status: 202 });
+  return withActor(null, async () => {
   const unit = await unitByRelay(match[0].toLowerCase());
   if (!unit) return new Response("Unknown unit", { status: 202 });
   await insertMessage({
@@ -36,4 +38,5 @@ export async function POST(request: Request) {
     if (user) await sendTenantEmail(user.email, "Rent Right: a reply was logged", body.text || "A reply was logged. Open the app to read it.");
   }
   return new Response("ok");
+  });
 }

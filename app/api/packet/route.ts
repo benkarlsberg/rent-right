@@ -1,12 +1,13 @@
 import { getDeposit, listConditions, listDeadlines, listLedger, listLogHistory, listMessages, primaryUnit } from "@/lib/db";
 import { packetLines } from "@/lib/packet";
 import { renderPdf } from "@/lib/pdf";
-import { adoptActor, currentUser } from "@/lib/session";
+import { withActor } from "@/lib/pg";
+import { currentUser } from "@/lib/session";
 
 export async function GET() {
   const user = await currentUser();
   if (!user) return new Response("Sign in required.", { status: 401 });
-  adoptActor(user.id);
+  return withActor(user.id, async () => {
   const unit = await primaryUnit(user.id);
   if (!unit) return new Response("Add a unit first.", { status: 400 });
   const deposit = await getDeposit(user.id, unit.id);
@@ -34,5 +35,6 @@ export async function GET() {
   const pdf = await renderPdf("Factual evidence packet", lines);
   return new Response(Buffer.from(pdf), {
     headers: { "content-type": "application/pdf", "content-disposition": "attachment; filename=rent-right-packet.pdf" },
+  });
   });
 }
