@@ -136,6 +136,13 @@ Create these accounts. Turn on MFA for Supabase and Cloudflare.
 
 `DATABASE_URL` must be the Supabase **postgres** connection string (direct, or the session pooler). A database password is also accepted: deploy turns it into the session pooler URI using `SUPABASE_URL`. The API sets the `authenticated` role per request so RLS applies. `SUPABASE_ANON_KEY` accepts the publishable key (`sb_publishable_…`). `SUPABASE_SERVICE_ROLE_KEY` accepts the secret key (`sb_secret_…`) and stays on the server. Do not put that secret in the Expo app or any `EXPO_PUBLIC_` / `NEXT_PUBLIC_` variable. Set `NEXT_PUBLIC_APP_URL` to `https://app.rentrightportal.com`. When that secret is empty, deploy uses the same URL. In the Supabase Auth settings, allow `https://app.rentrightportal.com/auth/verify` as a redirect URL.
 
+Google sign-in is off until `EXPO_PUBLIC_GOOGLE_AUTH` is `1`. That value is a GitHub Actions variable or secret of the same name. Leave it unset until the provider is configured. Then set it to `1` and run Deploy.
+
+1. Google Cloud console → APIs & Services → Credentials → Create credentials → OAuth client ID → Application type **Web application**.
+2. Authorized redirect URI: `https://ijpkxcsnkqgmxkvykzrs.supabase.co/auth/v1/callback`
+3. Supabase → Authentication → Providers → Google. Turn it on. Paste the client ID and client secret.
+4. Supabase → Authentication → URL Configuration → Redirect URLs. Add `https://app.rentrightportal.com/auth/verify`.
+
 Add these as **GitHub Actions secrets** on the repository (Settings → Secrets and variables → Actions). The deploy workflow skips cleanly when any required secret is missing.
 
 | GitHub secret | Required to deploy | Where it comes from |

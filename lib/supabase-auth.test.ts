@@ -1,9 +1,12 @@
 import { randomUUID } from "crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { consumeMagicLink, createMagicLink } from "@/lib/db";
+import { consumeMagicLink, createMagicLink, profileForAuthUser } from "@/lib/db";
+import { startGoogleSignIn, userFromGoogleCode } from "@/lib/supabase-auth";
 
 const generateLink = vi.hoisted(() => vi.fn());
 const signInWithOtp = vi.hoisted(() => vi.fn());
+const signInWithOAuth = vi.hoisted(() => vi.fn());
+const exchangeCodeForSession = vi.hoisted(() => vi.fn());
 const verifyOtp = vi.hoisted(() => vi.fn());
 const getUser = vi.hoisted(() => vi.fn());
 const seenKeys = vi.hoisted(() => [] as string[]);
@@ -14,6 +17,8 @@ vi.mock("@supabase/supabase-js", () => ({
     return {
       auth: {
         signInWithOtp,
+        signInWithOAuth,
+        exchangeCodeForSession,
         verifyOtp,
         getUser,
         admin: { generateLink },
@@ -29,6 +34,8 @@ describe("Supabase Auth", () => {
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
     generateLink.mockReset();
     signInWithOtp.mockReset();
+    signInWithOAuth.mockReset();
+    exchangeCodeForSession.mockReset();
     verifyOtp.mockReset();
     seenKeys.length = 0;
   });
@@ -62,5 +69,29 @@ describe("Supabase Auth", () => {
     expect(signInWithOtp).toHaveBeenCalled();
     expect(generateLink).not.toHaveBeenCalled();
     expect(seenKeys).toContain("sb_publishable_otp_key");
+  });
+
+  it("starts Google sign-in and creates the same profile from the returned code", async () => {
+    process.env.APP_URL = "https://app.rentrightportal.com";
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_ANON_KEY = "sb_publishable_test_key";
+    signInWithOAuth.mockResolvedValue({ data: { url: "https://accounts.google.com/o/oauth2/auth", flowId: "flow-1" }, error: null });
+    const started = await startGoogleSignIn();
+    expect(started.url).toBe("https://accounts.google.com/o/oauth2/auth");
+    expect(JSON.parse(started.pkce).flowId).toBe("flow-1");
+    expect(signInWithOAuth).toHaveBeenCalledWith({
+      provider: "google",
+      options: { redirectTo: "https://app.rentrightportal.com/auth/verify", skipBrowserRedirect: true },
+    });
+
+    const id = randomUUID();
+    exchangeCodeForSession.mockResolvedValue({ data: { user: { id, email: "google@example.com" } }, error: null });
+    const remote = await userFromGoogleCode("auth-code", started.pkce);
+    expect(remote).toEqual({ id, email: "google@example.com" });
+    expect(exchangeCodeForSession).toHaveBeenCalledWith("auth-code", { flowId: "flow-1" });
+    const user = await profileForAuthUser(id, remote!.email);
+    expect(user.id).toBe(id);
+    expect(user.email).toBe("google@example.com");
+    delete process.env.APP_URL;
   });
 });

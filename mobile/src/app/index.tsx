@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Linking, Platform, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/api";
 import type { Me } from "@/session";
@@ -9,6 +9,7 @@ import { colors } from "@/theme";
 import { Button, ErrorLine, Field } from "@/ui";
 
 const demoEnabled = process.env.EXPO_PUBLIC_DEMO === "1";
+const googleEnabled = process.env.EXPO_PUBLIC_GOOGLE_AUTH === "1";
 const LINK_MINUTES = 30;
 
 export default function Welcome() {
@@ -23,6 +24,28 @@ export default function Welcome() {
     if (!ready || !token || !me) return;
     router.replace(me.needsUnit ? "/setup" : "/chat");
   }, [ready, token, me]);
+
+  useEffect(() => {
+    if (!ready || Platform.OS !== "web" || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const session = params.get("session");
+    const oauthError = params.get("error");
+    if (oauthError || session) window.history.replaceState({}, "", window.location.pathname);
+    if (oauthError) setError(oauthError);
+    if (!session) return;
+    let cancel = false;
+    api<Me>("me", { token: session })
+      .then((data) => {
+        if (cancel) return;
+        return signIn({ ...data, token: session });
+      })
+      .catch((err: unknown) => {
+        if (!cancel) setError(err instanceof Error ? err.message : "Could not finish sign-in.");
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [ready, signIn]);
 
   async function demo() {
     try {
@@ -87,6 +110,19 @@ export default function Welcome() {
           </View>
         ) : (
           <View>
+            {googleEnabled ? (
+              <Button
+                label="Continue with Google"
+                ghost
+                disabled={busy}
+                onPress={() => {
+                  const start = Platform.OS === "web" ? `${window.location.origin}/auth/google` : "https://app.rentrightportal.com/auth/google";
+                  if (Platform.OS === "web") window.location.assign(start);
+                  else void Linking.openURL(start);
+                }}
+              />
+            ) : null}
+            {googleEnabled ? <Text style={styles.or}>or</Text> : null}
             <Field
               label="Email"
               value={email}
@@ -122,6 +158,7 @@ const styles = StyleSheet.create({
   prop: { fontSize: 18, lineHeight: 26, color: colors.ink, marginTop: 12 },
   confirmTitle: { fontSize: 22, lineHeight: 28, color: colors.ink, fontWeight: "600", marginTop: 28 },
   confirm: { fontSize: 16, lineHeight: 24, color: colors.mute, marginTop: 8 },
+  or: { color: colors.mute, fontSize: 14, textAlign: "center", marginTop: 16 },
   dev: { marginTop: 8 },
   footer: { color: colors.mute, fontSize: 14, lineHeight: 20, paddingBottom: 20 },
 });

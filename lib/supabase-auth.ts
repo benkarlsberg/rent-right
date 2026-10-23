@@ -11,8 +11,22 @@ function supabaseAdminConfigured(): boolean {
 
 function client(key: string): SupabaseClient {
   return createClient(process.env.SUPABASE_URL!, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
+}
+
+function memoryStorage() {
+  const bag = new Map<string, string>();
+  return {
+    bag,
+    getItem: (key: string) => bag.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      bag.set(key, value);
+    },
+    removeItem: (key: string) => {
+      bag.delete(key);
+    },
+  };
 }
 
 function redirectTo(): string {
@@ -44,6 +58,48 @@ export async function userFromSupabaseOtp(tokenHash: string): Promise<{ id: stri
   const { data, error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "magiclink" });
   if (error || !data.user) return null;
   return { id: data.user.id, email: data.user.email || "" };
+}
+
+export async function startGoogleSignIn(): Promise<{ url: string; pkce: string }> {
+  if (!supabaseAuthConfigured()) throw new Error("Google sign-in is not available yet.");
+  const storage = memoryStorage();
+  const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, flowType: "pkce", storage },
+  });
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: redirectTo(), skipBrowserRedirect: true },
+  });
+  if (error || !data.url) throw new Error(error?.message || "Could not start Google sign-in.");
+  const flowId = (data as { flowId?: string | null }).flowId ?? null;
+  return { url: data.url, pkce: JSON.stringify({ flowId, entries: [...storage.bag.entries()] }) };
+}
+
+export async function userFromGoogleCode(code: string, stored: string): Promise<{ id: string; email: string } | null> {
+  if (!code || !supabaseAuthConfigured()) return null;
+  let flowId: string | null = null;
+  const storage = memoryStorage();
+  try {
+    const parsed = JSON.parse(stored) as { flowId?: string | null; entries?: [string, string][] };
+    flowId = parsed.flowId || null;
+    for (const [key, value] of parsed.entries || []) storage.setItem(key, value);
+  } catch {
+    return null;
+  }
+  const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, flowType: "pkce", storage },
+  });
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code, flowId ? { flowId } : undefined);
+  if (error || !data.user?.email) return null;
+  return { id: data.user.id, email: data.user.email };
+}
+
+export async function userFromSupabaseAccessToken(token: string): Promise<{ id: string; email: string } | null> {
+  if (!token || !supabaseAuthConfigured()) return null;
+  const supabase = client(process.env.SUPABASE_ANON_KEY!);
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data.user?.email) return null;
+  return { id: data.user.id, email: data.user.email };
 }
 
 export async function userIdFromSupabaseToken(token: string | undefined): Promise<string | null> {

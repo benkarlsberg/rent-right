@@ -176,6 +176,7 @@ jobs:
           CI: "1"
           EXPO_NO_TELEMETRY: "1"
           EXPO_PUBLIC_API_URL: ${{ env.EXPO_PUBLIC_API_URL }}
+          EXPO_PUBLIC_GOOGLE_AUTH: ${{ vars.EXPO_PUBLIC_GOOGLE_AUTH || secrets.EXPO_PUBLIC_GOOGLE_AUTH }}
         run: |
           npm ci
           npx expo export --platform web

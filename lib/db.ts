@@ -216,7 +216,7 @@ export async function consumeMagicLink(token: string): Promise<User> {
   return await profileForAuthUser(id, row.email);
 }
 
-async function profileForAuthUser(id: string, email: string) {
+export async function profileForAuthUser(id: string, email: string) {
   const existing = await getUser(id);
   if (existing) return existing;
   const now = new Date().toISOString();
