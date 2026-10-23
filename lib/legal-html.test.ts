@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DISCLAIMER_EN } from "@/lib/disclaimer";
-import { homeLegalFooter, privacyDocument, termsDocument } from "@/lib/legal-html";
+import { HOME_DESCRIPTION, homeIntro, injectHomeHtml, privacyDocument, termsDocument } from "@/lib/legal-html";
 import { GET as privacy } from "@/app/privacy/route";
 import { GET as terms } from "@/app/terms/route";
 
@@ -11,8 +11,20 @@ describe("public legal pages", () => {
     expect(privacyDocument).toContain("only after you confirm");
     expect(termsDocument).toContain(DISCLAIMER_EN);
     expect(termsDocument).toContain("not a decision about your home");
-    expect(homeLegalFooter).toContain('href="/privacy"');
-    expect(homeLegalFooter).toContain('href="/terms"');
+    expect(homeIntro).toContain("<h1");
+    expect(homeIntro).toContain("Rent Right");
+    expect(homeIntro).toContain(HOME_DESCRIPTION);
+    expect(homeIntro).toContain('href="/"');
+    expect(homeIntro).toContain('href="/privacy"');
+    expect(homeIntro).toContain('href="/terms"');
+    const shell = `<html><head><title>Old</title></head><body><div id="root"></div><nav id="rr-legal"><a href="/privacy">Privacy</a></nav></body></html>`;
+    const injected = injectHomeHtml(shell);
+    expect(injected).toContain("<title>Rent Right</title>");
+    expect(injected).toContain('name="description"');
+    expect(injected).toContain(HOME_DESCRIPTION);
+    expect(injected).toContain('property="og:site_name" content="Rent Right"');
+    expect(injected).toContain('<div id="root"><main id="rr-home"');
+    expect(injected).not.toContain('id="rr-legal"');
     const privacyBody = await (await privacy()).text();
     const termsBody = await (await terms()).text();
     expect(privacyBody).toContain("<h1>Privacy policy</h1>");

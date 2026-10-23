@@ -13,6 +13,8 @@ function installWebViewport() {
     const extras = ["viewport-fit=cover", "interactive-widget=resizes-content"].filter((part) => !content.includes(part));
     if (extras.length) meta.setAttribute("content", `${content}, ${extras.join(", ")}`);
   }
+  document.getElementById("rr-home")?.remove();
+  document.getElementById("rr-legal")?.remove();
   if (document.getElementById("rr-viewport")) return;
   const style = document.createElement("style");
   style.id = "rr-viewport";

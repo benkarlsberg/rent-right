@@ -55,7 +55,31 @@ export const termsDocument = document(
 `,
 );
 
-export const homeLegalFooter = `<nav id="rr-legal" style="padding:16px 24px 28px;font:16px/1.4 sans-serif;background:#F8FAF9">
+export const HOME_DESCRIPTION = "AI tenant-landlord communication assistant for California renters.";
+
+export const homeIntro = `<main id="rr-home" style="box-sizing:border-box;max-width:40rem;margin:0 auto;padding:32px 24px;font:18px/1.5 Georgia, Times New Roman, serif;color:#14343C;background:#F8FAF9">
+<h1 style="font-size:2rem;line-height:1.2;margin:0 0 12px">Rent Right</h1>
+<p style="margin:0 0 16px">${HOME_DESCRIPTION}</p>
+<p style="margin:0 0 16px"><a href="/" style="color:#0B5C6E;font-weight:700">Sign in</a></p>
+<nav>
 <a href="/privacy" style="color:#0B5C6E;font-weight:700;margin-right:16px">Privacy</a>
 <a href="/terms" style="color:#0B5C6E;font-weight:700">Terms</a>
-</nav>`;
+</nav>
+</main>`;
+
+export function injectHomeHtml(html: string): string {
+  let next = html.replace(/<nav id="rr-legal"[\s\S]*?<\/nav>/, "");
+  if (/<title>[^<]*<\/title>/i.test(next)) next = next.replace(/<title>[^<]*<\/title>/i, "<title>Rent Right</title>");
+  else next = next.replace("</head>", "<title>Rent Right</title></head>");
+  if (!next.includes('name="description"')) {
+    next = next.replace("</head>", `<meta name="description" content="${HOME_DESCRIPTION}"></head>`);
+  }
+  if (!next.includes('property="og:site_name"')) {
+    next = next.replace("</head>", `<meta property="og:site_name" content="Rent Right"></head>`);
+  }
+  if (!next.includes('id="rr-home"')) {
+    if (!/<div id="root">\s*<\/div>/.test(next)) throw new Error("Expo index.html has no empty root.");
+    next = next.replace(/<div id="root">\s*<\/div>/, `<div id="root">${homeIntro}</div>`);
+  }
+  return next;
+}

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { homeLegalFooter, privacyDocument, termsDocument } from "../lib/legal-html";
+import { injectHomeHtml, privacyDocument, termsDocument } from "../lib/legal-html";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -17,10 +17,7 @@ function writePublic(): void {
 function injectHome(): void {
   const indexPath = join(root, "mobile/dist/index.html");
   if (!existsSync(indexPath)) return;
-  const html = readFileSync(indexPath, "utf8");
-  if (html.includes('id="rr-legal"')) return;
-  if (!html.includes("</body>")) throw new Error("Expo index.html has no body.");
-  writeFileSync(indexPath, html.replace("</body>", `${homeLegalFooter}</body>`));
+  writeFileSync(indexPath, injectHomeHtml(readFileSync(indexPath, "utf8")));
 }
 
 writePublic();
