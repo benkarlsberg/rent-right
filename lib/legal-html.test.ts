@@ -28,14 +28,14 @@ describe("public legal pages", () => {
     expect(injected).not.toContain('id="rr-legal"');
     expect(injected).toContain(iconLinks);
     expect(iconLinks).toContain('href="/favicon.svg?v=2"');
-    expect(iconLinks).toContain('href="/apple-touch-icon.png?v=2"');
+    expect(iconLinks).toContain('href="/apple-touch-icon.png?v=3"');
     const again = injectHomeHtml(injected);
     expect(again.match(/href="\/favicon\.svg\?v=2"/g)).toHaveLength(1);
     const replaced = injectHomeHtml(`<html><head><link rel="icon" href="/favicon.ico"></head><body><div id="root"></div></body></html>`);
     expect(replaced.match(/rel="icon"/g)).toHaveLength(4);
     expect(privacyDocument).toContain('href="/favicon.svg?v=2"');
-    expect(termsDocument).toContain('href="/apple-touch-icon.png?v=2"');
-    expect(termsDocument).toContain('href="/manifest.webmanifest?v=2"');
+    expect(termsDocument).toContain('href="/apple-touch-icon.png?v=3"');
+    expect(termsDocument).toContain('href="/manifest.webmanifest?v=3"');
     const privacyBody = await (await privacy()).text();
     const termsBody = await (await terms()).text();
     expect(privacyBody).toContain("<h1>Privacy policy</h1>");

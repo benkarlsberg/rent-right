@@ -31,10 +31,10 @@ describe("favicon files", () => {
     expect(svg).not.toContain('fill="#FFFFFF" width="16"');
     const manifest = JSON.parse(readFileSync(join(root, "mobile/public/manifest.webmanifest"), "utf8"));
     expect(manifest.icons.map((icon: { src: string }) => icon.src)).toEqual([
-      "/icons/icon-192.png?v=2",
-      "/icons/icon-512.png?v=2",
-      "/icons/icon-maskable-192.png?v=2",
-      "/icons/icon-maskable-512.png?v=2",
+      "/icons/icon-192.png?v=3",
+      "/icons/icon-512.png?v=3",
+      "/icons/icon-maskable-192.png?v=3",
+      "/icons/icon-maskable-512.png?v=3",
     ]);
     expect(readFileSync(join(root, "public/apple-touch-icon.png"))[25]).toBe(2);
     expect(pngSize(join(root, "mobile/assets/icon.png"))).toEqual({ width: 1024, height: 1024 });

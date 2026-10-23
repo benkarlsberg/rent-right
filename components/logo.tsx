@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { logoSvg } from "@/components/logo-svg";
 
-const logoAspect = 997.7 / 268;
+const logoAspect = 7984 / 2088;
 
 export function Logo({ height = 64 }: { height?: number }) {
   const width = Math.round(height * logoAspect);
