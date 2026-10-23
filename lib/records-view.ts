@@ -244,7 +244,7 @@ function logTitle(type: string, locale: Locale): string {
 export function logCards(logs: LogInput[], messages: MessageInput[], locale: Locale): LogCard[] {
   return logs.map((log) => {
     const related = messages
-      .filter((message) => message.logEntryId === log.id)
+      .filter((message) => message.logEntryId === log.id && message.deliveryStatus !== "draft" && message.deliveryStatus !== "discarded")
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     const latest = related[related.length - 1];
     let status = tx(locale, "Saved", "Guardado");
@@ -274,6 +274,10 @@ export function logCards(logs: LogInput[], messages: MessageInput[], locale: Loc
   });
 }
 
+function confirmedOutbound(status: string): boolean {
+  return status === "sent" || status === "delivered" || status === "local_only" || status === "blocked";
+}
+
 function sentRepairIds(logs: LogInput[], messages: MessageInput[]): Set<string> {
   const ids = new Set<string>();
   for (const log of logs) {
@@ -281,7 +285,7 @@ function sentRepairIds(logs: LogInput[], messages: MessageInput[]): Set<string> 
     const sent = messages.some((message) =>
       message.logEntryId === log.id
       && message.direction === "outbound"
-      && (message.deliveryStatus === "sent" || message.deliveryStatus === "delivered"));
+      && confirmedOutbound(message.deliveryStatus));
     if (sent) ids.add(log.id);
   }
   return ids;
@@ -313,7 +317,20 @@ export function nextSteps(input: {
     .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)));
   const unsent = input.logs.find((log) => log.type === "repair" && log.status !== "resolved" && !sent.has(log.id));
   const items: StepItem[] = [];
-  if (followUpDue[0]?.dueDate) {
+  if (unsent) {
+    items.push({
+      id: "send",
+      action: "send",
+      href: null,
+      title: tx(locale, "Send the repair note", "Envíe la nota de reparación"),
+      button: tx(locale, "Review before sending", "Revisar antes de enviar"),
+      detail: tx(
+        locale,
+        "The note is saved. It is not emailed until you confirm on the Landlord tab.",
+        "La nota está guardada. No se envía por correo hasta que lo confirme en la pestaña Propietario.",
+      ),
+    });
+  } else if (followUpDue[0]?.dueDate) {
     const date = formatDate(followUpDue[0].dueDate, locale);
     const issue = issueFor(followUpDue[0].sourceId);
     items.push({
@@ -338,7 +355,7 @@ export function nextSteps(input: {
         id: "wait",
         action: "wait",
         href: null,
-        title: tx(locale, `Wait for the landlord until ${date}`, `Espere al propietario hasta el ${date}`),
+        title: tx(locale, `Waiting for landlord until ${date}`, `Esperando al propietario hasta el ${date}`),
         button: tx(locale, `Wait until ${date}`, `Espere hasta el ${date}`),
         detail: tx(
           locale,
@@ -353,7 +370,7 @@ export function nextSteps(input: {
         id: "wait",
         action: "wait",
         href: null,
-        title: tx(locale, `Wait for the landlord until ${date}`, `Espere al propietario hasta el ${date}`),
+        title: tx(locale, `Waiting for landlord until ${date}`, `Esperando al propietario hasta el ${date}`),
         button: tx(locale, `Wait until ${date}`, `Espere hasta el ${date}`),
         detail: tx(
           locale,
@@ -362,19 +379,6 @@ export function nextSteps(input: {
         ),
       });
     }
-  } else if (unsent) {
-    items.push({
-      id: "send",
-      action: "send",
-      href: null,
-      title: tx(locale, "Send the repair note", "Envíe la nota de reparación"),
-      button: tx(locale, "Review before sending", "Revisar antes de enviar"),
-      detail: tx(
-        locale,
-        "The note is saved. It is not emailed until you confirm on the Landlord tab.",
-        "La nota está guardada. No se envía por correo hasta que lo confirme en la pestaña Propietario.",
-      ),
-    });
   }
   if (input.hasRecords && items.length < 3) {
     items.push({
@@ -473,7 +477,7 @@ export function issueBoard(input: {
     if (log.status === "resolved" && log.resolvedAt) {
       const reported = formatDate(log.eventDate || log.resolvedAt.slice(0, 10), locale);
       const resolved = formatDate(log.resolvedAt.slice(0, 10), locale);
-      const related = input.messages.filter((message) => message.logEntryId === log.id);
+      const related = input.messages.filter((message) => message.logEntryId === log.id && message.deliveryStatus !== "draft" && message.deliveryStatus !== "discarded");
       archive.push({
         id: log.id,
         title,

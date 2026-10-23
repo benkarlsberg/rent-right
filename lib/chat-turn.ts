@@ -9,9 +9,11 @@ import {
   countAssistantThisMonth,
   createChatDraft,
   getDeposit,
+  getLog,
   listDeadlines,
   listLeaseReviews,
   openChatDraft,
+  openDraftForLog,
   saveFile,
   saveRentCheck,
   setChatDraftPayload,
@@ -30,6 +32,7 @@ import { formatMoney, percentLabel } from "@/lib/format";
 import { tx } from "@/lib/text";
 import { findResolutionTarget, resolveRepair } from "@/lib/issues";
 import { issueTitle } from "@/lib/resolution";
+import { ensureRepairDeadline, ensureRepairDrafts } from "@/lib/repair-draft";
 import { CHAT_MONTHLY_CAP, emailLandlord, extractPdfOrText, recordLog, runLeaseReview, saveDepositAndDeadline } from "@/lib/workflow";
 
 const AREAS = new Set<AreaKey>(["los_angeles_orange", "riverside_san_bernardino", "san_diego", "san_francisco_bay", "other_ca"]);
@@ -123,10 +126,15 @@ async function confirmSend(user: User, unit: Unit, draftId: string) {
     });
     return;
   }
-  const subject = String(draft.payload.subject || "Repair");
-  const body = String(draft.payload.text || "");
   const logId = typeof draft.payload.logId === "string" ? draft.payload.logId : null;
-  const status = await emailLandlord({ user, unit, logEntryId: logId, subject, tenantText: body });
+  const pending = logId ? await openDraftForLog(user.id, unit.id, logId) : null;
+  const subject = String(pending?.subject || draft.payload.subject || "Repair");
+  const body = String(pending?.body || draft.payload.text || "");
+  const status = await emailLandlord({ user, unit, logEntryId: logId, existingId: pending?.id, subject, tenantText: body });
+  if (logId) {
+    const entry = await getLog(user.id, logId);
+    await ensureRepairDeadline(user, unit, entry);
+  }
   const confirmed: ChatCard = {
     headline: tx(user.locale, "Landlord email", "Correo al propietario"),
     status: deliveryLabel(status, false, user.locale),
@@ -398,10 +406,12 @@ async function logRepair(user: User, unit: Unit, summary: string, severity: Repa
     noticeAt: null,
   });
   const reminder = repairReminder(todayISO(), severity);
+  const pending = await ensureRepairDrafts(user, unit, [entry], []);
+  const letter = pending[0];
   const draft = await createChatDraft(user.id, unit.id, "repair", {
     logId: entry.id,
-    subject: tx(user.locale, `${room || "Home"} repair`, `Reparación: ${room || "vivienda"}`),
-    text: summary,
+    subject: letter?.subject || tx(user.locale, `${room || "Home"} repair`, `Reparación: ${room || "vivienda"}`),
+    text: letter?.body || summary,
   });
   const messageId = await say(user, unit, {
     headline: tx(user.locale, "Repair logged", "Reparación anotada"),

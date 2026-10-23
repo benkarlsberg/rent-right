@@ -495,7 +495,15 @@ describe("renter workflows", () => {
       join profiles p on p.id = um.user_id
       where p.email = ${email}
     `;
-    expect(beforeMail[0]?.n).toBe(1);
+    expect(beforeMail[0]?.n).toBe(2);
+    const beforeStatus = await getSql()<{ delivery_status: string }[]>`
+      select m.delivery_status from messages m
+      join unit_members um on um.unit_id = m.unit_id
+      join profiles p on p.id = um.user_id
+      where p.email = ${email}
+      order by m.delivery_status
+    `;
+    expect(beforeStatus.map((row) => row.delivery_status)).toEqual(["draft", "local_only"]);
 
     const opened = await api("GET", "residence", undefined, token);
     expect(opened.status).toBe(200);
@@ -649,9 +657,9 @@ describe("renter workflows", () => {
       join profiles p on p.id = um.user_id
       where p.email = ${email}
     `;
-    expect(mailAfter[0]?.n).toBe(1);
+    expect(mailAfter[0]?.n).toBe(2);
     const oldMail = await getSql()<{ n: number }[]>`select count(*)::int as n from messages where unit_id = ${home.id}`;
-    expect(oldMail[0]?.n).toBe(1);
+    expect(oldMail[0]?.n).toBe(2);
     const newMail = await getSql()<{ n: number }[]>`select count(*)::int as n from messages where unit_id = ${next.id}`;
     expect(newMail[0]?.n).toBe(0);
     const newDeadlines = await getSql()<{ n: number }[]>`select count(*)::int as n from deadlines where unit_id = ${next.id}`;
@@ -662,7 +670,7 @@ describe("renter workflows", () => {
     expect((picked.json?.unit as { archived?: boolean }).archived).toBe(true);
     const oldChat = await api("GET", "chat", undefined, token);
     expect(oldChat.status).toBe(200);
-    expect((oldChat.json?.items as unknown[]).length).toBe(1);
+    expect((oldChat.json?.items as unknown[]).length).toBe(2);
     expect(oldChat.json?.archived).toBe(true);
     const oldRecords = await api("GET", "records", undefined, token);
     expect((oldRecords.json?.deadlines as { id: string }[]).some((item) => item.id === repair!.id)).toBe(true);
@@ -679,6 +687,123 @@ describe("renter workflows", () => {
     const fallback = await api("GET", "me", undefined, token);
     expect((fallback.json?.unit as { archived?: boolean; id?: string }).id).toBe(next.id);
     expect((fallback.json?.unit as { archived?: boolean }).archived).toBe(false);
+  });
+
+  it("saves a repair as a landlord draft and records the send only after confirmation", async () => {
+    expect(process.env.RESEND_API_KEY).toBeUndefined();
+    const email = `draft-${Date.now()}@example.com`;
+    const magic = await api("POST", "auth/magic", { email });
+    const session = await api("POST", "auth/verify", { token: magic.json?.devToken });
+    const token = String(session.json?.token);
+    const unit = await api("POST", "unit", {
+      name: "Ada Tenant",
+      street: "1842 N Echo Park Ave",
+      unitNumber: "9",
+      city: "Los Angeles",
+      postalCode: "90026",
+      region: "Los Angeles County",
+      landlordName: "Elena Vasquez",
+      landlordEmail: "elena@example.com",
+      rent: "2150",
+    }, token);
+    expect(unit.status).toBe(200);
+
+    const repair = await api("POST", "thread", { text: "The kitchen sink is leaking under the cabinet" }, token);
+    expect(repair.status).toBe(200);
+    const planned = (repair.json?.steps as { items: { action: string; href: string | null; button: string }[] }).items;
+    expect(planned[0]?.action).toBe("send");
+    expect(planned[0]?.button).toBe("Review before sending");
+    expect(planned[0]?.href).toMatch(/^\/landlord\?draft=/);
+    const draftId = String(planned[0]?.href).split("draft=")[1];
+
+    const before = await getSql()<{ delivery_status: string; n: number }[]>`
+      select delivery_status, count(*)::int as n from messages
+      where log_entry_id = (select log_entry_id from messages where id = ${draftId})
+      group by delivery_status
+    `;
+    expect(before).toEqual([{ delivery_status: "draft", n: 1 }]);
+
+    const mail = await api("GET", "chat", undefined, token);
+    expect(mail.status).toBe(200);
+    const draft = (mail.json?.items as { id: string; draft?: boolean; status: string; subject?: string; text: string }[]).find((item) => item.id === draftId);
+    expect(draft?.draft).toBe(true);
+    expect(draft?.status).toBe("Draft, not sent yet");
+    expect(draft?.subject).toMatch(/^Repair request:/);
+    expect(draft?.text).toContain("Ada Tenant");
+    expect(draft?.text).toContain("1842 N Echo Park Ave");
+    expect(draft?.text).toContain("Unit 9");
+    expect(draft?.text).toContain("leaking under the cabinet");
+    expect(draft?.text).toContain("Please repair this.");
+    expect(draft?.text).toContain("CA-CC-1942");
+    expect(draft?.text).toMatch(/reminder date/i);
+
+    const records = await api("GET", "records", undefined, token);
+    const sendStep = (records.json?.steps as { items: { action: string; href: string | null }[] }).items[0];
+    expect(sendStep?.action).toBe("send");
+    expect(sendStep?.href).toBe(`/landlord?draft=${draftId}`);
+    const issue = (records.json?.issues as { status: string }[])[0];
+    expect(issue?.status).toBe("Saved");
+
+    await getSql()`delete from messages where id = ${draftId} and delivery_status = 'draft'`;
+    const backfill = await api("GET", "chat", undefined, token);
+    const restored = (backfill.json?.items as { id: string; draft?: boolean; text: string; status: string }[]).find((item) => item.draft);
+    expect(restored?.id).toBeTruthy();
+    expect(restored?.id).not.toBe(draftId);
+    expect(restored?.status).toBe("Draft, not sent yet");
+    expect(restored?.text).toContain("Please repair this.");
+    const restoredId = restored!.id;
+
+    const edited = "Please repair the kitchen sink leak. The cabinet under the sink is wet.";
+    const saved = await api("POST", "chat/draft", { id: restoredId, body: edited }, token);
+    expect(saved.status).toBe(200);
+    expect((saved.json?.items as { id: string; text: string }[]).find((item) => item.id === restoredId)?.text).toBe(edited);
+
+    await getSql()`update units set landlord_email = '' where id = (select unit_id from messages where id = ${restoredId})`;
+    const missing = await api("GET", "chat", undefined, token);
+    expect(missing.json?.needsEmail).toBe(true);
+    const blocked = await api("POST", "chat/draft/send", { id: restoredId, body: edited }, token);
+    expect(blocked.status).toBe(400);
+    expect(String(blocked.json?.error)).toMatch(/landlord's email/i);
+    const stillDraft = await getSql()<{ delivery_status: string }[]>`select delivery_status from messages where id = ${restoredId}`;
+    expect(stillDraft[0]?.delivery_status).toBe("draft");
+
+    const addressed = await api("POST", "chat/landlord-email", { email: "elena@example.com" }, token);
+    expect(addressed.status).toBe(200);
+    expect(addressed.json?.needsEmail).toBe(false);
+
+    const sent = await api("POST", "chat/draft/send", { id: restoredId, body: edited }, token);
+    expect(sent.status).toBe(200);
+    const bubble = (sent.json?.items as { id: string; draft?: boolean; status: string; text: string; time: string }[]).find((item) => item.id === restoredId);
+    expect(bubble?.draft).toBeFalsy();
+    expect(bubble?.status).toBe("Saved");
+    expect(bubble?.time).toBeTruthy();
+    expect(bubble?.text).toContain("cabinet under the sink");
+    const rows = await getSql()<{ delivery_status: string; n: number }[]>`
+      select delivery_status, count(*)::int as n from messages
+      where log_entry_id = (select log_entry_id from messages where id = ${restoredId})
+      group by delivery_status
+    `;
+    expect(rows).toEqual([{ delivery_status: "local_only", n: 1 }]);
+
+    const after = await api("GET", "records", undefined, token);
+    const next = (after.json?.steps as { items: { action: string; title: string }[] }).items[0];
+    expect(next?.action).toBe("wait");
+    expect(next?.title).toMatch(/^Waiting for landlord until /);
+
+    const spanish = await api("POST", "settings", { locale: "es", name: "Ada Tenant" }, token);
+    expect(spanish.status).toBe(200);
+    const otra = await api("POST", "thread", { text: "Se filtra el fregadero del baño" }, token);
+    expect(otra.status).toBe(200);
+    const paso = (otra.json?.steps as { items: { action: string; button: string; href: string | null }[] }).items[0];
+    expect(paso?.action).toBe("send");
+    expect(paso?.button).toBe("Revisar antes de enviar");
+    const esId = String(paso?.href).split("draft=")[1];
+    const esMail = await api("GET", "chat", undefined, token);
+    const esDraft = (esMail.json?.items as { id: string; status: string; text: string }[]).find((item) => item.id === esId);
+    expect(esDraft?.status).toBe("Borrador, aún no enviado");
+    expect(esDraft?.text).toContain("Por favor, repare esto.");
+    expect(esDraft?.text).toContain("Ada Tenant");
+    expect(esDraft?.text).toContain("CA-CC-1942");
   });
 
   it("loads the synthetic Los Angeles sample tenancy", async () => {

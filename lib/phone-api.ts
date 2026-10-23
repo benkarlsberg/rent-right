@@ -18,12 +18,16 @@ import {
   latestRentCheck,
   listAssistant,
   listConditions,
+  discardDraftMessage,
   insertCustomReminder,
   listDeadlines,
   listLeaseReviews,
   listLedger,
   listLogs,
   listMessages,
+  messageForUser,
+  saveDraftBody,
+  setLandlordEmail,
   insertCondition,
   primaryUnit,
   profileForAuthUser,
@@ -81,6 +85,7 @@ import { drainRoundTrips, withActor } from "@/lib/pg";
 import { archivedNote, previewResidence, residencePayload, saveResidence, selectResidence } from "@/lib/residence";
 import { issueHistory, issueSummary, reopenRepair, resolveRepair } from "@/lib/issues";
 import { deleteReminder, dismissReminder, restoreReminder } from "@/lib/reminders";
+import { confirmedOutbound, ensureRepairDeadline, ensureRepairDrafts } from "@/lib/repair-draft";
 import { askAssistant, emailLandlord, extractPdfOrText, recordLog, runLeaseReview, sampleLeaseText, saveDepositAndDeadline } from "@/lib/workflow";
 
 function json(data: unknown, status = 200) {
@@ -372,6 +377,10 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "POST" && key === "log") return json(await createLog(await readBody(request)));
   if (method === "GET" && key === "chat") return json(await chatPayload());
   if (method === "POST" && key === "chat") return json(await sendChat(await readBody(request)));
+  if (method === "POST" && key === "chat/draft") return json(await saveDraft(await readBody(request)));
+  if (method === "POST" && key === "chat/draft/send") return json(await sendDraft(await readBody(request)));
+  if (method === "POST" && key === "chat/draft/discard") return json(await discardDraft(await readBody(request)));
+  if (method === "POST" && key === "chat/landlord-email") return json(await saveLandlordEmail(await readBody(request)));
   if (method === "GET" && key === "dates") return json(await datesPayload());
   if (method === "POST" && path[0] === "dates" && path[1]) {
     const user = await actor();
@@ -630,24 +639,46 @@ async function createLog(input: Record<string, unknown>) {
   return { id: entry.id };
 }
 
+function draftLabels(locale: Locale) {
+  return {
+    draft: tx(locale, "Draft, not sent yet", "Borrador, aún no enviado"),
+    send: tx(locale, "Send", "Enviar"),
+    edit: tx(locale, "Edit", "Editar"),
+    discard: tx(locale, "Discard", "Descartar"),
+    save: tx(locale, "Save", "Guardar"),
+    done: tx(locale, "Done", "Listo"),
+    emailPrompt: tx(locale, "Add the landlord's email to send this draft.", "Agregue el correo del propietario para enviar este borrador."),
+    emailLabel: tx(locale, "Landlord email", "Correo del propietario"),
+    subject: tx(locale, "Subject", "Asunto"),
+  };
+}
+
 async function chatPayload() {
   const user = await actor();
   const unit = await primaryUnit(user.id);
   const locale = user.locale;
-  if (!unit) return { landlord: "", items: [], needsUnit: true, archived: false, archivedNote: null };
+  if (!unit) return { landlord: "", items: [], needsUnit: true, archived: false, archivedNote: null, needsEmail: true, labels: draftLabels(locale) };
+  const [logs, messages] = await Promise.all([listLogs(user.id, unit.id), listMessages(user.id, unit.id)]);
+  const created = await ensureRepairDrafts(user, unit, logs, messages);
+  const visible = [...messages, ...created].filter((message) => message.deliveryStatus !== "discarded");
   return {
     landlord: unit.landlordName || unit.landlordEmail,
     archived: Boolean(unit.archivedAt),
     archivedNote: archivedNote(unit, locale),
-    items: (await listMessages(user.id, unit.id)).map((message) => {
+    needsEmail: !unit.landlordEmail,
+    labels: draftLabels(locale),
+    items: visible.map((message) => {
+      const draft = message.deliveryStatus === "draft";
       const preview = chatPreview(message.body);
       return {
         id: message.id,
         side: messageSide(message.direction),
-        text: preview.text,
-        detail: preview.detail,
+        text: draft ? message.body : preview.text,
+        detail: draft ? null : preview.detail,
+        subject: message.subject,
         time: formatTimestamp(message.createdAt, locale),
-        status: deliveryLabel(message.deliveryStatus, message.openIndicative, locale),
+        status: draft ? draftLabels(locale).draft : deliveryLabel(message.deliveryStatus, message.openIndicative, locale),
+        draft,
       };
     }),
   };
@@ -666,6 +697,58 @@ async function sendChat(input: Record<string, unknown>) {
     subject: text(input.subject) || tx(user.locale, "Message from your tenant", "Mensaje de su inquilino"),
     tenantText: message,
   });
+  return chatPayload();
+}
+
+async function saveDraft(input: Record<string, unknown>) {
+  const { user } = await withUnit();
+  const id = text(input.id);
+  const body = text(input.body);
+  if (!id) throw new Error(tx(user.locale, "Choose a draft.", "Elija un borrador."));
+  if (body.length < 2) throw new Error(tx(user.locale, "Write the message.", "Escriba el mensaje."));
+  if (body.length > 8000) throw new Error(tx(user.locale, "Keep the message under 8000 characters.", "El mensaje debe tener menos de 8000 caracteres."));
+  await saveDraftBody(user.id, id, body);
+  return chatPayload();
+}
+
+async function sendDraft(input: Record<string, unknown>) {
+  const { user, unit } = await withUnit();
+  const id = text(input.id);
+  if (!id) throw new Error(tx(user.locale, "Choose a draft.", "Elija un borrador."));
+  const current = await messageForUser(user.id, id);
+  if (current.deliveryStatus !== "draft") throw new Error(tx(user.locale, "This message was already sent.", "Este mensaje ya se envió."));
+  const body = text(input.body) || current.body;
+  if (body.length < 2) throw new Error(tx(user.locale, "Write the message.", "Escriba el mensaje."));
+  if (body.length > 8000) throw new Error(tx(user.locale, "Keep the message under 8000 characters.", "El mensaje debe tener menos de 8000 caracteres."));
+  if (body !== current.body) await saveDraftBody(user.id, id, body);
+  if (!unit.landlordEmail) throw new Error(tx(user.locale, "Add the landlord's email to send this draft.", "Agregue el correo del propietario para enviar este borrador."));
+  await emailLandlord({
+    user,
+    unit,
+    logEntryId: current.logEntryId,
+    existingId: current.id,
+    subject: current.subject,
+    tenantText: body,
+  });
+  if (current.logEntryId) {
+    const entry = await getLog(user.id, current.logEntryId);
+    await ensureRepairDeadline(user, unit, entry);
+  }
+  return chatPayload();
+}
+
+async function discardDraft(input: Record<string, unknown>) {
+  const { user } = await withUnit();
+  const id = text(input.id);
+  if (!id) throw new Error(tx(user.locale, "Choose a draft.", "Elija un borrador."));
+  await discardDraftMessage(user.id, id);
+  return chatPayload();
+}
+
+async function saveLandlordEmail(input: Record<string, unknown>) {
+  const { user, unit } = await withUnit();
+  const email = emailValue(text(input.email));
+  await setLandlordEmail(user.id, unit.id, email);
   return chatPayload();
 }
 
@@ -911,12 +994,14 @@ async function postThread(input: Record<string, unknown>) {
 async function recordsBundle(user: User, unit: NonNullable<Awaited<ReturnType<typeof primaryUnit>>>, options?: { reviews?: boolean }) {
   const locale = user.locale;
   const today = todayISO();
-  const [deadlines, logs, messages, reviews] = await Promise.all([
+  const [deadlines, logs, storedMessages, reviews] = await Promise.all([
     listDeadlines(user.id, unit.id),
     listLogs(user.id, unit.id),
     listMessages(user.id, unit.id),
     options?.reviews === false ? Promise.resolve([]) : listLeaseReviews(user.id, unit.id),
   ]);
+  const createdDrafts = await ensureRepairDrafts(user, unit, logs, storedMessages);
+  const messages = [...storedMessages, ...createdDrafts].filter((message) => message.deliveryStatus !== "discarded");
   const deadlineInput: DeadlineInput[] = deadlines.map((item) => ({
     id: item.id,
     kind: item.kind,
@@ -988,6 +1073,14 @@ async function recordsBundle(user: User, unit: NonNullable<Awaited<ReturnType<ty
         messages: messageInput,
         hasRecords: logs.length + messages.length + deadlines.length + reviews.length > 0,
       });
+      const sendStep = planned.items.find((item) => item.action === "send");
+      if (sendStep) {
+        const unsent = logs.find((log) => log.type === "repair" && log.status !== "resolved" && !messages.some((message) =>
+          message.logEntryId === log.id && message.direction === "outbound" && confirmedOutbound(message.deliveryStatus)));
+        const draft = unsent ? messages.find((message) => message.logEntryId === unsent.id && message.deliveryStatus === "draft") : null;
+        if (draft) sendStep.href = `/landlord?draft=${draft.id}`;
+        else planned.items = planned.items.filter((item) => item.action !== "send");
+      }
       if (!unit.archivedAt) return planned;
       return { ...planned, items: planned.items.filter((item) => item.action === "export" || item.action === "small_claims") };
     })(),

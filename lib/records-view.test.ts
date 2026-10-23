@@ -168,7 +168,7 @@ describe("records view", () => {
       }],
     });
     expect(waiting.items.map((item) => item.action)).toEqual(["wait", "export", "small_claims"]);
-    expect(waiting.items[0].title).toBe("Wait for the landlord until Oct 30, 2026");
+    expect(waiting.items[0].title).toBe("Waiting for landlord until Oct 30, 2026");
     expect(waiting.items[0].detail).toMatch(/does not mean the landlord must answer/);
     expect(waiting.items.every((item) => item.action !== "send" || item.detail.match(/confirm/))).toBe(true);
 
@@ -197,6 +197,24 @@ describe("records view", () => {
     expect(unsent.title).toBe("Sus próximos pasos");
     expect(unsent.items.map((item) => item.action)).toEqual(["send", "export", "small_claims"]);
     expect(unsent.items).toHaveLength(3);
+    expect(unsent.items[0].button).toBe("Revisar antes de enviar");
+
+    const unsentFirst = nextSteps({
+      locale: "en",
+      today,
+      hasRecords: true,
+      logs: [
+        { id: "fresh", type: "repair", description: "The closet door is broken.", eventDate: today, createdAt: `${today}T19:00:00.000Z` },
+        { id: "log1", type: "repair", description: "Kitchen sink leak.", eventDate: today, createdAt: `${today}T18:00:00.000Z` },
+      ],
+      messages: [{ logEntryId: "log1", direction: "outbound", subject: "Leak", deliveryStatus: "local_only", createdAt: `${today}T18:00:00.000Z` }],
+      deadlines: [{
+        id: "d1", kind: "repair", ruleId: "CA-CC-1942", anchorDate: today, dueDate: "2026-10-30",
+        explanation: "", explanationEs: "", computation: "", sourceId: "log1", status: "open", tenantReminderOn: null,
+      }],
+    });
+    expect(unsentFirst.items[0].action).toBe("send");
+    expect(unsentFirst.items[0].button).toBe("Review before sending");
 
     const resolved = nextSteps({
       locale: "en",

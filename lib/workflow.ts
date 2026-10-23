@@ -12,6 +12,7 @@ import {
   insertLog,
   insertMessage,
   isBlocked,
+  promoteDraftMessage,
   leaseTextHash,
   listLogs,
   replaceOpenDeadline,
@@ -146,10 +147,52 @@ export async function recordLog(input: {
   return entry;
 }
 
+async function storeLandlordMail(input: {
+  user: User;
+  unit: Unit;
+  logEntryId: string | null;
+  existingId?: string | null;
+  subject: string;
+  body: string;
+  deliveryStatus: string;
+  deliveryDetail: string | null;
+  providerId?: string | null;
+  responseToken?: string | null;
+}) {
+  if (input.existingId) {
+    await promoteDraftMessage(input.user.id, input.existingId, {
+      body: input.body,
+      subject: input.subject,
+      toEmail: input.unit.landlordEmail,
+      deliveryStatus: input.deliveryStatus,
+      deliveryDetail: input.deliveryDetail,
+      providerId: input.providerId || null,
+      responseToken: input.responseToken || null,
+    });
+    return;
+  }
+  await insertMessage({
+    unitId: input.unit.id,
+    userId: input.user.id,
+    logEntryId: input.logEntryId,
+    direction: "outbound",
+    fromEmail: relayAddress(input.unit.relayLocal),
+    toEmail: input.unit.landlordEmail,
+    ccEmail: input.user.email,
+    subject: input.subject,
+    body: input.body,
+    deliveryStatus: input.deliveryStatus,
+    deliveryDetail: input.deliveryDetail,
+    providerId: input.providerId,
+    responseToken: input.responseToken,
+  });
+}
+
 export async function emailLandlord(input: {
   user: User;
   unit: Unit;
   logEntryId: string | null;
+  existingId?: string | null;
   subject: string;
   tenantText: string;
 }) {
@@ -158,15 +201,8 @@ export async function emailLandlord(input: {
     throw new Error("Add the landlord's email on your unit before sending.");
   }
   if (isSampleAccount(input.user.email)) {
-    await insertMessage({
-      unitId: input.unit.id,
-      userId: input.user.id,
-      logEntryId: input.logEntryId,
-      direction: "outbound",
-      fromEmail: relayAddress(input.unit.relayLocal),
-      toEmail: input.unit.landlordEmail,
-      ccEmail: input.user.email,
-      subject: input.subject,
+    await storeLandlordMail({
+      ...input,
       body: input.tenantText,
       deliveryStatus: "local_only",
       deliveryDetail: "This sample home does not email a landlord.",
@@ -174,15 +210,8 @@ export async function emailLandlord(input: {
     return "local_only";
   }
   if (await isBlocked(input.unit.id)) {
-    await insertMessage({
-      unitId: input.unit.id,
-      userId: input.user.id,
-      logEntryId: input.logEntryId,
-      direction: "outbound",
-      fromEmail: relayAddress(input.unit.relayLocal),
-      toEmail: input.unit.landlordEmail,
-      ccEmail: input.user.email,
-      subject: input.subject,
+    await storeLandlordMail({
+      ...input,
       body: input.tenantText,
       deliveryStatus: "blocked",
       deliveryDetail: "The landlord blocked later mail. Print a letter and mail it yourself.",
@@ -214,15 +243,8 @@ export async function emailLandlord(input: {
     text: mail.text,
     html: mail.html,
   });
-  await insertMessage({
-    unitId: input.unit.id,
-    userId: input.user.id,
-    logEntryId: input.logEntryId,
-    direction: "outbound",
-    fromEmail: relayAddress(input.unit.relayLocal),
-    toEmail: input.unit.landlordEmail,
-    ccEmail: input.user.email,
-    subject: input.subject,
+  await storeLandlordMail({
+    ...input,
     body,
     deliveryStatus: sent.status,
     deliveryDetail: sent.detail,

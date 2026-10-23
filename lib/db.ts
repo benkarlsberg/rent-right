@@ -650,7 +650,7 @@ export async function listMessages(userId: string, unitId: string) {
 
 export async function countOutboundSince(unitId: string, sinceIso: string) {
   const row = await one<{ n: number }>(
-    "select count(*)::int as n from messages where unit_id = ? and direction = 'outbound' and created_at > ?",
+    "select count(*)::int as n from messages where unit_id = ? and direction = 'outbound' and delivery_status not in ('draft', 'discarded') and created_at > ?",
     [unitId, sinceIso],
   );
   return row?.n || 0;
@@ -692,6 +692,74 @@ export async function insertMessage(input: {
   const row = await one<MessageRow>("select * from messages where id = ?", [id]);
   if (!row) throw new HttpError("Message was not saved.");
   return mapMessage(row);
+}
+
+export async function openDraftForLog(userId: string, unitId: string, logId: string): Promise<Message | null> {
+  await requireUnit(userId, unitId);
+  const row = await one<MessageRow>(
+    "select * from messages where unit_id = ? and log_entry_id = ? and delivery_status = 'draft' order by created_at desc limit 1",
+    [unitId, logId],
+  );
+  return row ? mapMessage(row) : null;
+}
+
+export async function messageForUser(userId: string, id: string): Promise<Message> {
+  const row = await one<MessageRow>("select * from messages where id = ?", [id]);
+  if (!row) throw new HttpError("Message not found.");
+  await requireWritable(userId, row.unit_id);
+  return mapMessage(row);
+}
+
+export async function saveDraftBody(userId: string, id: string, body: string) {
+  const current = await messageForUser(userId, id);
+  if (current.deliveryStatus !== "draft") throw new HttpError("This message was already sent.");
+  if (hasUserActor()) return withActor(null, () => saveDraftBody(userId, id, body));
+  const result = await run(
+    "update messages set body_enc = ?, status_at = ? where id = ? and delivery_status = 'draft'",
+    [encryptString(body), new Date().toISOString(), id],
+  );
+  if (!result.changes) throw new HttpError("This message was already sent.");
+}
+
+export async function discardDraftMessage(userId: string, id: string) {
+  const current = await messageForUser(userId, id);
+  if (current.deliveryStatus !== "draft") throw new HttpError("This message was already sent.");
+  if (hasUserActor()) return withActor(null, () => discardDraftMessage(userId, id));
+  const result = await run(
+    "update messages set delivery_status = 'discarded', status_at = ? where id = ? and delivery_status = 'draft'",
+    [new Date().toISOString(), id],
+  );
+  if (!result.changes) throw new HttpError("This message was already sent.");
+}
+
+export async function promoteDraftMessage(userId: string, id: string, patch: {
+  body: string;
+  subject: string;
+  toEmail: string;
+  deliveryStatus: string;
+  deliveryDetail: string | null;
+  providerId: string | null;
+  responseToken: string | null;
+}) {
+  const current = await messageForUser(userId, id);
+  if (current.deliveryStatus !== "draft") throw new HttpError("This message was already sent.");
+  if (hasUserActor()) return withActor(null, () => promoteDraftMessage(userId, id, patch));
+  const now = new Date().toISOString();
+  const result = await run(
+    `update messages
+     set body_enc = ?, subject = ?, to_email = ?, delivery_status = ?, delivery_detail = ?, provider_id = ?, response_token = ?, created_at = ?, status_at = ?
+     where id = ? and delivery_status = 'draft'`,
+    [encryptString(patch.body), patch.subject, patch.toEmail, patch.deliveryStatus, patch.deliveryDetail, patch.providerId, patch.responseToken, now, now, id],
+  );
+  if (!result.changes) throw new HttpError("This message was already sent.");
+}
+
+export async function setLandlordEmail(userId: string, unitId: string, email: string) {
+  const unit = await requireWritable(userId, unitId);
+  if (unit.role !== "owner") throw new HttpError("Only the person who added the home can edit the landlord email.");
+  await run("update units set landlord_email = ? where id = ?", [email, unitId]);
+  dropRequestMemo(`unit:${userId}:${unitId}`);
+  return await requireUnit(userId, unitId);
 }
 
 export async function updateMessageStatus(providerId: string, status: string, detail: string, open = false): Promise<void> {

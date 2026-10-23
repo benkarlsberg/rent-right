@@ -18,7 +18,7 @@ export async function GET() {
     user,
     unit,
     logs: await listLogHistory(user.id, unit.id),
-    messages: await listMessages(user.id, unit.id),
+    messages: (await listMessages(user.id, unit.id)).filter((message) => message.deliveryStatus !== "draft" && message.deliveryStatus !== "discarded"),
     deadlines: await listDeadlines(user.id, unit.id),
     ledger: (await listLedger(user.id, unit.id)).map((row) => ({
       paidOn: row.paid_on,

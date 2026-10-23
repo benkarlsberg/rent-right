@@ -265,7 +265,7 @@ export default function AssistantChat() {
                   return;
                 }
                 if (step.action === "followup" || step.action === "send") {
-                  router.push("/landlord");
+                  router.push((step.href || "/landlord") as "/landlord");
                   return;
                 }
                 if (step.action === "export") {
