@@ -1,5 +1,3 @@
-import { readFileSync } from "fs";
-import path from "path";
 import { completeJson, extractImageText } from "@/lib/ai";
 import {
   addAssistantMessage,
@@ -285,8 +283,29 @@ export async function runLeaseReview(user: User, unit: Unit, text: string, filen
   });
 }
 
+const SAMPLE_LEASE = `RESIDENTIAL LEASE
+
+1. Rent. Tenant shall pay monthly rent of $2,150.00 due on the first day of each month.
+
+2. Habitability. Tenant waives all rights to a habitable premises and agrees the landlord has no duty to repair the unit.
+
+3. Deposit. Tenant shall pay a non-refundable security deposit of $4,300.
+
+4. Entry. Landlord may enter the premises at any time without notice.
+
+5. Disputes. Tenant waives the right to a jury trial and the right to sue the landlord for any reason.
+
+6. Late fee. If rent is late, tenant shall pay a late fee of $500 or 20% of the monthly rent, whichever is greater, as a penalty.
+
+7. Eviction. Tenant waives all just cause eviction protections and the protections of the Tenant Protection Act.
+
+8. Fees. Tenant shall pay landlord's attorney fees in any dispute.
+
+9. Use. Tenant shall not use the unit for any unlawful purpose. Guests may stay no more than ten nights.
+`;
+
 export function sampleLeaseText(): string {
-  return readFileSync(path.join(process.cwd(), "fixtures", "sample-lease.txt"), "utf8");
+  return SAMPLE_LEASE;
 }
 
 export async function askAssistant(user: User, unit: Unit | null, question: string, locale: Locale) {
