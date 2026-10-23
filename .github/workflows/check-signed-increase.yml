@@ -1,0 +1,28 @@
+name: Check signed increase
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Resolve the database URL
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        run: npx tsx scripts/resolve-database-url.ts
+      - name: Check a signed rent increase
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          ACCOUNT_EMAIL: ${{ secrets.ACCOUNT_EMAIL }}
+        run: |
+          if [ -f .database-url ]; then export DATABASE_URL="$(cat .database-url)"; fi
+          npx tsx scripts/check-signed-increase.ts
