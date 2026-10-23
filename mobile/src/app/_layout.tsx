@@ -5,7 +5,25 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { SessionProvider } from "@/session";
 import { colors } from "@/theme";
 
+function installWebViewport() {
+  if (Platform.OS !== "web" || typeof document === "undefined") return;
+  const meta = document.querySelector('meta[name="viewport"]');
+  if (meta) {
+    const content = meta.getAttribute("content") || "";
+    const extras = ["viewport-fit=cover", "interactive-widget=resizes-content"].filter((part) => !content.includes(part));
+    if (extras.length) meta.setAttribute("content", `${content}, ${extras.join(", ")}`);
+  }
+  if (document.getElementById("rr-viewport")) return;
+  const style = document.createElement("style");
+  style.id = "rr-viewport";
+  style.textContent = "html,body,#root{height:100dvh;min-height:100dvh}#root{display:flex;flex-direction:column;min-height:0}";
+  document.head.appendChild(style);
+}
+
+installWebViewport();
+
 export default function RootLayout() {
+  installWebViewport();
   const app = (
     <SafeAreaProvider>
       <SessionProvider>

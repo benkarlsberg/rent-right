@@ -3,7 +3,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSession } from "@/session";
 import { colors } from "@/theme";
 
-const TAB_BODY = 56;
+const TAB_BODY = 64;
 
 export default function TabsLayout() {
   const session = useSession();
