@@ -164,13 +164,13 @@ Tap **View a sample Los Angeles tenancy**. That button is on the welcome screen 
 
 That button calls `POST /api/v1/auth/demo` on your computer and opens a sample home for 1842 N Echo Park Ave, Unit 3. You do not type an email. Tapping it again resets the same sample.
 
-You should land in the chat. The sample starts with a few example exchanges: a sink leak, a rent check, and a deposit date. Each reply is a short card. The detail and the full disclaimer open from **Learn more**. The short line on the card says “General information, not legal advice.”
+You should land in the chat. The sample starts with a few example exchanges: a sink leak, a rent check, and a deposit date. Each reply is a short card. The detail and the full disclaimer open from **Learn more**. The short line on the card says “General information, not legal advice.” While a reply is on the way, the thread shows three dots.
 
-The tabs along the bottom are **Chat**, **Landlord**, and **Records**. Chat is the home. Landlord is the thread with Elena Vasquez, with a time on each message. Records opens with **Your next steps**, then each date by name. **Edit reminder date** is your own nudge and does not change the computed date. **Export my evidence packet** downloads the PDF. The English / Español switch is on this screen.
+The tabs along the bottom are **Chat**, **Landlord**, **Reminders**, and **Records**. The open tab is highlighted. Chat is the home, and **Your next steps** sits at the end of that thread. Landlord is the thread with Elena Vasquez. A saved repair is labeled **Draft, not sent yet**, with **Send**, **Edit**, and **Discard**. Reminders groups the dates and holds those next steps. A repair follow-up is titled **Reminder: follow up on** the issue. **Edit reminder date** is your own nudge and leaves the computed date as the rules engine wrote it. Records is split into **Issues**, **Documents**, and **Evidence**. Open a request for **Mark as resolved**, with an optional note and a resolution date. **Export my evidence packet** is on Evidence and downloads the PDF. English / Español is on the welcome screen and under **Language** in the Records account menu.
 
 A new chat with no messages shows suggestion chips. The sample already has messages, so the chips are hidden until you start a blank tenancy.
 
-Nothing is emailed to the landlord until you tap **Send to landlord** or reply “yes, send it.” A demand letter stays on the phone. Rent Right does not mail it.
+Nothing is emailed to the landlord until you tap **Send** on that draft. A demand letter stays on the phone. Rent Right does not mail it.
 
 The **+** button adds a photo or a lease file. On a phone, photo opens the library. A lease PDF is easiest from the computer browser at the same address Expo prints, with **+** then **Lease or photo**.
 

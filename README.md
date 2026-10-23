@@ -10,39 +10,47 @@ The short line on a result is “General information, not legal advice.”
 
 ## Screenshots
 
-Phone-width pictures of the current app. Sign-in, privacy, and terms are [the live app](https://app.rentrightportal.com). The signed-in screens are the sample Los Angeles tenancy only: Maya Chen, 1842 N Echo Park Ave, Unit 3, landlord Elena Vasquez.
+Phone-width pictures of the current app. Sign-in, privacy, and terms are [the live app](https://app.rentrightportal.com). The signed-in screens are the sample Los Angeles tenancy only: Maya Chen, 1842 N Echo Park Ave, Unit 3, landlord Elena Vasquez. The bar has four tabs. The open tab is highlighted.
 
-![Sign in with Google or email](docs/images/sign-in.webp)
+![Centered sign-in card](docs/images/sign-in.webp)
 
-The welcome screen shows the mark, **Continue with Google**, and **Email me a sign-in link**. Privacy and Terms are linked under the form.
+The welcome screen is a centered card: the house mark, **Log in or sign up**, the tagline, an email field, **Email me a sign-in link**, and **Continue with Google**. Terms of use and Privacy policy sit under the form, with English / Español and the short disclaimer.
 
 ![Where do you rent](docs/images/onboarding.webp)
 
-A new account starts with the address. There are five short steps. **Do this later** skips them. Nothing is emailed while you fill this in.
+A new account starts at **Where do you rent?** Step 1 of 5 asks for a California street, city, and ZIP. **Do this later** skips the rest. Nothing is emailed while you fill this in.
 
 ![Chat for the sample tenancy](docs/images/chat.webp)
 
-Chat is the home tab. A repair stays unsent until the tenant confirms. **Your next steps** sits at the end of the conversation.
+Chat is the home tab. The sample thread covers a sink leak, a rent increase, and a deposit date. **Your next steps** sits at the end of the conversation. A repair note stays a draft until you confirm it on the Landlord tab.
 
-![Landlord conversation](docs/images/landlord.webp)
+![Typing dots while a reply is on the way](docs/images/chat-typing.webp)
 
-The Landlord tab is that conversation, with the time on each message. Opening it does not send mail.
+While a reply is in progress, the thread shows three dots in a bubble. The accessible name is **Replying**.
 
-![Records, with next steps](docs/images/records.webp)
+![Landlord drafts](docs/images/landlord.webp)
 
-Records opens with **Your next steps** and the English / Español switch.
+The Landlord tab is the thread with Elena Vasquez. A saved repair appears as **Draft, not sent yet**, with the full text and **Send**, **Edit**, and **Discard**. Opening the tab leaves the draft unsent. **Send** is the confirmation that emails the landlord, and only when mail delivery is configured.
 
-![A labeled date and a tenant reminder](docs/images/records-reminder.webp)
+![Reminders](docs/images/reminders.webp)
 
-Each date card names what it is for, what started it, who owes what, and the due date. **Learn more** opens the library rule. **Your reminder** is the tenant’s own nudge. It does not change the computed date. **Edit reminder date** saves a different day, and **Add a reminder** adds one from scratch.
+Reminders holds **Your next steps**, then the dates in groups. A repair follow-up is titled **Reminder: follow up on** the issue. The deposit card can be titled **Landlord's deadline**. **+ Add reminder** adds one from scratch. Open a card for what started it, who owes what, **Learn more**, and **Edit reminder date**. That saved day is the tenant’s own nudge. The computed date stays as the rules engine wrote it.
+
+![Records, sectioned](docs/images/records.webp)
+
+Records opens on the address, with **Issues**, **Documents**, and **Evidence**. **Your next steps are on Reminders**. An open request shows its status, here **Sent to landlord**.
+
+![Resolve a request](docs/images/records-resolve.webp)
+
+Opening a request shows the note and **Mark as resolved**, with an optional note and a resolution date. The screenshot stops on that form. Resolving is a separate tap.
 
 ![Export my evidence packet](docs/images/records-export.webp)
 
-**Export my evidence packet** downloads a timestamped PDF of the requests, notices, replies, and dates. The packet says it is a record of communications, not legal advice and not a court filing. The footer points to the California courts small-claims self-help page.
+The Evidence section offers **Export my evidence packet**. The download is a timestamped PDF of the requests, notices, replies, and dates. The packet says it is a record of communications, not legal advice and not a court filing. The footer points to the California courts small-claims self-help page.
 
 ![Records in Spanish](docs/images/records-spanish.webp)
 
-The same screen in Spanish. Words the tenant typed stay as they were written.
+The same screen in Spanish: **Solicitudes**, **Documentos**, **Evidencia**. Words the tenant typed stay as they were written. Language is also on the welcome screen, and again under **Language** in the Records account menu.
 
 ![Privacy policy](docs/images/privacy.webp)
 
@@ -59,7 +67,7 @@ flowchart LR
   db["Supabase Postgres\nRLS on every tenant table"]
   auth["Supabase Auth\nemail link or Google"]
   mail["Resend\noptional"]
-  model["Gemini\noptional"]
+  model["Gemini 2.5\nor OpenAI fallback"]
   files["Encrypted files\nlocal disk, R2, or private tenant-files bucket"]
 
   phone -->|"HTTPS /api/v1"| worker
@@ -72,19 +80,34 @@ flowchart LR
 
 The Expo app is the renter interface. The Next.js server is the API: auth, the rules engine, Postgres, encryption, and landlord email. `http://localhost:3000` is a short note plus landlord reply links, terms, and privacy.
 
-Deadlines, caps, and coverage come from the rules engine. A model may choose an intent or explain a library answer. It does not invent a date, a percentage, or a citation. Every result quotes a library rule ID or says unsure.
+Deadlines, caps, and coverage come from the rules engine. Every result quotes a library rule ID or says unsure.
+
+## How the AI works
+
+Legal math stays in the deterministic rules engine: deposit days, notice periods, the AB 1482 table, and coverage. A date outside a published range comes back unsure. A claimed exemption leaves an over-cap result over the cap.
+
+Free-form chat and lease clauses the library left unsure can call a model. With `GEMINI_API_KEY`, chat intent and “pick up to three library rule IDs” use Gemini 2.5 Flash-Lite. Lease clauses use Gemini 2.5 Flash. With only `OPENAI_API_KEY`, those same calls use `gpt-4.1-mini`. With neither key, the library answer stands.
+
+Each of those calls asks for JSON (`responseMimeType: application/json` on Gemini, `response_format: json_object` on OpenAI) at temperature 0. The server parses the text before use. A reply that does not parse is dropped. A chat intent is kept when it is one of the known intents. A lease finding is kept when it fills an unsure clause, names a rule ID that exists in the library, and quotes words that appear in that clause. The citation and the explanation still come from that library entry.
+
+Before any model call, email addresses, phone numbers, and Social Security number patterns in the prompt are replaced with `[email]`, `[phone]`, and `[ssn]`.
+
+A free account can ask 40 chat questions in a calendar month, and can run 3 new lease reviews in that month. A review whose text, library version, rent, and jurisdiction match one already stored for the unit is returned from that cache and does not count again.
+
+Nothing is emailed to a landlord until the tenant confirms **Send** on the draft.
 
 ## Demo walkthrough
 
 Open [https://app.rentrightportal.com](https://app.rentrightportal.com).
 
-1. Sign in with **Continue with Google** or **Email me a sign-in link**. The link lasts 30 minutes. Privacy and Terms are on the welcome screen.
-2. The first time, the app asks where you rent, then the unit, the landlord, optional lease dates, and a short note on which rules apply to that address. **Do this later** leaves chat available. Nothing is emailed during these steps.
-3. Chat is the home tab. Describe a leak, a rent increase, or a deposit. A repair card stays **Not sent** until you tap **Send to landlord**. That confirmation is what emails the landlord, and only when mail delivery is configured.
-4. **Landlord** shows the thread: messages you sent and replies, each with a time. **Your next steps** is at the end of chat, with at most three actions. Waiting sends nothing. Follow-up opens the Landlord tab and still waits for confirmation.
-5. **Records** lists those next steps at the top. Deadline cards name the follow-up or the deposit accounting date, who owes what, and the due date. **Learn more** quotes the library rule. **Edit reminder date** saves your own nudge and leaves the computed date unchanged. **Export my evidence packet** downloads `rent-right-evidence-YYYY-MM-DD.pdf`.
-6. Switch **English / Español** on Records. The labels follow that choice.
-7. Read [Privacy](https://app.rentrightportal.com/privacy) and [Terms](https://app.rentrightportal.com/terms).
+1. Sign in from the centered card with **Continue with Google** or **Email me a sign-in link**. The link lasts 30 minutes. Privacy, Terms, and English / Español are on the welcome screen.
+2. The first time, step 1 of 5 asks where you rent, then the unit, the landlord, optional lease dates, and a short note on which rules apply to that address. **Do this later** leaves chat available. Nothing is emailed during these steps.
+3. Four tabs run along the bottom: **Chat**, **Landlord**, **Reminders**, and **Records**. The open tab is highlighted. Chat is home. Describe a leak, a rent increase, or a deposit. Three dots show while a reply is on the way. **Your next steps** sits at the end of the thread, with at most three actions.
+4. A saved repair becomes a Landlord card labeled **Draft, not sent yet**, with **Send**, **Edit**, and **Discard**. **Review before sending** opens that draft. **Send** is what emails the landlord, and only when mail delivery is configured. Opening the tab leaves the draft unsent.
+5. **Reminders** lists those next steps, then overdue, soon, and later. A repair follow-up is titled **Reminder: follow up on** the issue. The deposit accounting date can be titled **Landlord's deadline**. **Learn more** quotes the library rule. **Edit reminder date** saves your own nudge and leaves the computed date unchanged. **+ Add reminder** adds one from scratch.
+6. **Records** is split into **Issues**, **Documents**, and **Evidence**. Open a request to add a note and a resolution date, then **Mark as resolved**. **Export my evidence packet** downloads `rent-right-evidence-YYYY-MM-DD.pdf`.
+7. Switch **English / Español** on the welcome screen, or under **Language** in the Records account menu. The labels follow that choice.
+8. Read [Privacy](https://app.rentrightportal.com/privacy) and [Terms](https://app.rentrightportal.com/terms).
 
 To walk the sample tenancy on your own computer, start Postgres, migrate, and run the API (`docker compose up -d`, `npm run db:migrate`, `npm run dev`). In `mobile/`, run `EXPO_PUBLIC_DEMO=1 npx expo start`. Tap **View a sample Los Angeles tenancy**. That resets the sample account for Maya Chen at 1842 N Echo Park Ave, Unit 3, landlord Elena Vasquez. The sample button is hidden unless that flag is set. The phone guide is [docs/PHONE_DEMO.md](docs/PHONE_DEMO.md).
 
@@ -94,19 +117,19 @@ Without Resend and without Supabase, a local sign-in completes in the app. The l
 
 | Feature | Status |
 | --- | --- |
-| Chat, Landlord conversation, and Records | Done |
+| Chat, Landlord, Reminders, and Records | Done |
 | Sign-in with email or Google | Done on [the live app](https://app.rentrightportal.com) |
 | First-run address steps, with skip | Done |
 | Sample Los Angeles tenancy | Done, local only (`EXPO_PUBLIC_DEMO=1`) |
 | Unit profile and roommate invite | Done |
 | Lease review grounded in the rules library | Done |
-| Repair log with confirm-before-send | Done |
+| Repair log with a Landlord draft and confirm-before-send | Done |
 | Landlord relay email | Done; delivery needs Resend |
-| Labeled deadlines, tenant reminders, and next steps | Done |
+| Reminders: labeled deadlines, tenant nudges, and next steps | Done |
 | Deposit countdown and rent ledger | Done |
 | Evidence packet PDF | Done. A record of communications, not a court filing |
 | Demand letter the tenant fills and sends themselves | Done |
-| English and Spanish, switched on Records | Done |
+| English and Spanish, on the welcome screen and in the Records account menu | Done |
 | Privacy and terms pages | Done |
 | Statewide rules and local placeholder packs | Done, pending clinic review |
 | Postgres, migrations, RLS, encrypted message bodies and files | Done |
