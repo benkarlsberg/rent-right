@@ -10,6 +10,7 @@ export default function TabsLayout() {
       initialRouteName="chat"
       screenOptions={{
         headerShown: false,
+        tabBarIcon: () => null,
         tabBarActiveTintColor: colors.pine,
         tabBarInactiveTintColor: colors.mute,
         tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.line, height: 64, paddingTop: 6, paddingBottom: 8 },
