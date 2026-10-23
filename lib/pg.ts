@@ -1,5 +1,4 @@
 import { AsyncLocalStorage } from "async_hooks";
-import { env } from "cloudflare:workers";
 import postgres from "postgres";
 
 type Sql = ReturnType<typeof postgres>;
@@ -55,12 +54,20 @@ function createSql(url: string, hyperdrive: boolean): Sql {
 }
 
 export function getSql(): Sql {
-  if (!cloudflareRuntime()) {
-    if (!pool) pool = createSql(databaseUrl(), false);
-    return pool;
+  if (cloudflareRuntime()) {
+    const current = requestClients.getStore();
+    if (current) return current;
+    throw new Error("Database client is not ready.");
   }
+  if (!pool) pool = createSql(databaseUrl(), false);
+  return pool;
+}
+
+async function client(): Promise<Sql> {
+  if (!cloudflareRuntime()) return getSql();
   const current = requestClients.getStore();
   if (current) return current;
+  const { env } = await import("cloudflare:workers");
   const binding = env.HYPERDRIVE?.connectionString;
   if (!binding) throw new Error("Database binding is not configured.");
   const sql = createSql(binding, true);
@@ -267,7 +274,7 @@ function readResult(result: unknown): { rows: Record<string, unknown>[]; count: 
 async function execute(sql: string, params: unknown[]): Promise<{ rows: Record<string, unknown>[]; count: number }> {
   const text = placeholders(sql);
   const userId = actors.getStore()?.userId ?? null;
-  const db = getSql();
+  const db = await client();
   if (!userId) return readResult(await db.unsafe(text, params as never[]));
   return db.begin(async (tx) => {
     await applyRole(tx, userId);
