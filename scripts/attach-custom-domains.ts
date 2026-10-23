@@ -26,6 +26,8 @@ const appRoutes = [
   `${appHost}/email/*`,
   `${appHost}/brand/*`,
   `${appHost}/icons/*`,
+  `${appHost}/privacy*`,
+  `${appHost}/terms*`,
   `${appHost}/_next/*`,
 ];
 

@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { createElement, useEffect, useState } from "react";
 import { Linking, Platform, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/api";
@@ -174,10 +174,25 @@ export default function Welcome() {
         ) : null}
         {demoEnabled ? <Button label="View a sample Los Angeles tenancy" ghost onPress={demo} disabled={busy} /> : null}
       </View>
+      <View style={styles.legalRow}>
+        {Platform.OS === "web" ? (
+          <>
+            {createElement("a", { href: "/privacy", style: webLink }, "Privacy")}
+            {createElement("a", { href: "/terms", style: webLink }, "Terms")}
+          </>
+        ) : (
+          <>
+            <Text style={styles.legalAnchor} accessibilityRole="link" onPress={() => Linking.openURL("https://app.rentrightportal.com/privacy")}>Privacy</Text>
+            <Text style={styles.legalAnchor} accessibilityRole="link" onPress={() => Linking.openURL("https://app.rentrightportal.com/terms")}>Terms</Text>
+          </>
+        )}
+      </View>
       <Text style={styles.footer}>General information for California renters, not legal advice. Rent Right is not a law firm.</Text>
     </SafeAreaView>
   );
 }
+
+const webLink = { color: "#0B5C6E", fontWeight: 700, fontSize: 16, lineHeight: "24px", marginRight: 16, paddingTop: 10, paddingBottom: 10 };
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper, paddingHorizontal: 24 },
@@ -188,5 +203,7 @@ const styles = StyleSheet.create({
   confirm: { fontSize: 16, lineHeight: 24, color: colors.mute, marginTop: 8 },
   or: { color: colors.mute, fontSize: 14, textAlign: "center", marginTop: 16 },
   dev: { marginTop: 8 },
+  legalRow: { flexDirection: "row", gap: 16, paddingBottom: 8 },
+  legalAnchor: { color: colors.pine, fontSize: 16, fontWeight: "700", lineHeight: 24, minHeight: 44 },
   footer: { color: colors.mute, fontSize: 14, lineHeight: 20, paddingBottom: 20 },
 });

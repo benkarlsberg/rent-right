@@ -185,7 +185,9 @@ jobs:
           EXPO_PUBLIC_GOOGLE_AUTH: ${{ vars.EXPO_PUBLIC_GOOGLE_AUTH || secrets.EXPO_PUBLIC_GOOGLE_AUTH }}
         run: |
           npm ci
+          npx tsx ../scripts/write-legal-pages.ts
           npx expo export --platform web
+          npx tsx ../scripts/write-legal-pages.ts --inject
       - name: Create the Pages project
         id: pages
         continue-on-error: true
