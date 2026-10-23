@@ -2,19 +2,25 @@
 
 The repo can build the app. The accounts, signatures, and store forms below have to be done by you. Do them in order. Commands are run from the `mobile` directory unless a step says otherwise.
 
-Bundle id and package name: `com.rentrightportal.app`.
+Bundle id and package name: `com.rentrightportal.app`. Apple Team ID: `B5RNR69S8U` (already in `mobile/eas.json`). The Apple Developer membership is approved.
 
 ## 1. Accounts
 
-1. Enroll in the [Apple Developer Program](https://developer.apple.com/programs/) (the paid membership). Expo Go cannot ship Sign in with Apple or the App Store build.
-2. Create a [Google Play Console](https://play.google.com/console) developer account.
+1. The Apple Developer account for team `B5RNR69S8U` is approved. Expo Go still cannot ship Sign in with Apple or the App Store build.
+2. Create a [Google Play Console](https://play.google.com/console) developer account if you do not have one yet.
 3. Install the EAS CLI on your computer: `npm install -g eas-cli`.
 4. Sign in: `eas login`.
 5. From `mobile`, run `eas init` and accept the project it links. That writes the EAS project id into the app config. Commit that id.
 
 ## 2. Sign in with Apple
 
-Follow [docs/apple-sign-in.md](../apple-sign-in.md). You create the App ID, the Services ID, the key, and the Supabase Apple provider. Then set the GitHub variable or secret `EXPO_PUBLIC_APPLE_AUTH` to `1` and let Deploy run so the website shows the button.
+Follow [docs/apple-sign-in.md](../apple-sign-in.md). In the Apple Developer portal, still to do:
+
+1. Identifiers → App ID `com.rentrightportal.app` with the Sign in with Apple capability. Leave the server-to-server endpoint blank.
+2. Identifiers → Services ID `com.rentrightportal.app.signin`, Sign in with Apple enabled, domain `ijpkxcsnkqgmxkvykzrs.supabase.co`, return URL `https://ijpkxcsnkqgmxkvykzrs.supabase.co/auth/v1/callback`.
+3. Keys → a Sign in with Apple key. Download the `.p8` once and keep the Key ID.
+
+Then in Supabase → Authentication → Providers → Apple, enter Team ID `B5RNR69S8U`, that Key ID, Client IDs `com.rentrightportal.app.signin,com.rentrightportal.app` (Services ID first), and the secret generated from the `.p8`. Set the GitHub variable or secret `EXPO_PUBLIC_APPLE_AUTH` to `1` and let Deploy run so the website shows the button.
 
 ## 3. Reviewer login
 
@@ -41,13 +47,13 @@ eas build --platform android --profile production
 
 `preview` and `development` in `eas.json` are internal builds for TestFlight-style installs and your own devices. `EXPO_PUBLIC_API_URL` is `https://api.rentrightportal.com` in all three profiles.
 
-The first iOS build asks you to sign in with your Apple ID and to let EAS create the distribution certificate and provisioning profile. Accept that. The App ID must include Sign in with Apple before this build, because `mobile/app.json` sets `usesAppleSignIn`.
+The first iOS build asks you to sign in with the Apple ID for team `B5RNR69S8U` and to let EAS create the distribution certificate and provisioning profile. Accept that. The App ID must include Sign in with Apple before this build, because `mobile/app.json` sets `usesAppleSignIn`. That same file sets `appleTeamId` to `B5RNR69S8U` for the build. `eas.json` sends the team id on submit.
 
 The first Android build asks you to let EAS create the upload keystore. Let EAS store it. Download a copy for yourself from the Expo website and keep it outside git.
 
 ## 5. TestFlight
 
-1. In App Store Connect, create the app **Rent Right** with bundle id `com.rentrightportal.app`.
+1. In App Store Connect, create the app record **Rent Right** with bundle id `com.rentrightportal.app` on team `B5RNR69S8U`. The portal App ID has to exist before this record can be created.
 2. `eas submit --platform ios --profile production` and choose the build from step 4. Or let `eas build` submit when it offers to.
 3. Wait until the build finishes processing, then open TestFlight and add yourself as an internal tester.
 4. Install from the TestFlight email and walk through sign-in, a sample question, Settings → Delete account (use a throwaway account, not the reviewer sample), and the evidence packet.

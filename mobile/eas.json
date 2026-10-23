@@ -28,7 +28,9 @@
   },
   "submit": {
     "production": {
-      "ios": {},
+      "ios": {
+        "appleTeamId": "B5RNR69S8U"
+      },
       "android": {
         "track": "internal"
       }

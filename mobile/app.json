@@ -11,6 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.rentrightportal.app",
+      "appleTeamId": "B5RNR69S8U",
       "buildNumber": "1",
       "usesAppleSignIn": true,
       "config": {
