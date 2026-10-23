@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { LOCAL_ORDINANCES } from "@/lib/rules/cities/local-directory";
-import { detectPlace, localProtectionNote } from "@/lib/rules/detect";
+import { detectPlace, localProtectionNote, placeSummary } from "@/lib/rules/detect";
 
 describe("California place detection", () => {
   it("keeps loaded Los Angeles and San Diego rules", () => {
@@ -54,6 +54,25 @@ describe("California place detection", () => {
     expect(detectPlace({ city: "Los Angeles", address: "100 Commerce Ave" }).jurisdiction).toBe("city_la");
     expect(detectPlace({ address: "1 Main, Austin, TX 78701" }).jurisdiction).toBe("unsure");
     expect(detectPlace({}).jurisdiction).toBe("unsure");
+  });
+
+  it("summarizes which rules apply without claiming a unit is covered", () => {
+    expect(placeSummary(detectPlace({ city: "Los Angeles", region: "CA", postalCode: "90026" }))).toBe(
+      "California rules apply; Los Angeles rent control may also apply.",
+    );
+    expect(placeSummary(detectPlace({ city: "Oakland", postalCode: "94612", region: "CA" }))).toBe(
+      "California rules apply; Oakland local rules may also apply.",
+    );
+    expect(placeSummary(detectPlace({ city: "San Diego", region: "CA", postalCode: "92101" }))).toBe(
+      "California rules apply; San Diego local rules may also apply.",
+    );
+    expect(placeSummary(detectPlace({ address: "unincorporated Los Angeles County" }))).toBe(
+      "California rules apply; Unincorporated Los Angeles County local rules may also apply.",
+    );
+    expect(placeSummary(detectPlace({ city: "Fresno", postalCode: "93721", region: "CA" }))).toBe("California rules apply.");
+    expect(placeSummary(detectPlace({ address: "1 Main, Austin, TX 78701" }))).toBe("That address does not look like California.");
+    expect(placeSummary(detectPlace({}))).toBe("No address entered.");
+    expect(placeSummary(detectPlace({ city: "Los Angeles", region: "CA", postalCode: "90026" }), "es")).toContain("Los Ángeles");
   });
 
   it("keeps unpacked directory notes empty until a city is left unloaded on purpose", () => {

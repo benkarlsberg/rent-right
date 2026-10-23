@@ -196,6 +196,24 @@ export function inferJurisdiction(address: string): {
   return { suggestion: place.jurisdiction, confidence: place.confidence, notes: place.notes };
 }
 
+export function placeSummary(place: PlaceDetection, locale: "en" | "es" = "en"): string {
+  if (!place.inCalifornia) {
+    const empty = place.notes.some((note) => note === "No address entered.");
+    if (locale === "es") return empty ? "No hay dirección." : "Esa dirección no parece de California.";
+    return empty ? "No address entered." : "That address does not look like California.";
+  }
+  const local = place.pack?.name || place.localOrdinance?.name || "";
+  if (!local) return locale === "es" ? "Aplican las reglas de California." : "California rules apply.";
+  if (place.pack?.jurisdiction === "city_la") {
+    return locale === "es"
+      ? "Aplican las reglas de California; el control de renta de Los Ángeles también puede aplicar."
+      : "California rules apply; Los Angeles rent control may also apply.";
+  }
+  return locale === "es"
+    ? `Aplican las reglas de California; las reglas locales de ${local} también pueden aplicar.`
+    : `California rules apply; ${local} local rules may also apply.`;
+}
+
 export function localProtectionNote(ordinance: LocalOrdinance | null, locale: "en" | "es"): { text: string; url: string } | null {
   if (!ordinance) return null;
   return {

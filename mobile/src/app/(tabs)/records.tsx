@@ -56,7 +56,8 @@ export default function Records() {
   return (
     <Page onRefresh={reload}>
       <H1>{data?.name || "Records"}</H1>
-      <Muted>{data?.address || "Notes, your lease, and dates live here."}</Muted>
+      <Muted>{data?.address || (me?.needsUnit ? "Add your place when you are ready." : "Notes, your lease, and dates live here.")}</Muted>
+      {me?.needsUnit ? <Button label="Add your place" onPress={() => router.push("/setup")} /> : null}
       {data?.sample ? <Text style={styles.sample}>Sample</Text> : null}
       <ErrorLine message={error} />
       {data ? (

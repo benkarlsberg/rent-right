@@ -6,6 +6,7 @@ import { api } from "@/api";
 import type { Me } from "@/session";
 import { useSession } from "@/session";
 import { Logo } from "@/logo";
+import { skippedSetup } from "@/setup-later";
 import { colors } from "@/theme";
 import { Button, ErrorLine, Field } from "@/ui";
 
@@ -30,7 +31,14 @@ export default function Welcome() {
 
   useEffect(() => {
     if (!ready || !token || !me) return;
-    router.replace(me.needsUnit ? "/setup" : "/chat");
+    let cancel = false;
+    skippedSetup().then((later) => {
+      if (cancel) return;
+      router.replace(me.needsUnit && !later ? "/setup" : "/chat");
+    });
+    return () => {
+      cancel = true;
+    };
   }, [ready, token, me]);
 
   useEffect(() => {

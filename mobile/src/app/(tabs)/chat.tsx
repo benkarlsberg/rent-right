@@ -16,7 +16,7 @@ type Action = { id: string; label: string };
 type Item =
   | { role: "user"; text: string }
   | { role: "card"; headline: string; status: string; action: Action | null; actions?: Action[]; detail: string; ruleId: string | null; notice: Notice };
-type Thread = { landlord: string; items: Item[]; chips: { label: string; text: string }[]; notice: Notice };
+type Thread = { landlord: string; needsUnit?: boolean; items: Item[]; chips: { label: string; text: string }[]; notice: Notice };
 type Attachment = { name: string; mime: string; base64: string };
 
 export default function AssistantChat() {
@@ -175,6 +175,14 @@ export default function AssistantChat() {
           data={items}
           keyExtractor={(_, index) => String(index)}
           contentContainerStyle={styles.list}
+          ListHeaderComponent={me?.needsUnit ? (
+            <View style={styles.place}>
+              <Text style={styles.support}>{spanish ? "Agregue su dirección para guardar registros y escribirle al propietario." : "Add your address to keep records and write to your landlord."}</Text>
+              <Pressable style={styles.chip} onPress={() => router.push("/setup")} accessibilityRole="button" accessibilityLabel={spanish ? "Agregar su vivienda" : "Add your place"}>
+                <Text style={styles.chipText}>{spanish ? "Agregar su vivienda" : "Add your place"}</Text>
+              </Pressable>
+            </View>
+          ) : null}
           ListEmptyComponent={
             <View>
               <Text style={styles.intro}>{spanish ? "Cuénteme qué pasó." : "Tell me what happened."}</Text>
@@ -317,6 +325,7 @@ const styles = StyleSheet.create({
   account: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
   accountButton: { minHeight: 44, justifyContent: "center", paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.card },
   list: { paddingHorizontal: 16, paddingBottom: 16, flexGrow: 1 },
+  place: { marginTop: 8 },
   intro: { fontSize: 22, color: colors.ink, marginTop: 16, lineHeight: 30 },
   support: { fontSize: 16, lineHeight: 24, color: colors.mute, marginTop: 8 },
   chip: { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.line, minHeight: 48, justifyContent: "center", paddingVertical: 14, paddingHorizontal: 18, marginTop: 12 },

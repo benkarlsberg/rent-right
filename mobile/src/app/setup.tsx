@@ -1,48 +1,192 @@
 import { router } from "expo-router";
 import { useState } from "react";
+import { Pressable, StyleSheet, Text } from "react-native";
 import { api } from "@/api";
 import type { Me } from "@/session";
 import { useSession } from "@/session";
+import { setSkippedSetup } from "@/setup-later";
+import { colors } from "@/theme";
 import { Button, ErrorLine, Field, H1, Muted, Page } from "@/ui";
 
+type Suggestion = { label: string; street: string; city: string; region: string; postalCode: string };
+type PlaceResult = { summary: string; inCalifornia: boolean; suggestion: Suggestion | null };
+
+const STEPS = 5;
+
+function californiaZip(value: string): boolean {
+  if (!/^\d{5}$/.test(value)) return false;
+  const prefix = Number(value.slice(0, 3));
+  return prefix >= 900 && prefix <= 961;
+}
+
 export default function Setup() {
-  const { token, signIn } = useSession();
+  const { token, me, signIn } = useSession();
+  const es = me?.user.locale === "es";
+  const [step, setStep] = useState(0);
   const [street, setStreet] = useState("");
   const [unitNumber, setUnit] = useState("");
   const [city, setCity] = useState("");
   const [postalCode, setPostal] = useState("");
   const [landlordName, setLandlord] = useState("");
   const [landlordEmail, setEmail] = useState("");
+  const [moveInDate, setMoveIn] = useState("");
   const [rent, setRent] = useState("");
+  const [summary, setSummary] = useState("");
+  const [checked, setChecked] = useState("");
+  const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  async function save() {
+  function editStreet(value: string) {
+    setStreet(value);
+    setAccepted(false);
+  }
+  function editCity(value: string) {
+    setCity(value);
+    setAccepted(false);
+  }
+  function editPostal(value: string) {
+    setPostal(value);
+    setAccepted(false);
+  }
+
+  async function later() {
+    await setSkippedSetup(true);
+    router.replace("/chat");
+  }
+
+  async function next() {
     try {
       setError("");
+      if (step === 0) {
+        const zip = postalCode.trim();
+        if (!street.trim() || !city.trim() || !californiaZip(zip)) {
+          setError(es ? "Agregue calle, ciudad y un código postal de California." : "Add a street, city, and California ZIP.");
+          return;
+        }
+        setBusy(true);
+        const found = await api<PlaceResult>("place", { token, body: { street: street.trim(), city: city.trim(), postalCode: zip, region: "CA" } });
+        if (!found.inCalifornia) {
+          setError(found.summary);
+          return;
+        }
+        setSummary(found.summary);
+        const suggestion = found.suggestion;
+        const differs = suggestion
+          && (suggestion.street.toLowerCase() !== street.trim().toLowerCase()
+            || suggestion.city.toLowerCase() !== city.trim().toLowerCase()
+            || suggestion.postalCode !== zip);
+        if (suggestion && differs && !accepted) {
+          setStreet(suggestion.street);
+          setCity(suggestion.city);
+          setPostal(suggestion.postalCode);
+          setChecked(suggestion.label);
+          setAccepted(true);
+          return;
+        }
+        if (suggestion) setChecked(suggestion.label);
+        setStep(1);
+        return;
+      }
+      if (step === 1) {
+        setStep(2);
+        return;
+      }
+      if (step === 2) {
+        if (!landlordName.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(landlordEmail.trim())) {
+          setError(es ? "Agregue el nombre y el correo del propietario." : "Add the landlord's name and email.");
+          return;
+        }
+        setStep(3);
+        return;
+      }
+      if (step === 3) {
+        if (moveInDate.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(moveInDate.trim())) {
+          setError(es ? "Use una fecha como 2024-06-01, o déjela en blanco." : "Use a date like 2024-06-01, or leave it blank.");
+          return;
+        }
+        if (rent.trim() && !Number.isFinite(Number(rent.replace(/[$,]/g, "")))) {
+          setError(es ? "Escriba la renta en dólares, o déjela en blanco." : "Enter the rent in dollars, or leave it blank.");
+          return;
+        }
+        setStep(4);
+        return;
+      }
+      setBusy(true);
       const session = await api<Me>("unit", {
         token,
-        body: { street, unitNumber, city, landlordName, landlordEmail, rent, jurisdiction: "unsure", postalCode, region: "CA" },
+        body: {
+          street: street.trim(),
+          unitNumber: unitNumber.trim(),
+          city: city.trim(),
+          postalCode: postalCode.trim(),
+          region: "CA",
+          landlordName: landlordName.trim(),
+          landlordEmail: landlordEmail.trim(),
+          rent: rent.trim(),
+          moveInDate: moveInDate.trim(),
+          jurisdiction: "unsure",
+        },
       });
+      await setSkippedSetup(false);
       await signIn(session);
       router.replace("/chat");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save.");
+    } finally {
+      setBusy(false);
     }
   }
 
+  const titles = es
+    ? ["¿Dónde renta?", "Unidad o apartamento", "Su propietario", "Datos del contrato", "Reglas para esta dirección"]
+    : ["Where do you rent?", "Unit or apartment", "Your landlord", "Lease details", "Rules for this address"];
+  const hints = es
+    ? ["Una dirección en California.", "Si es una casa, puede dejarlo en blanco.", "Nada se envía hasta que usted lo confirme.", "Los dos son opcionales.", summary]
+    : ["A California address.", "Leave this blank for a house.", "Nothing is sent until you confirm it.", "Both of these are optional.", summary];
+  const action = step === 4 ? (es ? "Guardar" : "Save") : step === 0 && accepted && checked ? (es ? "Usar esta dirección" : "Use this address") : (es ? "Continuar" : "Continue");
+
   return (
     <Page>
-      <H1>Your place</H1>
-      <Muted>Anywhere in California.</Muted>
+      <Muted>{es ? `Paso ${step + 1} de ${STEPS}` : `Step ${step + 1} of ${STEPS}`}</Muted>
+      <H1>{titles[step]}</H1>
+      <Muted>{hints[step]}</Muted>
+      {step === 0 && checked ? <Text style={styles.checked}>{es ? `Revisada: ${checked}` : `Checked: ${checked}`}</Text> : null}
       <ErrorLine message={error} />
-      <Field label="Street" value={street} onChange={setStreet} />
-      <Field label="Unit" value={unitNumber} onChange={setUnit} />
-      <Field label="City" value={city} onChange={setCity} placeholder="Oakland" />
-      <Field label="ZIP" value={postalCode} onChange={setPostal} placeholder="94612" />
-      <Field label="Landlord" value={landlordName} onChange={setLandlord} />
-      <Field label="Landlord email" value={landlordEmail} onChange={setEmail} />
-      <Field label="Monthly rent" value={rent} onChange={setRent} placeholder="2150" />
-      <Button label="Save" onPress={save} />
+      {step === 0 ? (
+        <>
+          <Field label={es ? "Calle" : "Street"} value={street} onChange={editStreet} autoComplete="street-address" textContentType="fullStreetAddress" />
+          <Field label={es ? "Ciudad" : "City"} value={city} onChange={editCity} placeholder="Los Angeles" autoComplete="postal-address-locality" textContentType="addressCity" />
+          <Field label={es ? "Código postal" : "ZIP"} value={postalCode} onChange={editPostal} placeholder="90026" keyboardType="number-pad" autoComplete="postal-code" textContentType="postalCode" />
+        </>
+      ) : null}
+      {step === 1 ? <Field label={es ? "Unidad" : "Unit"} value={unitNumber} onChange={setUnit} placeholder="3" /> : null}
+      {step === 2 ? (
+        <>
+          <Field label={es ? "Nombre del propietario" : "Landlord name"} value={landlordName} onChange={setLandlord} autoComplete="name" textContentType="name" />
+          <Field label={es ? "Correo del propietario" : "Landlord email"} value={landlordEmail} onChange={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" textContentType="emailAddress" />
+        </>
+      ) : null}
+      {step === 3 ? (
+        <>
+          <Field label={es ? "Inicio del contrato" : "Lease start"} value={moveInDate} onChange={setMoveIn} placeholder="2024-06-01" autoComplete="off" />
+          <Field label={es ? "Renta mensual" : "Monthly rent"} value={rent} onChange={setRent} placeholder="2150" keyboardType="decimal-pad" />
+        </>
+      ) : null}
+      {step === 4 ? (
+        <Text style={styles.recap}>{[street, unitNumber, city, "CA", postalCode].filter(Boolean).join(", ")}</Text>
+      ) : null}
+      <Button label={busy ? (es ? "Un momento…" : "One moment…") : action} onPress={() => void next()} disabled={busy} />
+      <Pressable onPress={() => void later()} accessibilityRole="button" accessibilityLabel={es ? "Hacer esto después" : "Do this later"} style={styles.later}>
+        <Text style={styles.laterText}>{es ? "Hacer esto después" : "Do this later"}</Text>
+      </Pressable>
     </Page>
   );
 }
+
+const styles = StyleSheet.create({
+  checked: { color: colors.ink, fontSize: 15, lineHeight: 21, marginTop: 12 },
+  recap: { color: colors.ink, fontSize: 16, lineHeight: 22, marginTop: 16 },
+  later: { minHeight: 48, justifyContent: "center", alignItems: "center", marginTop: 8 },
+  laterText: { color: colors.pine, fontSize: 16, fontWeight: "700" },
+});

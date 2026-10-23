@@ -5,6 +5,7 @@ import { signSession } from "@/lib/crypto";
 import {
   addFeedback,
   addLedger,
+  archiveChat,
   createInvite,
   createMagicLink,
   consumeMagicLink,
@@ -37,7 +38,8 @@ import {
 import { emailValue } from "@/lib/forms";
 import { formatDate, formatMoney, formatTimestamp, percentLabel } from "@/lib/format";
 import { getRule } from "@/lib/rules/library";
-import { detectPlace, localProtectionNote } from "@/lib/rules/detect";
+import { suggestPlace } from "@/lib/geo";
+import { detectPlace, localProtectionNote, placeSummary } from "@/lib/rules/detect";
 import { isAllowedJurisdiction } from "@/lib/rules/cities";
 import { checkRentIncrease, type Jurisdiction, type RsoStatus, type RstpoTier } from "@/lib/rules/engine";
 import { todayISO } from "@/lib/rules/dates";
@@ -247,6 +249,22 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "GET" && key === "me") {
     const user = await actor();
     return json(await sessionPayload(user));
+  }
+
+  if (method === "POST" && key === "place") {
+    const user = await actor();
+    const body = await readBody(request);
+    const street = text(body.street);
+    const city = text(body.city);
+    const postalCode = text(body.postalCode);
+    const region = text(body.region) || "CA";
+    if (!street || !city || !postalCode) throw new Error("Add the street, city, and ZIP.");
+    const found = await suggestPlace([street, city, region, postalCode].join(", "));
+    return json({
+      summary: placeSummary(found.place, user.locale),
+      inCalifornia: found.place.inCalifornia,
+      suggestion: found.suggestion,
+    });
   }
 
   if (method === "POST" && key === "unit") {
@@ -482,8 +500,10 @@ async function createLog(input: Record<string, unknown>) {
 }
 
 async function chatPayload() {
-  const { user, unit } = await withUnit();
+  const user = await actor();
+  const unit = await primaryUnit(user.id);
   const locale = user.locale;
+  if (!unit) return { landlord: "", items: [], needsUnit: true };
   return {
     landlord: unit.landlordName || unit.landlordEmail,
     items: (await listMessages(user.id, unit.id)).map((message) => {
@@ -501,7 +521,9 @@ async function chatPayload() {
 }
 
 async function sendChat(input: Record<string, unknown>) {
-  const { user, unit } = await withUnit();
+  const user = await actor();
+  const unit = await primaryUnit(user.id);
+  if (!unit) throw new Error("Add your place before sending a message.");
   const message = text(input.text);
   if (message.length < 2) throw new Error("Write a message.");
   await emailLandlord({
@@ -672,8 +694,21 @@ function chips(locale: Locale) {
       ];
 }
 
+function emptyThread(user: User) {
+  const locale = user.locale;
+  return {
+    landlord: "",
+    needsUnit: true,
+    items: [] as { role: "user" | "card" }[],
+    chips: chips(locale),
+    notice: notice(locale),
+  };
+}
+
 async function threadPayload() {
-  const { user, unit } = await withUnit();
+  const user = await actor();
+  const unit = await primaryUnit(user.id);
+  if (!unit) return emptyThread(user);
   const locale = user.locale;
   const rows = await listAssistant(user.id, "visible");
   const items = rows.map((row) => {
@@ -694,6 +729,7 @@ async function threadPayload() {
   });
   return {
     landlord: unit.landlordName,
+    needsUnit: false,
     items,
     chips: rows.some((row) => row.role === "user") ? [] : chips(locale),
     notice: notice(locale),
@@ -701,7 +737,15 @@ async function threadPayload() {
 }
 
 async function postThread(input: Record<string, unknown>) {
-  const { user, unit } = await withUnit();
+  const user = await actor();
+  const unit = await primaryUnit(user.id);
+  if (!unit) {
+    if (text(input.action) === "clear") {
+      await archiveChat(user.id);
+      return emptyThread(user);
+    }
+    throw new Error("Add your place before sending a message.");
+  }
   const file = input.attachment;
   const attachment = file && typeof file === "object" && !Array.isArray(file)
     ? {
@@ -722,8 +766,22 @@ async function postThread(input: Record<string, unknown>) {
 }
 
 async function recordsPayload() {
-  const { user, unit } = await withUnit();
+  const user = await actor();
+  const unit = await primaryUnit(user.id);
   const locale = user.locale;
+  if (!unit) {
+    return {
+      name: user.name,
+      address: "",
+      sample: user.email === DEMO_EMAIL,
+      locale,
+      notice: notice(locale),
+      next: null,
+      notes: [],
+      lease: null,
+      needsUnit: true,
+    };
+  }
   const today = todayISO();
   const next = (await listDeadlines(user.id, unit.id)).find((item) => item.status === "open" && item.dueDate);
   const line = next ? dueLine(next.dueDate, today, locale) : null;

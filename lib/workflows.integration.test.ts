@@ -186,6 +186,38 @@ describe("renter workflows", () => {
     expect(kept[0]?.n).toBeGreaterThan(0);
   });
 
+  it("lets a new account open chat before a unit is saved", async () => {
+    const email = `new-${Date.now()}@example.com`;
+    const magic = await api("POST", "auth/magic", { email });
+    const session = await api("POST", "auth/verify", { token: magic.json?.devToken });
+    const token = String(session.json?.token);
+    const thread = await api("GET", "thread", undefined, token);
+    expect(thread.status).toBe(200);
+    expect(thread.json?.needsUnit).toBe(true);
+    expect(thread.json?.items).toEqual([]);
+    expect((thread.json?.chips as unknown[]).length).toBeGreaterThan(0);
+    const blocked = await api("POST", "thread", { text: "The sink is leaking" }, token);
+    expect(blocked.status).toBe(400);
+    expect(blocked.json?.error).toBe("Add your place before sending a message.");
+    const place = await api("POST", "place", {
+      street: "1842 N Echo Park Ave",
+      city: "Los Angeles",
+      postalCode: "90026",
+      region: "CA",
+    }, token);
+    expect(place.status).toBe(200);
+    expect(place.json?.inCalifornia).toBe(true);
+    expect(place.json?.summary).toBe("California rules apply; Los Angeles rent control may also apply.");
+    const elsewhere = await api("POST", "place", {
+      street: "1 Main",
+      city: "Austin",
+      postalCode: "78701",
+      region: "TX",
+    }, token);
+    expect(elsewhere.json?.inCalifornia).toBe(false);
+    expect(elsewhere.json?.summary).toBe("That address does not look like California.");
+  });
+
   it("loads the synthetic Los Angeles sample tenancy", async () => {
     const id = await startSampleTenancy();
     const user = await getUser(id);
