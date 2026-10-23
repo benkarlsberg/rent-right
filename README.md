@@ -10,15 +10,45 @@ The short line on a result is “General information, not legal advice.”
 
 ## Screenshots
 
-The phone opens on a chat. The sample Los Angeles tenancy is Maya Chen at 1842 N Echo Park Ave, Unit 3.
+Phone-width pictures of the current app. Sign-in, privacy, and terms are [the live app](https://app.rentrightportal.com). The signed-in screens are the sample Los Angeles tenancy only: Maya Chen, 1842 N Echo Park Ave, Unit 3, landlord Elena Vasquez.
 
-![Chat with the sample tenancy](docs/images/chat.webp)
+![Sign in with Google or email](docs/images/sign-in.webp)
 
-A repair stays “Not sent” until the tenant confirms. After confirmation the card shows the email was saved, and nothing is sent unless Resend is configured.
+The welcome screen shows the mark, **Continue with Google**, and **Email me a sign-in link**. Privacy and Terms are linked under the form.
 
-![Repair email after confirmation](docs/images/repair-confirmed.webp)
+![Where do you rent](docs/images/onboarding.webp)
 
-![Records for the sample tenancy](docs/images/records.webp)
+A new account starts with the address. There are five short steps. **Do this later** skips them. Nothing is emailed while you fill this in.
+
+![Chat for the sample tenancy](docs/images/chat.webp)
+
+Chat is the home tab. A repair stays unsent until the tenant confirms. **Your next steps** sits at the end of the conversation.
+
+![Landlord conversation](docs/images/landlord.webp)
+
+The Landlord tab is that conversation, with the time on each message. Opening it does not send mail.
+
+![Records, with next steps](docs/images/records.webp)
+
+Records opens with **Your next steps** and the English / Español switch.
+
+![A labeled date and a tenant reminder](docs/images/records-reminder.webp)
+
+Each date card names what it is for, what started it, who owes what, and the due date. **Learn more** opens the library rule. **Your reminder** is the tenant’s own nudge. It does not change the computed date. **Edit reminder date** saves a different day, and **Add a reminder** adds one from scratch.
+
+![Export my evidence packet](docs/images/records-export.webp)
+
+**Export my evidence packet** downloads a timestamped PDF of the requests, notices, replies, and dates. The packet says it is a record of communications, not legal advice and not a court filing. The footer points to the California courts small-claims self-help page.
+
+![Records in Spanish](docs/images/records-spanish.webp)
+
+The same screen in Spanish. Words the tenant typed stay as they were written.
+
+![Privacy policy](docs/images/privacy.webp)
+
+![Terms of use](docs/images/terms.webp)
+
+Privacy and terms are pages of their own: [app.rentrightportal.com/privacy](https://app.rentrightportal.com/privacy) and [app.rentrightportal.com/terms](https://app.rentrightportal.com/terms).
 
 ## Architecture
 
@@ -27,7 +57,7 @@ flowchart LR
   phone["Expo app\niOS, Android, web"]
   worker["Next.js API\nCloudflare Worker via OpenNext"]
   db["Supabase Postgres\nRLS on every tenant table"]
-  auth["Supabase Auth\nmagic link"]
+  auth["Supabase Auth\nemail link or Google"]
   mail["Resend\noptional"]
   model["Gemini\noptional"]
   files["Encrypted files\nlocal disk, R2, or private tenant-files bucket"]
@@ -46,36 +76,43 @@ Deadlines, caps, and coverage come from the rules engine. A model may choose an 
 
 ## Demo walkthrough
 
-1. Start Postgres, migrate, and run the API (`docker compose up -d`, `npm run db:migrate`, `npm run dev`).
-2. In `mobile/`, run `npx expo start` and open Expo web or Expo Go. The phone guide is [docs/PHONE_DEMO.md](docs/PHONE_DEMO.md).
-3. Start Expo with `EXPO_PUBLIC_DEMO=1 npx expo start`. On the welcome screen, tap **View a sample Los Angeles tenancy**. That resets `demo@rentright.local` (Maya Chen, 1842 N Echo Park Ave Unit 3, landlord Elena Vasquez). The sample button is hidden unless that flag is set.
-4. The chat shows the repair, the rent increase, and the deposit cards. Open **Learn more** for the full disclaimer and the rule.
-5. Describe a new repair, for example “The kitchen sink is leaking.” The card says **Not sent**. Nothing is emailed.
-6. Tap **Send to landlord**. The card updates to **Saved** when Resend is unset. The message is stored on the Landlord tab. With Resend configured, the same confirmation is what actually sends it.
-7. Paste a lease or use the sample lease. The review quotes a library rule ID or **Unsure**. Identical text is cached.
+Open [https://app.rentrightportal.com](https://app.rentrightportal.com).
 
-Magic links last 30 minutes. Without Resend and without Supabase, the phone signs you in directly. Limit is 5 links per email per hour.
+1. Sign in with **Continue with Google** or **Email me a sign-in link**. The link lasts 30 minutes. Privacy and Terms are on the welcome screen.
+2. The first time, the app asks where you rent, then the unit, the landlord, optional lease dates, and a short note on which rules apply to that address. **Do this later** leaves chat available. Nothing is emailed during these steps.
+3. Chat is the home tab. Describe a leak, a rent increase, or a deposit. A repair card stays **Not sent** until you tap **Send to landlord**. That confirmation is what emails the landlord, and only when mail delivery is configured.
+4. **Landlord** shows the thread: messages you sent and replies, each with a time. **Your next steps** is at the end of chat, with at most three actions. Waiting sends nothing. Follow-up opens the Landlord tab and still waits for confirmation.
+5. **Records** lists those next steps at the top. Deadline cards name the follow-up or the deposit accounting date, who owes what, and the due date. **Learn more** quotes the library rule. **Edit reminder date** saves your own nudge and leaves the computed date unchanged. **Export my evidence packet** downloads `rent-right-evidence-YYYY-MM-DD.pdf`.
+6. Switch **English / Español** on Records. The labels follow that choice.
+7. Read [Privacy](https://app.rentrightportal.com/privacy) and [Terms](https://app.rentrightportal.com/terms).
+
+To walk the sample tenancy on your own computer, start Postgres, migrate, and run the API (`docker compose up -d`, `npm run db:migrate`, `npm run dev`). In `mobile/`, run `EXPO_PUBLIC_DEMO=1 npx expo start`. Tap **View a sample Los Angeles tenancy**. That resets the sample account for Maya Chen at 1842 N Echo Park Ave, Unit 3, landlord Elena Vasquez. The sample button is hidden unless that flag is set. The phone guide is [docs/PHONE_DEMO.md](docs/PHONE_DEMO.md).
+
+Without Resend and without Supabase, a local sign-in completes in the app. The limit is 5 links per email per hour.
 
 ## Feature status
 
 | Feature | Status |
 | --- | --- |
-| Chat-first phone (Chat, Landlord, Records) | Done |
-| Sample Los Angeles tenancy | Done |
-| Email magic link (local HMAC, or Supabase Auth when configured) | Done |
+| Chat, Landlord conversation, and Records | Done |
+| Sign-in with email or Google | Done on [the live app](https://app.rentrightportal.com) |
+| First-run address steps, with skip | Done |
+| Sample Los Angeles tenancy | Done, local only (`EXPO_PUBLIC_DEMO=1`) |
 | Unit profile and roommate invite | Done |
 | Lease review grounded in the rules library | Done |
 | Repair log with confirm-before-send | Done |
-| Landlord relay email | Done locally; delivery needs Resend |
-| Deadline tracker, deposit countdown, rent ledger | Done |
-| Condition report and factual evidence packet | Done |
+| Landlord relay email | Done; delivery needs Resend |
+| Labeled deadlines, tenant reminders, and next steps | Done |
+| Deposit countdown and rent ledger | Done |
+| Evidence packet PDF | Done. A record of communications, not a court filing |
 | Demand letter the tenant fills and sends themselves | Done |
-| English and Spanish UI | Done |
+| English and Spanish, switched on Records | Done |
+| Privacy and terms pages | Done |
 | Statewide rules and local placeholder packs | Done, pending clinic review |
 | Postgres, migrations, RLS, encrypted message bodies and files | Done |
 | GitHub Actions CI | Done |
-| Cloudflare Worker + Pages deploy | Configured; waits on secrets |
-| Live public demo | Placeholder |
+| Cloudflare Worker and Pages | Live |
+| Public app | [https://app.rentrightportal.com](https://app.rentrightportal.com) |
 | Clinic-approved rule text and cap percentages | Later |
 | Volunteer Spanish legal review | Later |
 | Photo OCR | Placeholder unless `GEMINI_API_KEY` is set |

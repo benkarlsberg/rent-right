@@ -166,7 +166,7 @@ That button calls `POST /api/v1/auth/demo` on your computer and opens a sample h
 
 You should land in the chat. The sample starts with a few example exchanges: a sink leak, a rent check, and a deposit date. Each reply is a short card. The detail and the full disclaimer open from **Learn more**. The short line on the card says “General information, not legal advice.”
 
-The tabs along the bottom are **Chat**, **Landlord**, and **Records**. Chat is the home. Landlord is the thread with Elena Vasquez. Records holds the language switch, a next date, and the records PDF.
+The tabs along the bottom are **Chat**, **Landlord**, and **Records**. Chat is the home. Landlord is the thread with Elena Vasquez, with a time on each message. Records opens with **Your next steps**, then each date by name. **Edit reminder date** is your own nudge and does not change the computed date. **Export my evidence packet** downloads the PDF. The English / Español switch is on this screen.
 
 A new chat with no messages shows suggestion chips. The sample already has messages, so the chips are hidden until you start a blank tenancy.
 
