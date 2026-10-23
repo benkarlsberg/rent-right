@@ -55,9 +55,11 @@ export async function sendSupabaseMagicLink(email: string): Promise<string | nul
 export async function userFromSupabaseOtp(tokenHash: string): Promise<{ id: string; email: string } | null> {
   if (!tokenHash || !supabaseAuthConfigured()) return null;
   const supabase = client(process.env.SUPABASE_ANON_KEY!);
-  const { data, error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "magiclink" });
-  if (error || !data.user) return null;
-  return { id: data.user.id, email: data.user.email || "" };
+  for (const type of ["magiclink", "email"] as const) {
+    const { data, error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
+    if (!error && data.user) return { id: data.user.id, email: data.user.email || "" };
+  }
+  return null;
 }
 
 export async function startGoogleSignIn(): Promise<{ url: string; pkce: string }> {
