@@ -97,11 +97,17 @@ jobs:
         run: npx tsx scripts/register-workers-subdomain.ts
       - name: Deploy the API Worker
         if: steps.hyperdrive.outcome == 'success'
+        continue-on-error: true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -o pipefail
+          if [ -f .database-url ]; then export DATABASE_URL="$(cat .database-url)"; fi
+          if [ -n "$DATABASE_URL" ]; then
+            export CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="$DATABASE_URL"
+          fi
           npx opennextjs-cloudflare deploy | tee deploy.log
           url=$(grep -oE 'https://[A-Za-z0-9.-]+\.workers\.dev' deploy.log | head -1 || true)
           if [ -z "$url" ]; then
