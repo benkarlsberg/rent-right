@@ -23,16 +23,26 @@ describe("favicon files", () => {
     expect(ico.readUInt16LE(4)).toBe(3);
     expect([ico[6], ico[22], ico[38]]).toEqual([16, 32, 48]);
     const svg = readFileSync(join(root, "public/favicon.svg"), "utf8");
-    expect(svg).toContain("#14A38B");
+    expect(svg).toContain("#3DDBB8");
     expect(svg).toContain("#0B5C6E");
+    expect(svg).toContain("#FFFFFF");
+    expect(svg).toContain('shape-rendering="crispEdges"');
     expect(svg).not.toContain("M308");
+    expect(svg).not.toContain('fill="#FFFFFF" width="16"');
     const manifest = JSON.parse(readFileSync(join(root, "mobile/public/manifest.webmanifest"), "utf8"));
     expect(manifest.icons.map((icon: { src: string }) => icon.src)).toEqual([
-      "/icons/icon-192.png",
-      "/icons/icon-512.png",
-      "/icons/icon-maskable-192.png",
-      "/icons/icon-maskable-512.png",
+      "/icons/icon-192.png?v=2",
+      "/icons/icon-512.png?v=2",
+      "/icons/icon-maskable-192.png?v=2",
+      "/icons/icon-maskable-512.png?v=2",
     ]);
+    expect(readFileSync(join(root, "public/apple-touch-icon.png"))[25]).toBe(2);
+    expect(pngSize(join(root, "mobile/assets/icon.png"))).toEqual({ width: 1024, height: 1024 });
+    expect(readFileSync(join(root, "mobile/assets/icon.png"))[25]).toBe(2);
+    expect(pngSize(join(root, "mobile/assets/android-icon-foreground.png"))).toEqual({ width: 1024, height: 1024 });
+    expect(readFileSync(join(root, "mobile/assets/android-icon-foreground.png"))[25]).toBe(6);
+    expect(pngSize(join(root, "mobile/assets/android-icon-background.png"))).toEqual({ width: 1024, height: 1024 });
+    expect(readFileSync(join(root, "mobile/assets/android-icon-background.png"))[25]).toBe(2);
     expect(readFileSync(join(root, "mobile/public/favicon.svg"), "utf8")).toBe(svg);
   });
 });

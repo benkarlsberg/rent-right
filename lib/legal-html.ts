@@ -2,7 +2,7 @@ import { DISCLAIMER_EN } from "./disclaimer";
 
 const CONTACT = "benelliot16@gmail.com";
 
-export const iconLinks = `<link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png"><link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="manifest" href="/manifest.webmanifest">`;
+export const iconLinks = `<link rel="icon" href="/favicon.ico?v=2" sizes="any"><link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=2"><link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=2"><link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2"><link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2"><link rel="manifest" href="/manifest.webmanifest?v=2">`;
 
 function document(title: string, body: string): string {
   return `<!doctype html>
@@ -96,7 +96,7 @@ export function injectHomeHtml(html: string): string {
   if (!next.includes('property="og:site_name"')) {
     next = next.replace("</head>", `<meta property="og:site_name" content="Rent Right"></head>`);
   }
-  if (!next.includes('href="/favicon.svg"')) {
+  if (!next.includes('href="/favicon.svg')) {
     next = next.replace(/<link\s+rel="(?:shortcut icon|icon|apple-touch-icon|manifest)"[^>]*>/gi, "");
     next = next.replace("</head>", `${iconLinks}</head>`);
   }
