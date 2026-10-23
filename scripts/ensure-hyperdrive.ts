@@ -2,7 +2,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const name = "rent-right-db";
-const permission = "The API token needs Account → Hyperdrive → Edit and Account → SSL and Certificates → Edit.";
+const hyperdrivePermission = "The API token needs Account → Hyperdrive → Edit.";
+const certificatePermission = "The API token needs Account → SSL and Certificates → Edit.";
 
 type CfError = { code?: number; message?: string };
 type CfBody = {
@@ -34,10 +35,10 @@ function errorText(body: CfBody, status: number): string {
   return errors.map((error) => `${error.code ?? status} ${error.message ?? ""}`.trim()).join("; ");
 }
 
-function failed(body: CfBody, status: number, action: string): Error {
+function failed(body: CfBody, status: number, action: string, hint?: string): Error {
   const detail = errorText(body, status);
   const auth = status === 401 || status === 403 || /auth|permission|not authorized/i.test(detail);
-  return new Error(`${action}: ${detail}.${auth ? ` ${permission}` : ""}`);
+  return new Error(`${action}: ${detail}.${auth && hint ? ` ${hint}` : ""}`);
 }
 
 export function databaseOrigins(databaseUrl: string, supabaseUrl?: string): DatabaseOrigin[] {
@@ -81,14 +82,14 @@ async function cf(url: string, token: string, init?: RequestInit): Promise<{ sta
 async function certificateId(accountId: string, token: string, certName: string, pemPath: string): Promise<string> {
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/mtls_certificates`;
   const listed = await cf(endpoint, token);
-  if (!listed.body.success) throw failed(listed.body, listed.status, "Certificate list failed");
+  if (!listed.body.success) throw failed(listed.body, listed.status, "Certificate list failed", certificatePermission);
   const configs = Array.isArray(listed.body.result) ? listed.body.result : [];
   const existing = configs.find((item) => item.name === certName);
   if (existing?.id) return existing.id;
   const certificates = readFileSync(pemPath, "utf8").trim();
   const created = await cf(endpoint, token, { method: "POST", body: JSON.stringify({ ca: true, name: certName, certificates }) });
   if (!created.body.success || Array.isArray(created.body.result) || !created.body.result?.id) {
-    throw failed(created.body, created.status, "Supabase certificate upload failed");
+    throw failed(created.body, created.status, "Supabase certificate upload failed", certificatePermission);
   }
   console.log(`Uploaded ${certName}.`);
   return created.body.result.id;
@@ -105,20 +106,26 @@ async function connectOrigin(
   token: string,
   existingId: string | undefined,
   origin: DatabaseOrigin,
-  caCertificateId: string,
+  caCertificateId?: string,
 ): Promise<string> {
-  const payload = {
+  const payload: {
+    name: string;
+    origin: DatabaseOrigin;
+    caching: { disabled: true };
+    origin_connection_limit: number;
+    mtls?: { ca_certificate_id: string; sslmode: "verify-full" };
+  } = {
     name,
     origin,
     caching: { disabled: true },
     origin_connection_limit: 5,
-    mtls: { ca_certificate_id: caCertificateId, sslmode: "verify-full" },
   };
+  if (caCertificateId) payload.mtls = { ca_certificate_id: caCertificateId, sslmode: "verify-full" };
   const target = existingId ? `${endpoint}/${existingId}` : endpoint;
   const method = existingId ? "PUT" : "POST";
   const saved = await cf(target, token, { method, body: JSON.stringify(payload) });
   if (!saved.body.success || Array.isArray(saved.body.result) || !saved.body.result?.id) {
-    throw failed(saved.body, saved.status, `Hyperdrive was not saved for ${origin.host}`);
+    throw failed(saved.body, saved.status, `Hyperdrive was not saved for ${origin.host}`, hyperdrivePermission);
   }
   return saved.body.result.id;
 }
@@ -129,29 +136,44 @@ async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL ?? "";
   if (!accountId || !token || !databaseUrl) throw new Error("Cloudflare credentials and DATABASE_URL are required.");
   const origins = databaseOrigins(databaseUrl, process.env.SUPABASE_URL);
+  const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/hyperdrive/configs`;
+  const listed = await cf(endpoint, token);
+  if (!listed.body.success) throw failed(listed.body, listed.status, "Hyperdrive list failed", hyperdrivePermission);
+  const configs = Array.isArray(listed.body.result) ? listed.body.result : [];
+  let existingId = configs.find((config) => config.name === name)?.id;
+  let lastError = "Hyperdrive did not connect.";
+  for (const origin of origins) {
+    try {
+      const id = await connectOrigin(endpoint, token, existingId, origin);
+      await saveBinding(id);
+      console.log(`Bound HYPERDRIVE to ${origin.host}.`);
+      return;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      if (lastError.includes("Hyperdrive → Edit")) throw error;
+      console.log(`Hyperdrive could not use ${origin.host}. Trying the next host.`);
+    }
+  }
   const certDir = path.join("scripts", "certs");
   const certificates = [
     ["supabase-intermediate-2021", "supabase-intermediate-2021.pem"],
     ["supabase-root-2021", "supabase-root-2021.pem"],
   ] as const;
   const caIds: string[] = [];
-  let lastError = "Hyperdrive did not connect.";
   for (const [certName, file] of certificates) {
     try {
       const id = await certificateId(accountId, token, certName, path.join(certDir, file));
       if (!caIds.includes(id)) caIds.push(id);
     } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-      if (/SSL and Certificates|Hyperdrive → Edit/.test(lastError)) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("SSL and Certificates")) {
+        throw new Error(
+          `Supabase's database certificate is signed by Supabase Intermediate 2021 CA, which is not a public certificate authority. ${lastError} ${certificatePermission} Workers Free includes Hyperdrive. Raising the 50-subrequest cap is not required.`,
+        );
+      }
       console.log(`${certName} was not accepted. Trying the other Supabase certificate.`);
     }
   }
-  if (!caIds.length) throw new Error(lastError);
-  const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/hyperdrive/configs`;
-  const listed = await cf(endpoint, token);
-  if (!listed.body.success) throw failed(listed.body, listed.status, "Hyperdrive list failed");
-  const configs = Array.isArray(listed.body.result) ? listed.body.result : [];
-  let existingId = configs.find((config) => config.name === name)?.id;
   for (const caCertificateId of caIds) {
     for (const origin of origins) {
       try {
@@ -162,7 +184,7 @@ async function main(): Promise<void> {
         return;
       } catch (error) {
         lastError = error instanceof Error ? error.message : String(error);
-        if (/SSL and Certificates|Hyperdrive → Edit/.test(lastError)) throw error;
+        if (lastError.includes("Hyperdrive → Edit")) throw error;
         console.log(`Hyperdrive could not use ${origin.host}. Trying the next host.`);
       }
     }

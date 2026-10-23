@@ -3,6 +3,10 @@ import path from "path";
 
 const cloudflare = process.env.OPEN_NEXT_CLOUDFLARE === "1";
 
+type StubResolveData = { request: string };
+type StubFactory = { hooks: { beforeResolve: { tap: (name: string, fn: (data: StubResolveData) => void) => void } } };
+type StubCompiler = { hooks: { normalModuleFactory: { tap: (name: string, fn: (factory: StubFactory) => void) => void } } };
+
 const nextConfig: NextConfig = {
   serverExternalPackages: cloudflare ? ["pdf-lib", "pdfjs-dist"] : ["pdf-lib", "pdfjs-dist", "postgres"],
   poweredByHeader: false,
@@ -11,10 +15,18 @@ const nextConfig: NextConfig = {
     config.resolve ??= {};
     const currentAlias = alias && !Array.isArray(alias) ? alias : {};
     if (!cloudflare || !isServer) {
-      config.resolve.alias = {
-        ...currentAlias,
-        "cloudflare:workers": path.join(__dirname, "lib/cloudflare-workers-stub.ts"),
+      const stub = path.join(__dirname, "lib/cloudflare-workers-stub.ts");
+      config.resolve.alias = { ...currentAlias, "cloudflare:workers": stub };
+      const plugin = {
+        apply(compiler: StubCompiler) {
+          compiler.hooks.normalModuleFactory.tap("cloudflare-workers-stub", (factory) => {
+            factory.hooks.beforeResolve.tap("cloudflare-workers-stub", (data) => {
+              if (data.request === "cloudflare:workers") data.request = stub;
+            });
+          });
+        },
       };
+      config.plugins.push(plugin as unknown as (typeof config.plugins)[number]);
       return config;
     }
     config.resolve.alias = {
