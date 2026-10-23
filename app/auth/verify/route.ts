@@ -16,7 +16,7 @@ var token = hash.get("access_token");
 var problem = hash.get("error_description") || hash.get("error");
 if (token) location.replace("/auth/verify?access_token=" + encodeURIComponent(token));
 else if (problem) location.replace("/?error=" + encodeURIComponent(problem));
-else document.body.textContent = "That sign-in link is invalid or expired.";
+else location.replace("/auth/expired");
 </script>`;
 
 export async function GET(request: Request) {
@@ -42,13 +42,23 @@ export async function GET(request: Request) {
       try { await acceptInvite(user.id, invite); } catch { /* invite may be expired */ }
       jar.delete("rr_invite");
     }
-    const session = signSession(user.id);
-    if (code || accessToken) return NextResponse.redirect(new URL(`/?session=${encodeURIComponent(session)}`, appUrl()));
-    return NextResponse.redirect(new URL(`/open?session=${encodeURIComponent(session)}`, request.url));
+    return webSession(request, signSession(user.id));
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Sign-in failed.";
-    return NextResponse.redirect(new URL(`/open?error=${encodeURIComponent(message)}`, request.url));
+    const message = error instanceof Error ? error.message : "";
+    const next = new URL(request.url);
+    next.pathname = "/auth/expired";
+    next.search = "";
+    if (message === "Could not sign in with Google.") next.searchParams.set("error", message);
+    return NextResponse.redirect(next);
   }
+}
+
+function webSession(request: Request, session: string): NextResponse {
+  const next = new URL(request.url);
+  next.pathname = "/";
+  next.search = "";
+  next.searchParams.set("session", session);
+  return NextResponse.redirect(next);
 }
 
 async function userFromGoogle(code: string) {

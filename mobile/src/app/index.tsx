@@ -13,6 +13,11 @@ const demoEnabled = process.env.EXPO_PUBLIC_DEMO === "1";
 const googleEnabled = process.env.EXPO_PUBLIC_GOOGLE_AUTH === "1";
 const LINK_MINUTES = 30;
 
+function webQuery(name: string): string {
+  if (Platform.OS !== "web" || typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get(name) || "";
+}
+
 export default function Welcome() {
   const { ready, token, me, signIn } = useSession();
   const [email, setEmail] = useState("");
@@ -20,6 +25,8 @@ export default function Welcome() {
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [signingIn, setSigningIn] = useState(() => Boolean(webQuery("session")));
+  const [expired, setExpired] = useState(() => webQuery("expired") === "1");
 
   useEffect(() => {
     if (!ready || !token || !me) return;
@@ -31,7 +38,9 @@ export default function Welcome() {
     const params = new URLSearchParams(window.location.search);
     const session = params.get("session");
     const oauthError = params.get("error");
-    if (oauthError || session) window.history.replaceState({}, "", window.location.pathname);
+    const linkExpired = params.get("expired") === "1";
+    if (oauthError || session || linkExpired) window.history.replaceState({}, "", window.location.pathname);
+    if (linkExpired) setExpired(true);
     if (oauthError) setError(oauthError);
     if (!session) return;
     let cancel = false;
@@ -41,7 +50,9 @@ export default function Welcome() {
         return signIn({ ...data, token: session });
       })
       .catch((err: unknown) => {
-        if (!cancel) setError(err instanceof Error ? err.message : "Could not finish sign-in.");
+        if (cancel) return;
+        setSigningIn(false);
+        setError(err instanceof Error ? err.message : "Could not finish sign-in.");
       });
     return () => {
       cancel = true;
@@ -89,10 +100,15 @@ export default function Welcome() {
     }
   }
 
-  if (!ready) {
+  if (!ready || signingIn) {
     return (
       <SafeAreaView style={styles.screen}>
-        <Text style={styles.loading}>Loading</Text>
+        <View style={styles.body}>
+          <View accessibilityRole="header" style={styles.brand}>
+            <Logo width={280} />
+          </View>
+          <Text style={styles.confirmTitle}>{signingIn ? "Signing you in" : "Loading"}</Text>
+        </View>
       </SafeAreaView>
     );
   }
@@ -103,7 +119,9 @@ export default function Welcome() {
         <View accessibilityRole="header" style={styles.brand}>
           <Logo width={280} />
         </View>
-        <Text style={styles.prop}>Keep your rental records and talk to your landlord, all in one place.</Text>
+        <Text style={expired ? styles.confirmTitle : styles.prop}>
+          {expired ? "This link has expired, enter your email to get a new one" : "Keep your rental records and talk to your landlord, all in one place."}
+        </Text>
         {sent ? (
           <View>
             <Text style={styles.confirmTitle}>Check your inbox</Text>
@@ -156,7 +174,6 @@ export default function Welcome() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper, paddingHorizontal: 24 },
   body: { flex: 1, paddingTop: 36 },
-  loading: { color: colors.mute, fontSize: 16, marginTop: 48 },
   brand: { marginBottom: 8 },
   prop: { fontSize: 18, lineHeight: 26, color: colors.ink, marginTop: 16 },
   confirmTitle: { fontSize: 22, lineHeight: 28, color: colors.ink, fontWeight: "600", marginTop: 28 },

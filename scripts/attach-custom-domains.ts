@@ -22,6 +22,8 @@ const appRoutes = [
   `${appHost}/r/*`,
   `${appHost}/ack/*`,
   `${appHost}/open*`,
+  `${appHost}/brand/*`,
+  `${appHost}/icons/*`,
   `${appHost}/_next/*`,
 ];
 
