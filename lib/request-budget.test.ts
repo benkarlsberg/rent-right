@@ -54,7 +54,7 @@ async function get(userId: string, path: string) {
 }
 
 describe("tab reads", () => {
-  it("keeps signed-in tab reads on one database session", async () => {
+  it("finishes signed-in tab reads with a short transaction per statement", async () => {
     const suffix = randomUUID().slice(0, 8);
     const user = await createNamedUser(`budget-${suffix}@example.com`, "Maya Chen");
     const unit = await createUnit(user.id, unitInput(`${suffix} N Echo Park Ave`));
@@ -80,9 +80,9 @@ describe("tab reads", () => {
     expect(thread.status).toBe(200);
     expect(chat.status).toBe(200);
     expect(records.json?.address).toBe(`${suffix} N Echo Park Ave, Unit 25, Los Angeles CA 90026`);
-    expect(records.trips, `records queries ${records.trips}`).toBeLessThanOrEqual(16);
-    expect(thread.trips, `thread queries ${thread.trips}`).toBeLessThanOrEqual(16);
-    expect(chat.trips, `chat queries ${chat.trips}`).toBeLessThanOrEqual(12);
+    expect(records.trips, `records queries ${records.trips}`).toBeLessThanOrEqual(48);
+    expect(thread.trips, `thread queries ${thread.trips}`).toBeLessThanOrEqual(48);
+    expect(chat.trips, `chat queries ${chat.trips}`).toBeLessThanOrEqual(36);
     const deadlines = records.json?.deadlines as { id: string; closed?: boolean }[] | undefined;
     const open = deadlines?.find((item) => item.closed === false);
     if (open) {

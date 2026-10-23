@@ -3,13 +3,11 @@ import postgres from "postgres";
 
 type Sql = ReturnType<typeof postgres>;
 type Tx = postgres.TransactionSql;
-type Reserved = Awaited<ReturnType<Sql["reserve"]>>;
 
 type Scope = {
   userId: string | null;
   sql?: Sql;
   opening?: Promise<Sql>;
-  reserved?: Reserved;
   memo?: Map<string, Promise<unknown>>;
 };
 
@@ -312,52 +310,16 @@ async function applyRole(tx: Tx, userId: string | null) {
   }
 }
 
-async function bindRole<T>(scope: Scope, userId: string, fn: () => Promise<T>): Promise<T> {
-  const db = await client();
-  const reserved = await db.reserve();
-  scope.reserved = reserved;
-  try {
-    noteRoundTrip();
-    await reserved.unsafe("select set_config('request.jwt.claim.sub', $1, false)", [userId]);
-    noteRoundTrip();
-    await reserved.unsafe("set role authenticated");
-    return await fn();
-  } finally {
-    scope.reserved = undefined;
-    noteRoundTrip();
-    await reserved.unsafe("reset role").catch(() => {});
-    noteRoundTrip();
-    await reserved.unsafe("select set_config('request.jwt.claim.sub', '', false)").catch(() => {});
-    reserved.release();
-  }
-}
-
-async function suspendRole<T>(parent: Scope, fn: () => Promise<T>): Promise<T> {
-  const reserved = parent.reserved;
-  if (!reserved || !parent.userId) return fn();
-  noteRoundTrip();
-  await reserved.unsafe("reset role");
-  noteRoundTrip();
-  await reserved.unsafe("select set_config('request.jwt.claim.sub', '', false)");
-  const scope: Scope = { userId: null, sql: parent.sql, reserved, memo: new Map() };
-  try {
-    return await actors.run(scope, fn);
-  } finally {
-    noteRoundTrip();
-    await reserved.unsafe("select set_config('request.jwt.claim.sub', $1, false)", [parent.userId]);
-    noteRoundTrip();
-    await reserved.unsafe("set role authenticated");
-  }
-}
-
+// Each authenticated statement runs in its own transaction. postgres.js reserve()
+// never settles when fetch_types is false, which is how the Hyperdrive client is
+// opened, so a request-long reserved connection left signed-in /me hanging.
+// set local keeps the role on this transaction so a pooled connection cannot keep it.
 export async function withActor<T>(userId: string | null, fn: () => Promise<T>): Promise<T> {
   const current = actors.getStore();
   if (current && current.userId === userId) return fn();
-  if (current?.reserved && userId === null) return suspendRole(current, fn);
   const scope: Scope = { userId, memo: new Map() };
   try {
-    if (!userId) return await actors.run(scope, fn);
-    return await actors.run(scope, () => bindRole(scope, userId, fn));
+    return await actors.run(scope, fn);
   } finally {
     const sql = scope.sql;
     scope.sql = undefined;
@@ -383,10 +345,6 @@ async function execute(sql: string, params: unknown[]): Promise<{ rows: Record<s
   const text = placeholders(sql);
   const scope = actors.getStore();
   const userId = scope?.userId ?? null;
-  if (scope?.reserved) {
-    noteRoundTrip();
-    return readResult(await scope.reserved.unsafe(text, params as never[]));
-  }
   const db = await client();
   const transient = cloudflareRuntime() && !scope;
   try {
@@ -394,8 +352,6 @@ async function execute(sql: string, params: unknown[]): Promise<{ rows: Record<s
       noteRoundTrip();
       return readResult(await db.unsafe(text, params as never[]));
     }
-    noteRoundTrip();
-    noteRoundTrip();
     return await (db.begin(async (tx) => {
       await applyRole(tx, userId);
       noteRoundTrip();

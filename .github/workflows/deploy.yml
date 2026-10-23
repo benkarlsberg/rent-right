@@ -56,6 +56,15 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         run: npx tsx scripts/resolve-database-url.ts
+      - name: Time signed /me before deploy
+        continue-on-error: true
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          ME_PHASE: before
+        run: |
+          if [ -f .database-url ]; then export DATABASE_URL="$(cat .database-url)"; fi
+          npx tsx scripts/time-signed-me.ts
       - name: Apply database migrations
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -156,6 +165,25 @@ jobs:
           '
           npx wrangler secret bulk worker-secrets.json
           rm -f worker-secrets.json
+      - name: Time signed /me after deploy
+        if: steps.hyperdrive.outcome == 'success'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          ME_PHASE: after
+          ME_MAX_MS: "1000"
+        run: |
+          if [ -f .database-url ]; then export DATABASE_URL="$(cat .database-url)"; fi
+          ok=0
+          for attempt in 1 2 3 4 5 6; do
+            echo "attempt: $attempt"
+            if npx tsx scripts/time-signed-me.ts; then
+              ok=1
+              break
+            fi
+            sleep 5
+          done
+          test "$ok" = 1
       - name: Attach custom domains
         continue-on-error: true
         env:

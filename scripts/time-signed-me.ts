@@ -51,7 +51,7 @@ async function lookup(): Promise<{ id: string; hasUnit: boolean } | null> {
   }
 }
 
-async function timeOrigin(origin: string, token: string): Promise<void> {
+async function timeOrigin(origin: string, token: string): Promise<{ status: number | "timeout"; ms: number; hasUser: boolean }> {
   const label = origin.includes("api.") ? "api" : "app";
   const started = Date.now();
   try {
@@ -61,22 +61,25 @@ async function timeOrigin(origin: string, token: string): Promise<void> {
         accept: "application/json",
         "user-agent": "Mozilla/5.0",
       },
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(12_000),
     });
     const ms = Date.now() - started;
     const body = (await response.json().catch(() => null)) as { needsUnit?: boolean; user?: unknown; error?: string } | null;
+    const hasUser = Boolean(body?.user);
     console.log(`${label}_status: ${response.status}`);
     console.log(`${label}_ms: ${ms}`);
     console.log(`${label}_needs_unit: ${body?.needsUnit === true}`);
-    console.log(`${label}_has_user: ${Boolean(body?.user)}`);
+    console.log(`${label}_has_user: ${hasUser}`);
     console.log(`${label}_error: ${body?.error ?? ""}`);
     console.log(`${label}_server_timing: ${response.headers.get("server-timing") ?? ""}`);
+    return { status: response.status, ms, hasUser };
   } catch (error) {
     const ms = Date.now() - started;
     const message = error instanceof Error ? error.message : "request failed";
     console.log(`${label}_status: timeout`);
     console.log(`${label}_ms: ${ms}`);
     console.log(`${label}_error: ${redact(message)}`);
+    return { status: "timeout", ms, hasUser: false };
   }
 }
 
@@ -84,11 +87,20 @@ async function main(): Promise<void> {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required.");
   if (!process.env.AUTH_SECRET) throw new Error("AUTH_SECRET is required.");
   const account = await lookup();
+  console.log(`phase: ${process.env.ME_PHASE || "check"}`);
   console.log(`found: ${Boolean(account)}`);
   if (!account) throw new Error("No real account was found.");
   console.log(`has_unit: ${account.hasUnit}`);
   const token = signSession(account.id);
-  for (const origin of origins) await timeOrigin(origin, token);
+  let api: { status: number | "timeout"; ms: number; hasUser: boolean } | null = null;
+  for (const origin of origins) {
+    const result = await timeOrigin(origin, token);
+    if (origin.includes("api.")) api = result;
+  }
+  const limit = Number(process.env.ME_MAX_MS || "0");
+  if (limit > 0 && (!api || api.status !== 200 || !api.hasUser || api.ms > limit)) {
+    throw new Error(`Signed /me was not ready (status ${api?.status ?? "missing"}, ${api?.ms ?? "n/a"} ms).`);
+  }
 }
 
 main().catch((error: unknown) => {
