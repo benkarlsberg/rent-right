@@ -4,7 +4,7 @@ const bar = { backgroundColor: "#E4EEEF", borderRadius: 12, marginBottom: 10 };
 
 export function Skeleton({ rows = 4 }: { rows?: number }) {
   return (
-    <View accessibilityLabel="Loading" style={{ paddingTop: 12 }}>
+    <View style={{ paddingTop: 12 }}>
       {Array.from({ length: rows }, (_, index) => (
         <View
           key={index}

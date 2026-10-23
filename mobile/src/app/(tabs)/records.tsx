@@ -11,7 +11,7 @@ import type { StepItem } from "@/next-steps";
 import { ResolvePanel } from "@/resolve-panel";
 import type { Me, Notice } from "@/session";
 import { useSession } from "@/session";
-import { Skeleton } from "@/skeleton";
+import { TabLoading } from "@/typing-dots";
 import { colors } from "@/theme";
 import { Button, ErrorLine, clipX, wrapText } from "@/ui";
 import { useLoad } from "@/use-load";
@@ -256,7 +256,7 @@ export default function Records() {
         contentContainerStyle={styles.page}
         refreshControl={<RefreshControl refreshing={false} onRefresh={reload} tintColor={colors.pine} />}
       >
-        {loading && !data ? <Skeleton /> : null}
+        {loading && !data ? <TabLoading label={es ? "Cargando" : "Loading"} /> : null}
         {data?.steps?.items?.length ? (
           <Pressable
             style={styles.linkHit}

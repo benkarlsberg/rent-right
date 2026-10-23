@@ -8,7 +8,7 @@ import { saveAuthorizedFile } from "@/files";
 import { NextSteps, type StepItem } from "@/next-steps";
 import type { Records } from "@/app/(tabs)/records";
 import { useSession } from "@/session";
-import { Skeleton } from "@/skeleton";
+import { TabLoading } from "@/typing-dots";
 import { colors } from "@/theme";
 import { Button, ErrorLine, Field, LearnMore, clipX, wrapText } from "@/ui";
 import { useLoad } from "@/use-load";
@@ -153,7 +153,7 @@ export default function Reminders() {
         contentContainerStyle={styles.page}
         refreshControl={<RefreshControl refreshing={false} onRefresh={reload} tintColor={colors.pine} />}
       >
-        {loading && !data ? <Skeleton /> : null}
+        {loading && !data ? <TabLoading label={es ? "Cargando" : "Loading"} /> : null}
         {data?.steps ? (
           <NextSteps
             title={data.steps.title}

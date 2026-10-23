@@ -1,12 +1,12 @@
 import { router } from "expo-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FlatList, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/api";
 import { saveAuthorizedFile } from "@/files";
 import type { Notice } from "@/session";
 import { useSession } from "@/session";
-import { Skeleton } from "@/skeleton";
+import { TabLoading, TypingBubble } from "@/typing-dots";
 import { Logo } from "@/logo";
 import { colors } from "@/theme";
 import { ErrorLine, clipX, wrapMarker, wrapText } from "@/ui";
@@ -42,10 +42,20 @@ export default function AssistantChat() {
   const [account, setAccount] = useState(false);
   const [confirm, setConfirm] = useState<"new" | "clear" | null>(null);
   const [held, setHeld] = useState("");
+  const [pending, setPending] = useState<string | null>(null);
+  const [retryNote, setRetryNote] = useState("");
   const lock = useRef(false);
   const shiftHeld = useRef(false);
+  const listRef = useRef<FlatList<Item>>(null);
 
   const canSend = !busy && !data?.archived && (draft.trim().length > 0 || Boolean(file));
+  const retryCopy = spanish ? "La respuesta no llegó. Envíe el mensaje otra vez." : "The reply didn't arrive. Send the message again.";
+
+  useEffect(() => {
+    if (pending === null) return;
+    const timer = setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 40);
+    return () => clearTimeout(timer);
+  }, [pending]);
 
   async function send(text: string, extra?: { action?: string; draftId?: string }) {
     const body = text.trim();
@@ -54,14 +64,19 @@ export default function AssistantChat() {
     try {
       lock.current = true;
       setBusy(true);
+      setPending(body);
+      setRetryNote("");
       setError("");
       await api("thread", { token, body: { text: body, action: extra?.action, draftId: extra?.draftId, attachment: file } });
       setDraft("");
       setFile(null);
       setMenu(false);
       await reload();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not send.");
+      setPending(null);
+    } catch {
+      setPending(null);
+      setRetryNote(retryCopy);
+      setError(retryCopy);
     } finally {
       lock.current = false;
       setBusy(false);
@@ -193,6 +208,7 @@ export default function AssistantChat() {
       ) : null}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <FlatList
+          ref={listRef}
           style={clipX}
           data={items}
           keyExtractor={(_, index) => String(index)}
@@ -208,18 +224,35 @@ export default function AssistantChat() {
               ) : null}
             </View>
           ) : null}
-          ListEmptyComponent={loading && !data ? <Skeleton /> : (
+          ListEmptyComponent={loading && !data ? <TabLoading label={spanish ? "Cargando" : "Loading"} /> : (
             <View>
               <Text style={styles.intro}>{spanish ? "Cuénteme qué pasó." : "Tell me what happened."}</Text>
               <Text style={styles.support}>{spanish ? "Un fregadero que gotea, un aumento, o su depósito." : "A leaking sink, a rent increase, or your deposit."}</Text>
               {(data?.chips || []).map((chip) => (
-                <Pressable key={chip.label} style={styles.chip} onPress={() => send(chip.text)} accessibilityRole="button" accessibilityLabel={chip.label}>
+                <Pressable key={chip.label} style={[styles.chip, busy && styles.sendOff]} onPress={() => send(chip.text)} disabled={busy} accessibilityRole="button" accessibilityLabel={chip.label} accessibilityState={{ disabled: busy }}>
                   <Text style={styles.chipText}>{chip.label}</Text>
                 </Pressable>
               ))}
             </View>
           )}
-          ListFooterComponent={data?.steps?.items?.length ? (
+          ListFooterComponent={(
+            <View>
+              {pending !== null ? (
+                <View>
+                  {pending ? (
+                    <View style={styles.userRow}>
+                      <View style={styles.userBubble}><Text style={styles.userText}>{pending}</Text></View>
+                    </View>
+                  ) : null}
+                  <TypingBubble label={spanish ? "Respondiendo" : "Replying"} />
+                </View>
+              ) : null}
+              {retryNote ? (
+                <View style={styles.retry} accessibilityRole="text" accessibilityLiveRegion="polite">
+                  <Text style={styles.support}>{retryNote}</Text>
+                </View>
+              ) : null}
+              {data?.steps?.items?.length ? (
             <NextSteps
               title={data.steps.title}
               steps={data.steps.items}
@@ -242,13 +275,15 @@ export default function AssistantChat() {
                 if (step.action === "small_claims" && step.href) void Linking.openURL(step.href);
               }}
             />
-          ) : null}
+              ) : null}
+            </View>
+          )}
           renderItem={({ item }) => item.role === "user" ? (
             <View style={styles.userRow}>
               <View style={styles.userBubble}><Text style={styles.userText}>{item.text}</Text></View>
             </View>
           ) : (
-            <CardView item={item} spanish={spanish} onAction={onAction} />
+            <CardView item={item} spanish={spanish} busy={busy} onAction={onAction} />
           )}
         />
         <ErrorLine message={error} />
@@ -320,7 +355,7 @@ export default function AssistantChat() {
   );
 }
 
-function CardView({ item, spanish, onAction }: { item: Extract<Item, { role: "card" }>; spanish: boolean; onAction: (action: Action) => void }) {
+function CardView({ item, spanish, busy, onAction }: { item: Extract<Item, { role: "card" }>; spanish: boolean; busy: boolean; onAction: (action: Action) => void }) {
   const [advice, setAdvice] = useState(false);
   const [details, setDetails] = useState(false);
   const actions = item.actions?.length ? item.actions : item.action ? [item.action] : [];
@@ -337,8 +372,10 @@ function CardView({ item, spanish, onAction }: { item: Extract<Item, { role: "ca
             key={action.id}
             style={suggestion ? styles.suggest : reset ? styles.cancel : styles.action}
             onPress={() => onAction(action)}
+            disabled={busy}
             accessibilityRole="button"
             accessibilityLabel={action.label}
+            accessibilityState={{ disabled: busy }}
           >
             <Text style={suggestion || reset ? styles.suggestText : styles.actionText}>{action.label}</Text>
           </Pressable>
@@ -383,6 +420,7 @@ const styles = StyleSheet.create({
   userRow: { alignItems: "flex-end", marginTop: 16, width: "100%", maxWidth: "100%", minWidth: 0, alignSelf: "stretch" },
   userBubble: { maxWidth: "82%", minWidth: 0, flexShrink: 1, backgroundColor: colors.tenant, borderRadius: 20, borderBottomRightRadius: 6, paddingHorizontal: 16, paddingVertical: 14 },
   userText: { ...wrapText, color: "white", fontSize: 17, lineHeight: 24 },
+  retry: { marginTop: 16, maxWidth: "92%", backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 16, paddingVertical: 12 },
   card: { marginTop: 16, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.line, padding: 16, alignSelf: "stretch", width: "100%", maxWidth: "100%", minWidth: 0 },
   headline: { fontSize: 22, lineHeight: 28, color: colors.ink, fontWeight: "600" },
   status: { fontSize: 16, lineHeight: 22, color: colors.pine, marginTop: 6 },

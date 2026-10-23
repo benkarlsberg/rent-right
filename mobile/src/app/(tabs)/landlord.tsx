@@ -3,7 +3,7 @@ import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/api";
 import { useSession } from "@/session";
-import { Skeleton } from "@/skeleton";
+import { TabLoading } from "@/typing-dots";
 import { colors } from "@/theme";
 import { ErrorLine, LearnMore, clipX, wrapText } from "@/ui";
 import { useLoad } from "@/use-load";
@@ -48,7 +48,7 @@ export default function Landlord() {
           data={data?.items || []}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
-          ListEmptyComponent={loading && !data ? <Skeleton /> : <Text style={styles.empty}>{spanish ? "Los mensajes que envíe a su propietario aparecen aquí. No se envía nada hasta que usted confirme." : "Messages you send to your landlord show up here. Nothing is sent until you confirm."}</Text>}
+          ListEmptyComponent={loading && !data ? <TabLoading label={spanish ? "Cargando" : "Loading"} /> : <Text style={styles.empty}>{spanish ? "Los mensajes que envíe a su propietario aparecen aquí. No se envía nada hasta que usted confirme." : "Messages you send to your landlord show up here. Nothing is sent until you confirm."}</Text>}
           renderItem={({ item }) => {
             const mine = item.side === "tenant";
             return (
