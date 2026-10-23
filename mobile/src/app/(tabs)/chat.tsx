@@ -180,6 +180,9 @@ export default function AssistantChat() {
           <Pressable onPress={() => { setAccount(false); router.push("/residence"); }} accessibilityRole="button" accessibilityLabel={spanish ? "Vivienda" : "Residence"} style={styles.accountButton}>
             <Text style={styles.headerButtonText}>{spanish ? "Vivienda" : "Residence"}</Text>
           </Pressable>
+          <Pressable onPress={() => { setAccount(false); router.push("/settings"); }} accessibilityRole="button" accessibilityLabel={spanish ? "Ajustes" : "Settings"} style={styles.accountButton}>
+            <Text style={styles.headerButtonText}>{spanish ? "Ajustes" : "Settings"}</Text>
+          </Pressable>
           <Pressable onPress={() => void logOut()} accessibilityRole="button" accessibilityLabel={spanish ? "Cerrar sesión" : "Log out"} style={styles.accountButton}>
             <Text style={styles.headerButtonText}>{spanish ? "Cerrar sesión" : "Log out"}</Text>
           </Pressable>

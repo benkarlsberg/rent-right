@@ -8,6 +8,7 @@ import { NextSteps, type StepItem } from "@/next-steps";
 import type { Me, Notice } from "@/session";
 import { useSession } from "@/session";
 import { colors } from "@/theme";
+import { LanguageToggle } from "@/language-toggle";
 import { Button, Card, ErrorLine, Field, H1, LearnMore, Muted, Page, wrapText } from "@/ui";
 import { useLoad } from "@/use-load";
 
@@ -64,12 +65,23 @@ export default function Records() {
   const [customDate, setCustomDate] = useState("");
   const [held, setHeld] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pendingLocale, setPendingLocale] = useState<"en" | "es" | null>(null);
   useFocusEffect(useCallback(() => { void reload(); }, [reload]));
 
-  async function language(locale: "en" | "es") {
-    if (!token || !me) return;
-    await signIn(await api<Me>("settings", { token, body: { locale, name: me.user.name, lowBandwidth: me.user.lowBandwidth } }));
-    await reload();
+  const locale: "en" | "es" = pendingLocale ?? (me?.user.locale === "es" || (!me && data?.locale === "es") ? "es" : "en");
+
+  async function language(next: "en" | "es") {
+    if (!token || !me || next === locale) return;
+    setPendingLocale(next);
+    try {
+      setError("");
+      await signIn(await api<Me>("settings", { token, body: { locale: next, name: me.user.name, lowBandwidth: me.user.lowBandwidth } }));
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the language.");
+    } finally {
+      setPendingLocale(null);
+    }
   }
 
   async function remove() {
@@ -160,16 +172,7 @@ export default function Records() {
       {me?.needsUnit ? <Button label="Add your place" onPress={() => router.push("/setup")} /> : null}
       {data?.sample ? <Text style={styles.sample}>Sample</Text> : null}
       <ErrorLine message={error} />
-      {data ? (
-        <View style={styles.segment} accessibilityRole="tablist">
-          <Pressable accessibilityRole="button" accessibilityLabel="English" accessibilityState={{ selected: data.locale !== "es" }} style={[styles.segmentItem, data.locale !== "es" && styles.segmentOn]} onPress={() => language("en")}>
-            <Text style={[styles.segmentText, data.locale !== "es" && styles.segmentTextOn]}>English</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Español" accessibilityState={{ selected: data.locale === "es" }} style={[styles.segmentItem, data.locale === "es" && styles.segmentOn]} onPress={() => language("es")}>
-            <Text style={[styles.segmentText, data.locale === "es" && styles.segmentTextOn]}>Español</Text>
-          </Pressable>
-        </View>
-      ) : null}
+      {data || me ? <LanguageToggle locale={locale} onChange={(next) => void language(next)} /> : null}
       {data?.steps ? <NextSteps title={data.steps.title} steps={data.steps.items} note={held} onAction={onStep} /> : null}
       {data?.deadlines.map((card) => (
         <Card key={card.id}>
@@ -261,11 +264,6 @@ export default function Records() {
 
 const styles = StyleSheet.create({
   sample: { marginTop: 8, color: colors.mute, fontSize: 14 },
-  segment: { flexDirection: "row", marginTop: 20, backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.line, padding: 4 },
-  segmentItem: { flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 10 },
-  segmentOn: { backgroundColor: colors.pine },
-  segmentText: { fontSize: 16, fontWeight: "600", color: colors.ink },
-  segmentTextOn: { color: "white" },
   cardTitle: { ...wrapText, fontSize: 22, lineHeight: 28, color: colors.ink, fontWeight: "600" },
   cardStatus: { ...wrapText, fontSize: 16, lineHeight: 22, color: colors.pine, marginTop: 6 },
   due: { ...wrapText, fontSize: 16, lineHeight: 22, color: colors.ink, fontWeight: "700", marginTop: 8 },
