@@ -10,6 +10,16 @@ export const metadata: Metadata = {
   title: { default: "Rent Right", template: "%s · Rent Right" },
   description: "Free records and general legal information for California renters. Not a law firm.",
   applicationName: "Rent Right",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
 };
 
 export const viewport: Viewport = {

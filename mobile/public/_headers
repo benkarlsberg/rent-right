@@ -1,0 +1,17 @@
+/manifest.webmanifest
+  Content-Type: application/manifest+json
+
+/favicon.ico
+  Content-Type: image/vnd.microsoft.icon
+
+/favicon.svg
+  Content-Type: image/svg+xml
+
+/favicon-16x16.png
+  Content-Type: image/png
+
+/favicon-32x32.png
+  Content-Type: image/png
+
+/apple-touch-icon.png
+  Content-Type: image/png

@@ -4,11 +4,17 @@ import { acceptInvite, consumeMagicLink, profileForAuthUser } from "@/lib/db";
 import { signSession } from "@/lib/crypto";
 import { setSessionCookie } from "@/lib/session";
 import { userFromGoogleCode, userFromSupabaseAccessToken } from "@/lib/supabase-auth";
+import { iconLinks } from "@/lib/legal-html";
 import { appUrl } from "@/lib/text";
 
 const hashPage = `<!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
 <title>Rent Right</title>
+${iconLinks}
+</head>
+<body>
 <p>Finishing sign-in…</p>
 <script>
 var hash = new URLSearchParams(location.hash.replace(/^#/, ""));
@@ -17,7 +23,9 @@ var problem = hash.get("error_description") || hash.get("error");
 if (token) location.replace("/auth/verify?access_token=" + encodeURIComponent(token));
 else if (problem) location.replace("/?error=" + encodeURIComponent(problem));
 else location.replace("/auth/expired");
-</script>`;
+</script>
+</body>
+</html>`;
 
 export async function GET(request: Request) {
   const url = new URL(request.url);

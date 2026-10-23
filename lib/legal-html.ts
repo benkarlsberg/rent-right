@@ -2,12 +2,15 @@ import { DISCLAIMER_EN } from "./disclaimer";
 
 const CONTACT = "benelliot16@gmail.com";
 
+export const iconLinks = `<link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png"><link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="manifest" href="/manifest.webmanifest">`;
+
 function document(title: string, body: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+${iconLinks}
 <title>${title} · Rent Right</title>
 <style>
   body { margin: 0; background: #F8FAF9; color: #14343C; font: 18px/1.5 Georgia, "Times New Roman", serif; }
@@ -76,6 +79,10 @@ export function injectHomeHtml(html: string): string {
   }
   if (!next.includes('property="og:site_name"')) {
     next = next.replace("</head>", `<meta property="og:site_name" content="Rent Right"></head>`);
+  }
+  if (!next.includes('href="/favicon.svg"')) {
+    next = next.replace(/<link\s+rel="(?:shortcut icon|icon|apple-touch-icon|manifest)"[^>]*>/gi, "");
+    next = next.replace("</head>", `${iconLinks}</head>`);
   }
   if (!next.includes('id="rr-home"')) {
     if (!/<div id="root">\s*<\/div>/.test(next)) throw new Error("Expo index.html has no empty root.");

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { injectHomeHtml, privacyDocument, termsDocument } from "../lib/legal-html";
@@ -14,10 +14,35 @@ function writePublic(): void {
   writeFileSync(join(termsDir, "index.html"), termsDocument);
 }
 
+const iconFiles = [
+  "favicon.ico",
+  "favicon.svg",
+  "favicon-16x16.png",
+  "favicon-32x32.png",
+  "apple-touch-icon.png",
+  "manifest.webmanifest",
+  "_headers",
+];
+
+function copyIcons(): void {
+  const dist = join(root, "mobile/dist");
+  if (!existsSync(dist)) return;
+  const pub = join(root, "mobile/public");
+  for (const name of iconFiles) {
+    const from = join(pub, name);
+    if (existsSync(from)) copyFileSync(from, join(dist, name));
+  }
+  const icons = join(dist, "icons");
+  mkdirSync(icons, { recursive: true });
+  for (const name of readdirSync(join(pub, "icons"))) {
+    if (name.endsWith(".png")) copyFileSync(join(pub, "icons", name), join(icons, name));
+  }
+}
+
 function injectHome(): void {
   const indexPath = join(root, "mobile/dist/index.html");
-  if (!existsSync(indexPath)) return;
-  writeFileSync(indexPath, injectHomeHtml(readFileSync(indexPath, "utf8")));
+  if (existsSync(indexPath)) writeFileSync(indexPath, injectHomeHtml(readFileSync(indexPath, "utf8")));
+  copyIcons();
 }
 
 writePublic();

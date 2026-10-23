@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DISCLAIMER_EN } from "@/lib/disclaimer";
-import { HOME_DESCRIPTION, homeIntro, injectHomeHtml, privacyDocument, termsDocument } from "@/lib/legal-html";
+import { HOME_DESCRIPTION, homeIntro, iconLinks, injectHomeHtml, privacyDocument, termsDocument } from "@/lib/legal-html";
 import { GET as privacy } from "@/app/privacy/route";
 import { GET as terms } from "@/app/terms/route";
 
@@ -25,6 +25,14 @@ describe("public legal pages", () => {
     expect(injected).toContain('property="og:site_name" content="Rent Right"');
     expect(injected).toContain('<div id="root"><main id="rr-home"');
     expect(injected).not.toContain('id="rr-legal"');
+    expect(injected).toContain(iconLinks);
+    const again = injectHomeHtml(injected);
+    expect(again.match(/href="\/favicon\.svg"/g)).toHaveLength(1);
+    const replaced = injectHomeHtml(`<html><head><link rel="icon" href="/favicon.ico"></head><body><div id="root"></div></body></html>`);
+    expect(replaced.match(/rel="icon"/g)).toHaveLength(4);
+    expect(privacyDocument).toContain('href="/favicon.svg"');
+    expect(termsDocument).toContain('href="/apple-touch-icon.png"');
+    expect(termsDocument).toContain('href="/manifest.webmanifest"');
     const privacyBody = await (await privacy()).text();
     const termsBody = await (await terms()).text();
     expect(privacyBody).toContain("<h1>Privacy policy</h1>");
