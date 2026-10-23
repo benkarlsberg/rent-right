@@ -20,6 +20,8 @@ type Item =
 type Thread = {
   landlord: string;
   needsUnit?: boolean;
+  archived?: boolean;
+  archivedNote?: string | null;
   items: Item[];
   chips: { label: string; text: string }[];
   notice: Notice;
@@ -44,7 +46,7 @@ export default function AssistantChat() {
 
   useFocusEffect(useCallback(() => { void reload(); }, [reload]));
 
-  const canSend = !busy && (draft.trim().length > 0 || Boolean(file));
+  const canSend = !busy && !data?.archived && (draft.trim().length > 0 || Boolean(file));
 
   async function send(text: string, extra?: { action?: string; draftId?: string }) {
     const body = text.trim();
@@ -175,6 +177,9 @@ export default function AssistantChat() {
           <Pressable onPress={() => { setAccount(false); setConfirm("clear"); }} accessibilityRole="button" accessibilityLabel={spanish ? "Borrar chat" : "Clear chat"} style={styles.accountButton}>
             <Text style={styles.headerButtonText}>{spanish ? "Borrar chat" : "Clear chat"}</Text>
           </Pressable>
+          <Pressable onPress={() => { setAccount(false); router.push("/residence"); }} accessibilityRole="button" accessibilityLabel={spanish ? "Vivienda" : "Residence"} style={styles.accountButton}>
+            <Text style={styles.headerButtonText}>{spanish ? "Vivienda" : "Residence"}</Text>
+          </Pressable>
           <Pressable onPress={() => void logOut()} accessibilityRole="button" accessibilityLabel={spanish ? "Cerrar sesión" : "Log out"} style={styles.accountButton}>
             <Text style={styles.headerButtonText}>{spanish ? "Cerrar sesión" : "Log out"}</Text>
           </Pressable>
@@ -186,12 +191,15 @@ export default function AssistantChat() {
           data={items}
           keyExtractor={(_, index) => String(index)}
           contentContainerStyle={styles.list}
-          ListHeaderComponent={me?.needsUnit ? (
+          ListHeaderComponent={data?.archivedNote || me?.needsUnit ? (
             <View style={styles.place}>
-              <Text style={styles.support}>{spanish ? "Agregue su dirección para guardar registros y escribirle al propietario." : "Add your address to keep records and write to your landlord."}</Text>
-              <Pressable style={styles.chip} onPress={() => router.push("/setup")} accessibilityRole="button" accessibilityLabel={spanish ? "Agregar su vivienda" : "Add your place"}>
-                <Text style={styles.chipText}>{spanish ? "Agregar su vivienda" : "Add your place"}</Text>
-              </Pressable>
+              {data?.archivedNote ? <Text style={styles.support}>{data.archivedNote}</Text> : null}
+              {me?.needsUnit ? <Text style={styles.support}>{spanish ? "Agregue su dirección para guardar registros y escribirle al propietario." : "Add your address to keep records and write to your landlord."}</Text> : null}
+              {me?.needsUnit ? (
+                <Pressable style={styles.chip} onPress={() => router.push("/setup")} accessibilityRole="button" accessibilityLabel={spanish ? "Agregar su vivienda" : "Add your place"}>
+                  <Text style={styles.chipText}>{spanish ? "Agregar su vivienda" : "Add your place"}</Text>
+                </Pressable>
+              ) : null}
             </View>
           ) : null}
           ListEmptyComponent={
@@ -355,7 +363,7 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
   headerButton: { minHeight: 44, justifyContent: "center", paddingHorizontal: 8 },
   headerButtonText: { color: colors.pine, fontSize: 15, fontWeight: "700" },
-  account: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
+  account: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
   accountButton: { minHeight: 44, justifyContent: "center", paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.card },
   list: { paddingHorizontal: 16, paddingBottom: 16, flexGrow: 1, width: "100%", maxWidth: "100%", minWidth: 0 },
   place: { marginTop: 8 },

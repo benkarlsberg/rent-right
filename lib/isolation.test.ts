@@ -64,6 +64,7 @@ function unitInput(street: string, landlordEmail: string): UnitInput {
     rentCents: 180_000,
     depositCents: 180_000,
     moveInDate: "2024-05-01",
+    leaseEndDate: null,
   };
 }
 

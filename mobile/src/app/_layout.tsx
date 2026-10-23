@@ -50,6 +50,7 @@ export default function RootLayout() {
           <Stack.Screen name="photos" options={{ title: "Photos" }} />
           <Stack.Screen name="packet" options={{ title: "Records" }} />
           <Stack.Screen name="settings" options={{ title: "Settings" }} />
+          <Stack.Screen name="residence" options={{ title: "Residence" }} />
           <Stack.Screen name="log-new" options={{ title: "New note" }} />
           <Stack.Screen name="log/[id]" options={{ title: "Log" }} />
         </Stack>

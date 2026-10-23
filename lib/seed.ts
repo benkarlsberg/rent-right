@@ -47,6 +47,7 @@ export async function startSampleTenancy(): Promise<string> {
     rentCents: 215_000,
     depositCents: 215_000,
     moveInDate: "2024-08-01",
+    leaseEndDate: "2025-07-31",
   });
 
   const oldDate = addDays(today, -40);

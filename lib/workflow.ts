@@ -7,6 +7,7 @@ import {
   countOutboundSince,
   findCachedReview,
   getUser,
+  assertWritable,
   insertDeadline,
   insertLog,
   insertMessage,
@@ -66,6 +67,7 @@ export async function recordLog(input: {
   noticeAt: string | null;
   createdAt?: string;
 }) {
+  assertWritable(input.unit, input.user.locale);
   const flags: Record<string, unknown> = {};
   if (input.entryAt && input.noticeAt) {
     flags.entry = entryNoticeCheck(input.noticeAt, input.entryAt);
@@ -150,6 +152,7 @@ export async function emailLandlord(input: {
   subject: string;
   tenantText: string;
 }) {
+  assertWritable(input.unit, input.user.locale);
   if (!input.unit.landlordEmail) {
     throw new Error("Add the landlord's email on your unit before sending.");
   }
@@ -220,6 +223,7 @@ export async function saveDepositAndDeadline(user: User, unit: Unit, input: {
   landlordDeductions: string;
   tenantNotes: string;
 }) {
+  assertWritable(unit, user.locale);
   await saveDeposit(user.id, unit.id, input);
   if (input.moveOutDate) {
     const due = depositReturnDeadline(input.moveOutDate);
@@ -241,6 +245,7 @@ export async function saveDepositAndDeadline(user: User, unit: Unit, input: {
 }
 
 export async function runLeaseReview(user: User, unit: Unit, text: string, filename: string) {
+  assertWritable(unit, user.locale);
   const cleaned = redactPii(text).trim();
   if (cleaned.length < 40) throw new Error("No lease text was found. Paste the text or upload a PDF with selectable text.");
   const textHash = leaseTextHash(cleaned, LIBRARY_VERSION, unit.rentCents, unit.jurisdiction);
@@ -321,6 +326,7 @@ export function sampleLeaseText(): string {
 }
 
 export async function askAssistant(user: User, unit: Unit | null, question: string, locale: Locale) {
+  if (unit) assertWritable(unit, locale);
   const trimmed = question.trim();
   if (trimmed.length < 8) throw new Error("Ask a full question.");
   if (await countAssistantThisMonth(user.id, monthPrefix()) >= CHAT_MONTHLY_CAP) {

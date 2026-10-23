@@ -72,6 +72,7 @@ import { DEMO_EMAIL, startSampleTenancy } from "@/lib/seed";
 import { appUrl, relayAddress, tx } from "@/lib/text";
 import { parseCard } from "@/lib/chat-card";
 import { runChatTurn } from "@/lib/chat-turn";
+import { archivedNote, previewResidence, residencePayload, saveResidence, selectResidence } from "@/lib/residence";
 import { askAssistant, emailLandlord, extractPdfOrText, recordLog, runLeaseReview, sampleLeaseText, saveDepositAndDeadline } from "@/lib/workflow";
 
 function json(data: unknown, status = 200) {
@@ -153,6 +154,7 @@ function publicUser(user: User) {
 
 function publicUnit(unit: Unit) {
   return {
+    id: unit.id,
     address: unitAddress(unit),
     landlordName: unit.landlordName,
     landlordEmail: unit.landlordEmail,
@@ -161,6 +163,7 @@ function publicUnit(unit: Unit) {
     jurisdiction: unit.jurisdiction,
     rsoStatus: unit.rsoStatus,
     rstpoTier: unit.rstpoTier,
+    archived: Boolean(unit.archivedAt),
   };
 }
 
@@ -208,6 +211,7 @@ function unitInput(input: Record<string, unknown>): UnitInput {
     rentCents: dollars(input.rent),
     depositCents: dollars(input.deposit),
     moveInDate: dateOrNull(input.moveInDate),
+    leaseEndDate: dateOrNull(input.leaseEndDate),
   };
 }
 
@@ -353,6 +357,22 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "POST" && key === "condition") return json(await saveCondition(await readBody(request)));
   if (method === "GET" && key === "packet") return json(await packetPayload());
   if (method === "POST" && key === "settings") return json(await saveSettings(await readBody(request)));
+  if (method === "GET" && key === "residence") return json(await residencePayload(await actor()));
+  if (method === "POST" && key === "residence/preview") return json(await previewResidence(await actor(), await readBody(request)));
+  if (method === "POST" && key === "residence/save") {
+    const user = await actor();
+    const saved = await saveResidence(user, await readBody(request));
+    const fresh = await getUser(user.id);
+    if (!fresh) throw new Error("Sign in required.");
+    return json({ ...(await sessionPayload(fresh)), note: saved.note });
+  }
+  if (method === "POST" && key === "residence/select") {
+    const user = await actor();
+    await selectResidence(user, text((await readBody(request)).id));
+    const fresh = await getUser(user.id);
+    if (!fresh) throw new Error("Sign in required.");
+    return json(await sessionPayload(fresh));
+  }
   if (method === "POST" && key === "invite") {
     const { user, unit } = await withUnit();
     const token = await createInvite(user.id, unit.id);
@@ -535,9 +555,11 @@ async function chatPayload() {
   const user = await actor();
   const unit = await primaryUnit(user.id);
   const locale = user.locale;
-  if (!unit) return { landlord: "", items: [], needsUnit: true };
+  if (!unit) return { landlord: "", items: [], needsUnit: true, archived: false, archivedNote: null };
   return {
     landlord: unit.landlordName || unit.landlordEmail,
+    archived: Boolean(unit.archivedAt),
+    archivedNote: archivedNote(unit, locale),
     items: (await listMessages(user.id, unit.id)).map((message) => {
       const preview = chatPreview(message.body);
       return {
@@ -769,6 +791,8 @@ async function threadPayload() {
     notice: notice(locale),
     steps: (await recordsBundle(user, unit)).steps,
     packetFile: evidenceFilename(todayISO()),
+    archived: Boolean(unit.archivedAt),
+    archivedNote: archivedNote(unit, locale),
   };
 }
 
@@ -839,14 +863,18 @@ async function recordsBundle(user: User, unit: NonNullable<Awaited<ReturnType<ty
   return {
     deadlines: deadlineCards(deadlineInput, logInput, locale, today),
     notes: logCards(logInput, messageInput, locale).slice(0, 20),
-    steps: nextSteps({
-      locale,
-      today,
-      deadlines: deadlineInput,
-      logs: logInput,
-      messages: messageInput,
-      hasRecords: logs.length + messages.length + deadlines.length + reviews.length > 0,
-    }),
+    steps: (() => {
+      const planned = nextSteps({
+        locale,
+        today,
+        deadlines: deadlineInput,
+        logs: logInput,
+        messages: messageInput,
+        hasRecords: logs.length + messages.length + deadlines.length + reviews.length > 0,
+      });
+      if (!unit.archivedAt) return planned;
+      return { ...planned, items: planned.items.filter((item) => item.action === "export" || item.action === "small_claims") };
+    })(),
     reviews,
     labels: recordsLabels(locale),
     reminderNote: reminderNote(mail, locale),
@@ -876,6 +904,8 @@ async function recordsPayload() {
       reminderNote: reminderNote(false, locale),
       reminderMail: false,
       packetFile: evidenceFilename(todayISO()),
+      archived: false,
+      archivedNote: null,
     };
   }
   const bundle = await recordsBundle(user, unit);
@@ -901,6 +931,8 @@ async function recordsPayload() {
     reminderNote: bundle.reminderNote,
     reminderMail: bundle.reminderMail,
     packetFile: bundle.packetFile,
+    archived: Boolean(unit.archivedAt),
+    archivedNote: archivedNote(unit, locale),
   };
 }
 

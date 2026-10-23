@@ -57,6 +57,9 @@ export type Unit = {
   rentCents: number | null;
   depositCents: number | null;
   moveInDate: string | null;
+  leaseEndDate: string | null;
+  archivedAt: string | null;
+  movedFromUnitId: string | null;
   createdAt: string;
   role: "owner" | "roommate";
 };
@@ -90,6 +93,9 @@ type UnitRow = {
   rent_cents: number | null;
   deposit_cents: number | null;
   move_in_date: string | null;
+  lease_end_date: string | null;
+  archived_at: string | null;
+  moved_from_unit_id: string | null;
   created_at: string;
   role?: string;
 };
@@ -125,7 +131,10 @@ function mapUnit(row: UnitRow, role: "owner" | "roommate"): Unit {
     relayLocal: row.relay_local,
     rentCents: row.rent_cents,
     depositCents: row.deposit_cents,
-    moveInDate: row.move_in_date,
+    moveInDate: dateText(row.move_in_date),
+    leaseEndDate: dateText(row.lease_end_date),
+    archivedAt: timeText(row.archived_at),
+    movedFromUnitId: row.moved_from_unit_id,
     createdAt: row.created_at,
     role,
   };
@@ -287,11 +296,55 @@ export async function primaryUnit(userId: string) {
   const row = await one<UnitRow & { role: string }>(
     `select u.*, m.role as role from units u
      join unit_members m on m.unit_id = u.id
-     where m.user_id = ? order by m.created_at asc limit 1`,
-    [userId],
+     where m.user_id = ?
+     order by (u.id = (select p.active_unit_id from profiles p where p.id = ?)) desc,
+              (u.archived_at is null) desc,
+              m.created_at desc
+     limit 1`,
+    [userId, userId],
   );
   if (!row) return null;
   return mapUnit(row, row.role === "owner" ? "owner" : "roommate");
+}
+
+export async function listResidences(userId: string): Promise<Unit[]> {
+  const rows = await all<UnitRow & { role: string }>(
+    `select u.*, m.role as role from units u
+     join unit_members m on m.unit_id = u.id
+     where m.user_id = ?
+     order by (u.archived_at is null) desc, u.created_at desc`,
+    [userId],
+  );
+  return rows.map((row) => mapUnit(row, row.role === "owner" ? "owner" : "roommate"));
+}
+
+export function assertWritable(unit: Unit, locale: Locale = "en"): void {
+  if (!unit.archivedAt) return;
+  throw new HttpError(
+    locale === "es"
+      ? "Esta vivienda está archivada. Los registros se quedan, y no se puede guardar ni enviar nada nuevo."
+      : "This home is archived. Records stay, and nothing new can be saved or sent.",
+  );
+}
+
+async function requireWritable(userId: string, unitId: string) {
+  const unit = await requireUnit(userId, unitId);
+  const user = await getUser(userId);
+  assertWritable(unit, user?.locale === "es" ? "es" : "en");
+  return unit;
+}
+
+export async function setActiveUnit(userId: string, unitId: string) {
+  await requireUnit(userId, unitId);
+  await run("update profiles set active_unit_id = ? where id = ?", [unitId, userId]);
+}
+
+export async function archiveUnit(unitId: string) {
+  await run("update units set archived_at = ? where id = ? and archived_at is null", [new Date().toISOString(), unitId]);
+}
+
+export async function linkMovedFrom(unitId: string, fromUnitId: string) {
+  await run("update units set moved_from_unit_id = ? where id = ?", [fromUnitId, unitId]);
 }
 
 export type UnitInput = {
@@ -310,6 +363,7 @@ export type UnitInput = {
   rentCents: number | null;
   depositCents: number | null;
   moveInDate: string | null;
+  leaseEndDate: string | null;
 };
 
 export async function createUnit(userId: string, input: UnitInput) {
@@ -320,29 +374,30 @@ export async function createUnit(userId: string, input: UnitInput) {
     `insert into units (
       id, created_by, street, unit_number, city, postal_code, region, jurisdiction, jurisdiction_confirmed,
       rso_status, rstpo_tier, landlord_name, landlord_email, landlord_phone, relay_local,
-      rent_cents, deposit_cents, move_in_date, created_at
-    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      rent_cents, deposit_cents, move_in_date, lease_end_date, created_at
+    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id, userId, input.street, input.unitNumber, input.city, input.postalCode, input.region, input.jurisdiction,
       input.jurisdictionConfirmed, input.rsoStatus, input.rstpoTier, input.landlordName, input.landlordEmail,
-      input.landlordPhone, relay, input.rentCents, input.depositCents, input.moveInDate, now,
+      input.landlordPhone, relay, input.rentCents, input.depositCents, input.moveInDate, input.leaseEndDate, now,
     ],
   );
   await run("insert into unit_members (unit_id, user_id, role, created_at) values (?, ?, 'owner', ?)", [id, userId, now]);
+  await run("update profiles set active_unit_id = ? where id = ?", [id, userId]);
   return await requireUnit(userId, id);
 }
 
 export async function updateUnit(userId: string, unitId: string, input: UnitInput) {
-  const unit = await requireUnit(userId, unitId);
+  const unit = await requireWritable(userId, unitId);
   if (unit.role !== "owner") throw new HttpError("Only the person who added the unit can edit the landlord and address.");
   await run(
     `update units set street=?, unit_number=?, city=?, postal_code=?, region=?, jurisdiction=?, jurisdiction_confirmed=?,
-     rso_status=?, rstpo_tier=?, landlord_name=?, landlord_email=?, landlord_phone=?, rent_cents=?, deposit_cents=?, move_in_date=?
+     rso_status=?, rstpo_tier=?, landlord_name=?, landlord_email=?, landlord_phone=?, rent_cents=?, deposit_cents=?, move_in_date=?, lease_end_date=?
      where id=?`,
     [
       input.street, input.unitNumber, input.city, input.postalCode, input.region, input.jurisdiction,
       input.jurisdictionConfirmed, input.rsoStatus, input.rstpoTier, input.landlordName, input.landlordEmail,
-      input.landlordPhone, input.rentCents, input.depositCents, input.moveInDate, unitId,
+      input.landlordPhone, input.rentCents, input.depositCents, input.moveInDate, input.leaseEndDate, unitId,
     ],
   );
   return await requireUnit(userId, unitId);
@@ -449,7 +504,7 @@ export async function insertLog(input: {
   version?: number;
   revisesId?: string | null;
 }) {
-  await requireUnit(input.userId, input.unitId);
+  await requireWritable(input.userId, input.unitId);
   const id = randomUUID();
   const createdAt = input.createdAt || new Date().toISOString();
   const prev = await one<{ content_hash: string }>(
@@ -691,6 +746,12 @@ function dateText(value: unknown): string | null {
   return match ? match[1] : text;
 }
 
+function timeText(value: unknown): string | null {
+  if (value == null || value === "") return null;
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
+}
+
 export async function listDeadlines(userId: string, unitId: string): Promise<Deadline[]> {
   await requireUnit(userId, unitId);
   return (await all<{
@@ -718,19 +779,33 @@ export async function listDeadlines(userId: string, unitId: string): Promise<Dea
 export async function setDeadlineStatus(userId: string, id: string, status: "open" | "done") {
   const row = await one<{ unit_id: string }>("select unit_id from deadlines where id = ?", [id]);
   if (!row) throw new HttpError("Deadline not found.");
-  await requireUnit(userId, row.unit_id);
+  await requireWritable(userId, row.unit_id);
   await run("update deadlines set status = ? where id = ?", [status, id]);
+}
+
+export async function updateDeadlineFacts(id: string, patch: {
+  ruleId: string;
+  dueDate: string | null;
+  explanation: string;
+  explanationEs: string;
+  computation: string;
+  unsure: boolean;
+}) {
+  await run(
+    "update deadlines set rule_id = ?, due_date = ?, explanation = ?, explanation_es = ?, computation = ?, unsure = ? where id = ?",
+    [patch.ruleId, patch.dueDate, patch.explanation, patch.explanationEs, patch.computation, patch.unsure, id],
+  );
 }
 
 export async function setTenantReminder(userId: string, id: string, date: string | null) {
   const row = await one<{ unit_id: string }>("select unit_id from deadlines where id = ?", [id]);
   if (!row) throw new HttpError("Reminder not found.");
-  await requireUnit(userId, row.unit_id);
+  await requireWritable(userId, row.unit_id);
   await run("update deadlines set tenant_reminder_on = ? where id = ?", [date, id]);
 }
 
 export async function insertCustomReminder(userId: string, unitId: string, label: string, date: string) {
-  await requireUnit(userId, unitId);
+  await requireWritable(userId, unitId);
   await insertDeadline({
     unitId,
     ruleId: "tenant-reminder",
@@ -848,6 +923,7 @@ export async function saveLeaseReview(input: {
   cached: boolean;
   result: LeaseReview;
 }) {
+  await requireWritable(input.userId, input.unitId);
   const id = randomUUID();
   await run(
     `insert into lease_reviews (id, unit_id, user_id, filename, text_hash, rules_version, model, cached, result, created_at)
@@ -879,7 +955,7 @@ export async function listLeaseReviews(userId: string, unitId: string) {
 export async function addFeedback(userId: string, reviewId: string, note: string) {
   const row = await one<{ unit_id: string }>("select unit_id from lease_reviews where id = ?", [reviewId]);
   if (!row) throw new HttpError("Review not found.");
-  await requireUnit(userId, row.unit_id);
+  await requireWritable(userId, row.unit_id);
   await run("insert into feedback (id, user_id, review_id, note, created_at) values (?, ?, ?, ?, ?)", [
     randomUUID(), userId, reviewId, note, new Date().toISOString(),
   ]);
@@ -901,7 +977,7 @@ export async function saveDeposit(userId: string, unitId: string, input: {
   landlordDeductions: string;
   tenantNotes: string;
 }) {
-  await requireUnit(userId, unitId);
+  await requireWritable(userId, unitId);
   const now = new Date().toISOString();
   await run(
     `insert into deposits (unit_id, amount_cents, received_date, move_out_date, forwarding_address, landlord_deductions, tenant_notes, updated_at)
@@ -923,9 +999,9 @@ export async function listLedger(userId: string, unitId: string) {
 }
 
 export async function addLedger(userId: string, unitId: string, input: {
-  amountCents: number; periodStart: string | null; periodEnd: string | null; paidOn: string; method: string; notes: string; receiptFileId: string | null;
+  amountCents: number; periodStart: string | null; periodEnd: string | null; paidOn: string; method: string; notes: string;   receiptFileId: string | null;
 }) {
-  await requireUnit(userId, unitId);
+  await requireWritable(userId, unitId);
   const id = randomUUID();
   await run(
     `insert into ledger_entries (id, unit_id, user_id, amount_cents, period_start, period_end, paid_on, method, notes, receipt_file_id, created_at)
@@ -938,7 +1014,7 @@ export async function addLedger(userId: string, unitId: string, input: {
 export async function voidLedger(userId: string, id: string) {
   const row = await one<{ unit_id: string }>("select unit_id from ledger_entries where id = ?", [id]);
   if (!row) throw new HttpError("Payment not found.");
-  await requireUnit(userId, row.unit_id);
+  await requireWritable(userId, row.unit_id);
   await run("update ledger_entries set voided_at = ? where id = ?", [new Date().toISOString(), id]);
 }
 
@@ -969,7 +1045,7 @@ export async function getCondition(userId: string, id: string) {
 }
 
 export async function insertCondition(userId: string, unitId: string, kind: string, rooms: ConditionRoom[], notes: string) {
-  await requireUnit(userId, unitId);
+  await requireWritable(userId, unitId);
   const id = randomUUID();
   const createdAt = new Date().toISOString();
   const token = randomToken();
@@ -993,7 +1069,7 @@ export async function acknowledgeCondition(token: string, name: string): Promise
 }
 
 export async function saveRentCheck(userId: string, unitId: string, input: unknown, result: RentIncreaseResult) {
-  await requireUnit(userId, unitId);
+  await requireWritable(userId, unitId);
   const id = randomUUID();
   await run("insert into rent_checks (id, unit_id, user_id, input, result, created_at) values (?, ?, ?, ?, ?, ?)", [
     id, unitId, userId, JSON.stringify(input), JSON.stringify(result), new Date().toISOString(),
@@ -1093,7 +1169,7 @@ export async function countAssistantThisMonth(userId: string, monthStart: string
 }
 
 export async function createInvite(userId: string, unitId: string) {
-  const unit = await requireUnit(userId, unitId);
+  const unit = await requireWritable(userId, unitId);
   if (unit.role !== "owner") throw new HttpError("Only the person who added the unit can invite a roommate.");
   const token = randomToken();
   await run("insert into invites (id, unit_id, token_hash, created_by, expires_at, created_at) values (?, ?, ?, ?, ?, ?)", [

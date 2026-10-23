@@ -3,6 +3,7 @@ import { planFromIntent, planTurn, repairFacts, resolveIntent, type TurnPlan } f
 import {
   addAssistantMessage,
   archiveChat,
+  assertWritable,
   assistantMessageContent,
   closeChatDraft,
   countAssistantThisMonth,
@@ -63,6 +64,7 @@ export async function runChatTurn(user: User, unit: Unit, input: {
     await archiveChat(user.id);
     return;
   }
+  assertWritable(unit, user.locale);
   if (action.startsWith("prompt:")) text = action.slice("prompt:".length).trim();
   if (action === "send") {
     await confirmSend(user, unit, input.draftId || "");

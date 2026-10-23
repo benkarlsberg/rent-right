@@ -50,6 +50,8 @@ type Records = {
   };
   reminderNote: string;
   packetFile: string;
+  archived?: boolean;
+  archivedNote?: string | null;
 };
 
 export default function Records() {
@@ -154,6 +156,7 @@ export default function Records() {
     <Page onRefresh={reload}>
       <H1>{data?.name || "Records"}</H1>
       <Muted>{data?.address || (me?.needsUnit ? "Add your place when you are ready." : "Notes, your lease, and dates live here.")}</Muted>
+      {data?.archivedNote ? <Muted>{data.archivedNote}</Muted> : null}
       {me?.needsUnit ? <Button label="Add your place" onPress={() => router.push("/setup")} /> : null}
       {data?.sample ? <Text style={styles.sample}>Sample</Text> : null}
       <ErrorLine message={error} />
@@ -178,7 +181,7 @@ export default function Records() {
           {card.reminder ? <Text style={styles.reminder}>{card.reminder}</Text> : null}
           {card.aside ? <Text style={styles.cardBody}>{card.aside}</Text> : null}
           {card.learnMore ? <LearnMore label={labels?.learnMore} hideLabel={labels?.hide}>{card.learnMore}</LearnMore> : null}
-          {labels ? (
+          {labels && !data?.archived ? (
             <Pressable
               style={styles.textButton}
               accessibilityRole="button"
@@ -199,7 +202,7 @@ export default function Records() {
           ) : null}
         </Card>
       ))}
-      {data && labels && !me?.needsUnit ? (
+      {data && labels && !me?.needsUnit && !data.archived ? (
         <Card>
           <Text style={styles.cardTitle}>{labels.addTitle}</Text>
           <Text style={styles.cardBody}>{labels.addHelp}</Text>

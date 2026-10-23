@@ -10,7 +10,7 @@ export type Me = {
   token: string;
   needsUnit: boolean;
   user: { name: string; email: string; locale: "en" | "es"; lowBandwidth: boolean; sample: boolean };
-  unit: { address: string; landlordName: string; landlordEmail: string; relay: string; jurisdiction: string } | null;
+  unit: { id?: string; address: string; landlordName: string; landlordEmail: string; relay: string; jurisdiction: string; archived?: boolean } | null;
 };
 
 type SessionValue = {

@@ -98,6 +98,7 @@ function unitInput(form: FormData): UnitInput {
     rentCents: centsField(form, "rent"),
     depositCents: centsField(form, "deposit"),
     moveInDate: dateField(form, "moveInDate"),
+    leaseEndDate: dateField(form, "leaseEndDate"),
   };
 }
 

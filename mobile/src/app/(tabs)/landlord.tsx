@@ -8,6 +8,8 @@ import { useLoad } from "@/use-load";
 
 type ChatData = {
   landlord: string;
+  archived?: boolean;
+  archivedNote?: string | null;
   items: { id: string; side: "tenant" | "landlord"; text: string; detail: string | null; time: string; status: string }[];
 };
 
@@ -35,6 +37,7 @@ export default function Landlord() {
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <Text style={styles.title}>{data?.landlord || "Landlord"}</Text>
+      {data?.archivedNote ? <Text style={styles.empty}>{data.archivedNote}</Text> : null}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <FlatList
           style={clipX}
@@ -59,8 +62,8 @@ export default function Landlord() {
         />
         <ErrorLine message={error} />
         <View style={styles.composer}>
-          <TextInput value={draft} onChangeText={setDraft} placeholder="Message" placeholderTextColor={colors.mute} accessibilityLabel="Message" style={styles.input} />
-          <Pressable onPress={send} style={styles.send} accessibilityRole="button" accessibilityLabel="Send"><Text style={styles.sendText}>{sending ? "Sending" : "Send"}</Text></Pressable>
+          <TextInput value={draft} onChangeText={setDraft} placeholder="Message" placeholderTextColor={colors.mute} accessibilityLabel="Message" editable={!data?.archived} style={styles.input} />
+          <Pressable onPress={send} disabled={Boolean(data?.archived)} style={styles.send} accessibilityRole="button" accessibilityLabel="Send" accessibilityState={{ disabled: Boolean(data?.archived) }}><Text style={styles.sendText}>{sending ? "Sending" : "Send"}</Text></Pressable>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
