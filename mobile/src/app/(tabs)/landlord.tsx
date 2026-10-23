@@ -3,7 +3,7 @@ import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/api";
 import { colors } from "@/theme";
-import { ErrorLine, LearnMore } from "@/ui";
+import { ErrorLine, LearnMore, clipX, wrapText } from "@/ui";
 import { useLoad } from "@/use-load";
 
 type ChatData = {
@@ -37,6 +37,7 @@ export default function Landlord() {
       <Text style={styles.title}>{data?.landlord || "Landlord"}</Text>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <FlatList
+          style={clipX}
           data={data?.items || []}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
@@ -44,11 +45,13 @@ export default function Landlord() {
           renderItem={({ item }) => {
             const mine = item.side === "tenant";
             return (
-              <View style={[styles.row, mine ? styles.right : styles.left]}>
-                <View style={[styles.bubble, mine ? styles.tenant : styles.landlord]}>
-                  <Text style={{ color: mine ? "white" : colors.ink, fontSize: 17, lineHeight: 24 }}>{item.text}</Text>
+              <View style={styles.block}>
+                <View style={[styles.row, mine ? styles.right : styles.left]}>
+                  <View style={[styles.bubble, mine ? styles.tenant : styles.landlord]}>
+                    <Text style={[styles.bubbleText, { color: mine ? "white" : colors.ink }]}>{item.text}</Text>
+                  </View>
+                  <Text style={styles.meta}>{item.time} · {item.status}</Text>
                 </View>
-                <Text style={styles.meta}>{item.time} · {item.status}</Text>
                 {item.detail ? <LearnMore label="Email details">{item.detail}</LearnMore> : null}
               </View>
             );
@@ -65,14 +68,16 @@ export default function Landlord() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.paper },
+  screen: { flex: 1, backgroundColor: colors.paper, width: "100%", minWidth: 0 },
   title: { fontSize: 32, fontWeight: "600", letterSpacing: -0.4, paddingHorizontal: 24, paddingTop: 16, color: colors.ink },
-  list: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 28, flexGrow: 1 },
+  list: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 28, flexGrow: 1, width: "100%", maxWidth: "100%", minWidth: 0 },
   empty: { fontSize: 16, lineHeight: 24, color: colors.mute, marginTop: 24 },
-  row: { maxWidth: "86%", marginBottom: 18 },
+  block: { width: "100%", maxWidth: "100%", minWidth: 0, marginBottom: 18, alignSelf: "stretch" },
+  row: { maxWidth: "86%", minWidth: 0, flexShrink: 1 },
   right: { alignSelf: "flex-end", alignItems: "flex-end" },
   left: { alignSelf: "flex-start", alignItems: "flex-start" },
-  bubble: { borderRadius: 20, paddingHorizontal: 16, paddingVertical: 14 },
+  bubble: { borderRadius: 20, paddingHorizontal: 16, paddingVertical: 14, maxWidth: "100%", minWidth: 0, flexShrink: 1 },
+  bubbleText: { ...wrapText, fontSize: 17, lineHeight: 24 },
   tenant: { backgroundColor: colors.tenant, borderBottomRightRadius: 6 },
   landlord: { backgroundColor: colors.landlord, borderWidth: 1, borderColor: colors.line, borderBottomLeftRadius: 6 },
   meta: { color: colors.mute, fontSize: 13, marginTop: 6 },

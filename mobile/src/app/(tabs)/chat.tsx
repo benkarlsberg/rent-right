@@ -8,7 +8,7 @@ import type { Notice } from "@/session";
 import { useSession } from "@/session";
 import { Logo } from "@/logo";
 import { colors } from "@/theme";
-import { ErrorLine } from "@/ui";
+import { ErrorLine, clipX, wrapMarker, wrapText } from "@/ui";
 import { useLoad } from "@/use-load";
 import * as ImagePicker from "expo-image-picker";
 
@@ -172,6 +172,7 @@ export default function AssistantChat() {
       ) : null}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <FlatList
+          style={clipX}
           data={items}
           keyExtractor={(_, index) => String(index)}
           contentContainerStyle={styles.list}
@@ -277,7 +278,7 @@ function CardView({ item, spanish, onAction }: { item: Extract<Item, { role: "ca
   const actions = item.actions?.length ? item.actions : item.action ? [item.action] : [];
   const picker = actions.some((action) => action.id === "reset" || action.id.startsWith("prompt:"));
   return (
-    <View style={styles.card}>
+    <View style={styles.card} {...wrapMarker()}>
       <Text style={styles.headline}>{item.headline}</Text>
       <Text style={styles.status}>{item.status}</Text>
       {actions.map((action) => {
@@ -300,7 +301,7 @@ function CardView({ item, spanish, onAction }: { item: Extract<Item, { role: "ca
           <Pressable onPress={() => setDetails((open) => !open)} accessibilityRole="button" accessibilityLabel={spanish ? "Detalles" : "Details"}>
             <Text style={styles.note}>{details ? (spanish ? "Ocultar" : "Hide") : (spanish ? "Detalles" : "Details")}</Text>
           </Pressable>
-          {details ? <Text style={styles.detail}>{`${item.detail}${item.ruleId ? `\n\n${item.ruleId}` : ""}`}</Text> : null}
+          {details ? <Text style={[styles.detail, wrapText]}>{`${item.detail}${item.ruleId ? `\n\n${item.ruleId}` : ""}`}</Text> : null}
         </View>
       ) : null}
       <Pressable onPress={() => setAdvice((open) => !open)} accessibilityRole="button" accessibilityLabel={spanish ? "No es asesoramiento legal" : "Not legal advice"}>
@@ -308,8 +309,8 @@ function CardView({ item, spanish, onAction }: { item: Extract<Item, { role: "ca
       </Pressable>
       {advice ? (
         <View>
-          <Text style={styles.detail}>{item.notice.full}</Text>
-          {item.notice.clinicFull ? <Text style={[styles.detail, styles.gap]}>{item.notice.clinicFull}</Text> : null}
+          <Text style={[styles.detail, wrapText]}>{item.notice.full}</Text>
+          {item.notice.clinicFull ? <Text style={[styles.detail, wrapText, styles.gap]}>{item.notice.clinicFull}</Text> : null}
         </View>
       ) : null}
     </View>
@@ -324,16 +325,16 @@ const styles = StyleSheet.create({
   headerButtonText: { color: colors.pine, fontSize: 15, fontWeight: "700" },
   account: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
   accountButton: { minHeight: 44, justifyContent: "center", paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.card },
-  list: { paddingHorizontal: 16, paddingBottom: 16, flexGrow: 1 },
+  list: { paddingHorizontal: 16, paddingBottom: 16, flexGrow: 1, width: "100%", maxWidth: "100%", minWidth: 0 },
   place: { marginTop: 8 },
   intro: { fontSize: 22, color: colors.ink, marginTop: 16, lineHeight: 30 },
   support: { fontSize: 16, lineHeight: 24, color: colors.mute, marginTop: 8 },
   chip: { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.line, minHeight: 48, justifyContent: "center", paddingVertical: 14, paddingHorizontal: 18, marginTop: 12 },
   chipText: { fontSize: 17, color: colors.ink },
-  userRow: { alignItems: "flex-end", marginTop: 16 },
-  userBubble: { maxWidth: "82%", backgroundColor: colors.tenant, borderRadius: 20, borderBottomRightRadius: 6, paddingHorizontal: 16, paddingVertical: 14 },
-  userText: { color: "white", fontSize: 17, lineHeight: 24 },
-  card: { marginTop: 16, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.line, padding: 16 },
+  userRow: { alignItems: "flex-end", marginTop: 16, width: "100%", maxWidth: "100%", minWidth: 0, alignSelf: "stretch" },
+  userBubble: { maxWidth: "82%", minWidth: 0, flexShrink: 1, backgroundColor: colors.tenant, borderRadius: 20, borderBottomRightRadius: 6, paddingHorizontal: 16, paddingVertical: 14 },
+  userText: { ...wrapText, color: "white", fontSize: 17, lineHeight: 24 },
+  card: { marginTop: 16, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.line, padding: 16, alignSelf: "stretch", width: "100%", maxWidth: "100%", minWidth: 0 },
   headline: { fontSize: 22, lineHeight: 28, color: colors.ink, fontWeight: "600" },
   status: { fontSize: 16, lineHeight: 22, color: colors.pine, marginTop: 6 },
   action: { marginTop: 12, backgroundColor: colors.pine, borderRadius: 14, minHeight: 48, alignItems: "center", justifyContent: "center", paddingHorizontal: 18 },
@@ -342,7 +343,7 @@ const styles = StyleSheet.create({
   suggestText: { fontSize: 16, color: colors.ink, fontWeight: "600" },
   cancel: { marginTop: 8, minHeight: 44, justifyContent: "center", paddingHorizontal: 4 },
   note: { color: colors.pine, fontSize: 14, fontWeight: "700", marginTop: 12 },
-  detail: { color: colors.mute, fontSize: 14, lineHeight: 20, marginTop: 8 },
+  detail: { ...wrapText, color: colors.mute, fontSize: 14, lineHeight: 20, marginTop: 8 },
   gap: { marginTop: 8 },
   file: { color: colors.pine, paddingHorizontal: 16, paddingBottom: 4 },
   menu: { flexDirection: "row", gap: 10, paddingHorizontal: 16, paddingBottom: 8 },

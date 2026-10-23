@@ -6,7 +6,7 @@ import { saveAuthorizedFile } from "@/files";
 import type { Me, Notice } from "@/session";
 import { useSession } from "@/session";
 import { colors } from "@/theme";
-import { Button, Card, ErrorLine, Field, H1, LearnMore, Muted, Page } from "@/ui";
+import { Button, Card, ErrorLine, Field, H1, LearnMore, Muted, Page, wrapText } from "@/ui";
 import { useLoad } from "@/use-load";
 
 type Records = {
@@ -129,10 +129,10 @@ const styles = StyleSheet.create({
   segmentOn: { backgroundColor: colors.pine },
   segmentText: { fontSize: 16, fontWeight: "600", color: colors.ink },
   segmentTextOn: { color: "white" },
-  cardTitle: { fontSize: 22, lineHeight: 28, color: colors.ink, fontWeight: "600" },
-  cardStatus: { fontSize: 16, lineHeight: 22, color: colors.pine, marginTop: 6 },
-  cardBody: { fontSize: 16, lineHeight: 22, color: colors.mute, marginTop: 6 },
-  note: { fontSize: 16, lineHeight: 24, color: colors.ink, marginTop: 12 },
+  cardTitle: { ...wrapText, fontSize: 22, lineHeight: 28, color: colors.ink, fontWeight: "600" },
+  cardStatus: { ...wrapText, fontSize: 16, lineHeight: 22, color: colors.pine, marginTop: 6 },
+  cardBody: { ...wrapText, fontSize: 16, lineHeight: 22, color: colors.mute, marginTop: 6 },
+  note: { ...wrapText, fontSize: 16, lineHeight: 24, color: colors.ink, marginTop: 12 },
   noteFirst: { marginTop: 0 },
   textButton: { minHeight: 48, justifyContent: "center", marginTop: 8 },
   textButtonLabel: { color: colors.pine, fontSize: 16, fontWeight: "700" },
