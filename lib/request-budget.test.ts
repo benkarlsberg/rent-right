@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { readFileSync } from "fs";
 import { describe, expect, it, vi } from "vitest";
 import { signSession } from "@/lib/crypto";
 import { createNamedUser, createUnit, type UnitInput } from "@/lib/db";
@@ -83,6 +84,14 @@ describe("tab reads", () => {
     expect(records.trips, `records queries ${records.trips}`).toBeLessThanOrEqual(48);
     expect(thread.trips, `thread queries ${thread.trips}`).toBeLessThanOrEqual(48);
     expect(chat.trips, `chat queries ${chat.trips}`).toBeLessThanOrEqual(36);
+    const bootstrap = await get(user.id, "bootstrap");
+    expect(bootstrap.status).toBe(200);
+    expect(bootstrap.json?.records && (bootstrap.json.records as { address?: string }).address).toBe(`${suffix} N Echo Park Ave, Unit 25, Los Angeles CA 90026`);
+    expect(Array.isArray((bootstrap.json?.chat as { items?: unknown[] } | undefined)?.items)).toBe(true);
+    expect((bootstrap.json?.thread as { landlord?: string } | undefined)?.landlord).toBe("Elena Vasquez");
+    expect(bootstrap.trips, `bootstrap queries ${bootstrap.trips}`).toBeLessThan(records.trips + thread.trips + chat.trips);
+    expect(bootstrap.trips, `bootstrap queries ${bootstrap.trips}`).toBeLessThanOrEqual(40);
+    expect(readFileSync("lib/pg.ts", "utf8")).not.toContain(".reserve(");
     const deadlines = records.json?.deadlines as { id: string; closed?: boolean }[] | undefined;
     const open = deadlines?.find((item) => item.closed === false);
     if (open) {

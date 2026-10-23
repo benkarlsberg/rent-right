@@ -375,6 +375,7 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "GET" && key === "log") return json(await logPayload());
   if (method === "GET" && path[0] === "log" && path[1]) return json(await logDetail(path[1]));
   if (method === "POST" && key === "log") return json(await createLog(await readBody(request)));
+  if (method === "GET" && key === "bootstrap") return json(await bootstrapPayload());
   if (method === "GET" && key === "chat") return json(await chatPayload());
   if (method === "POST" && key === "chat") return json(await sendChat(await readBody(request)));
   if (method === "POST" && key === "chat/draft") return json(await saveDraft(await readBody(request)));
@@ -653,21 +654,26 @@ function draftLabels(locale: Locale) {
   };
 }
 
-async function chatPayload() {
-  const user = await actor();
-  const unit = await primaryUnit(user.id);
+type ListedMessage = Awaited<ReturnType<typeof listMessages>>[number];
+type ListedLog = Awaited<ReturnType<typeof listLogs>>[number];
+type ListedDeadline = Awaited<ReturnType<typeof listDeadlines>>[number];
+type ListedReview = Awaited<ReturnType<typeof listLeaseReviews>>[number];
+type ListedAssistant = Awaited<ReturnType<typeof listAssistant>>[number];
+type HomeRows = { deadlines: ListedDeadline[]; logs: ListedLog[]; messages: ListedMessage[]; reviews: ListedReview[] };
+
+function emptyChat(user: User) {
+  return { landlord: "", items: [], needsUnit: true, archived: false, archivedNote: null, needsEmail: true, labels: draftLabels(user.locale) };
+}
+
+function presentChat(user: User, unit: Unit, messages: ListedMessage[]) {
   const locale = user.locale;
-  if (!unit) return { landlord: "", items: [], needsUnit: true, archived: false, archivedNote: null, needsEmail: true, labels: draftLabels(locale) };
-  const [logs, messages] = await Promise.all([listLogs(user.id, unit.id), listMessages(user.id, unit.id)]);
-  const created = await ensureRepairDrafts(user, unit, logs, messages);
-  const visible = [...messages, ...created].filter((message) => message.deliveryStatus !== "discarded");
   return {
     landlord: unit.landlordName || unit.landlordEmail,
     archived: Boolean(unit.archivedAt),
     archivedNote: archivedNote(unit, locale),
     needsEmail: !unit.landlordEmail,
     labels: draftLabels(locale),
-    items: visible.map((message) => {
+    items: messages.map((message) => {
       const draft = message.deliveryStatus === "draft";
       const preview = chatPreview(message.body);
       return {
@@ -682,6 +688,19 @@ async function chatPayload() {
       };
     }),
   };
+}
+
+async function visibleMessages(user: User, unit: Unit) {
+  const [logs, messages] = await Promise.all([listLogs(user.id, unit.id), listMessages(user.id, unit.id)]);
+  const created = await ensureRepairDrafts(user, unit, logs, messages);
+  return [...messages, ...created].filter((message) => message.deliveryStatus !== "discarded");
+}
+
+async function chatPayload() {
+  const user = await actor();
+  const unit = await primaryUnit(user.id);
+  if (!unit) return emptyChat(user);
+  return presentChat(user, unit, await visibleMessages(user, unit));
 }
 
 async function sendChat(input: Record<string, unknown>) {
@@ -924,15 +943,8 @@ function emptyThread(user: User) {
   };
 }
 
-async function threadPayload() {
-  const user = await actor();
-  const unit = await primaryUnit(user.id);
-  if (!unit) return emptyThread(user);
+function presentThread(user: User, unit: Unit, rows: ListedAssistant[], steps: { title: string; held: string; items: unknown[] }) {
   const locale = user.locale;
-  const [rows, bundle] = await Promise.all([
-    listAssistant(user.id, "visible"),
-    recordsBundle(user, unit, { reviews: false }),
-  ]);
   const items = rows.map((row) => {
     if (row.role === "user") return { role: "user" as const, text: row.content };
     const card = parseCard(row.content);
@@ -955,11 +967,22 @@ async function threadPayload() {
     items,
     chips: rows.some((row) => row.role === "user") ? [] : chips(locale),
     notice: notice(locale),
-    steps: bundle.steps,
+    steps,
     packetFile: evidenceFilename(todayISO()),
     archived: Boolean(unit.archivedAt),
     archivedNote: archivedNote(unit, locale),
   };
+}
+
+async function threadPayload() {
+  const user = await actor();
+  const unit = await primaryUnit(user.id);
+  if (!unit) return emptyThread(user);
+  const [rows, bundle] = await Promise.all([
+    listAssistant(user.id, "visible"),
+    recordsBundle(user, unit, { reviews: false }),
+  ]);
+  return presentThread(user, unit, rows, bundle.steps);
 }
 
 async function postThread(input: Record<string, unknown>) {
@@ -991,17 +1014,27 @@ async function postThread(input: Record<string, unknown>) {
   return threadPayload();
 }
 
-async function recordsBundle(user: User, unit: NonNullable<Awaited<ReturnType<typeof primaryUnit>>>, options?: { reviews?: boolean }) {
-  const locale = user.locale;
-  const today = todayISO();
-  const [deadlines, logs, storedMessages, reviews] = await Promise.all([
+async function loadHomeRows(user: User, unit: Unit, options?: { reviews?: boolean; assistant?: boolean }) {
+  const [deadlines, logs, storedMessages, reviews, assistant] = await Promise.all([
     listDeadlines(user.id, unit.id),
     listLogs(user.id, unit.id),
     listMessages(user.id, unit.id),
-    options?.reviews === false ? Promise.resolve([]) : listLeaseReviews(user.id, unit.id),
+    options?.reviews === false ? Promise.resolve([] as ListedReview[]) : listLeaseReviews(user.id, unit.id),
+    options?.assistant === false ? Promise.resolve([] as ListedAssistant[]) : listAssistant(user.id, "visible"),
   ]);
   const createdDrafts = await ensureRepairDrafts(user, unit, logs, storedMessages);
   const messages = [...storedMessages, ...createdDrafts].filter((message) => message.deliveryStatus !== "discarded");
+  return { deadlines, logs, messages, reviews, assistant };
+}
+
+async function recordsBundle(user: User, unit: NonNullable<Awaited<ReturnType<typeof primaryUnit>>>, options?: { reviews?: boolean }) {
+  return presentRecords(user, unit, await loadHomeRows(user, unit, { reviews: options?.reviews, assistant: false }));
+}
+
+function presentRecords(user: User, unit: Unit, loaded: HomeRows) {
+  const { deadlines, logs, messages, reviews } = loaded;
+  const locale = user.locale;
+  const today = todayISO();
   const deadlineInput: DeadlineInput[] = deadlines.map((item) => ({
     id: item.id,
     kind: item.kind,
@@ -1093,35 +1126,33 @@ async function recordsBundle(user: User, unit: NonNullable<Awaited<ReturnType<ty
   };
 }
 
-async function recordsPayload() {
-  const user = await actor();
-  const unit = await primaryUnit(user.id);
+function emptyRecords(user: User) {
   const locale = user.locale;
-  const labels = recordsLabels(locale);
-  if (!unit) {
-    return {
-      name: user.name,
-      address: "",
-      sample: user.email === DEMO_EMAIL,
-      locale,
-      notice: notice(locale),
-      deadlines: [],
-      notes: [],
-      issues: [],
-      archive: [],
-      steps: { title: tx(locale, "Your next steps", "Sus próximos pasos"), held: tx(locale, "Nothing was sent.", "No se envió nada."), items: [] },
-      lease: null,
-      needsUnit: true,
-      labels,
-      reminderNote: reminderNote(false, locale),
-      reminderMail: false,
-      packetFile: evidenceFilename(todayISO()),
-      today: todayISO(),
-      archived: false,
-      archivedNote: null,
-    };
-  }
-  const bundle = await recordsBundle(user, unit);
+  return {
+    name: user.name,
+    address: "",
+    sample: user.email === DEMO_EMAIL,
+    locale,
+    notice: notice(locale),
+    deadlines: [],
+    notes: [],
+    issues: [],
+    archive: [],
+    steps: { title: tx(locale, "Your next steps", "Sus próximos pasos"), held: tx(locale, "Nothing was sent.", "No se envió nada."), items: [] },
+    lease: null,
+    needsUnit: true,
+    labels: recordsLabels(locale),
+    reminderNote: reminderNote(false, locale),
+    reminderMail: false,
+    packetFile: evidenceFilename(todayISO()),
+    today: todayISO(),
+    archived: false,
+    archivedNote: null,
+  };
+}
+
+function presentRecordsPayload(user: User, unit: Unit, bundle: ReturnType<typeof presentRecords>) {
+  const locale = user.locale;
   const review = bundle.reviews[0];
   const finding = review?.result.findings.find((item) => item.label !== "looks_standard") || review?.result.findings[0];
   return {
@@ -1149,6 +1180,27 @@ async function recordsPayload() {
     today: bundle.today,
     archived: Boolean(unit.archivedAt),
     archivedNote: archivedNote(unit, locale),
+  };
+}
+
+async function recordsPayload() {
+  const user = await actor();
+  const unit = await primaryUnit(user.id);
+  if (!unit) return emptyRecords(user);
+  return presentRecordsPayload(user, unit, await recordsBundle(user, unit));
+}
+
+async function bootstrapPayload() {
+  const user = await actor();
+  const unit = await primaryUnit(user.id);
+  if (!unit) return { thread: emptyThread(user), chat: emptyChat(user), records: emptyRecords(user) };
+  const loaded = await loadHomeRows(user, unit);
+  const recordsBundleView = presentRecords(user, unit, loaded);
+  const threadBundle = presentRecords(user, unit, { ...loaded, reviews: [] });
+  return {
+    thread: presentThread(user, unit, loaded.assistant, threadBundle.steps),
+    chat: presentChat(user, unit, loaded.messages),
+    records: presentRecordsPayload(user, unit, recordsBundleView),
   };
 }
 

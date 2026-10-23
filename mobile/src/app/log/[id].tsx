@@ -7,6 +7,7 @@ import type { Notice } from "@/session";
 import { useSession } from "@/session";
 import { colors } from "@/theme";
 import { Button, Card, ErrorLine, H1, LearnMore, LegalNote, Muted, Page } from "@/ui";
+import { refreshBootstrap } from "@/tab-cache";
 import { useLoad } from "@/use-load";
 
 type HistoryRow = { id: string; at: string; title: string; body: string };
@@ -57,6 +58,7 @@ export default function LogDetail() {
       setError("");
       await api("records/resolve", { token, body: { id, note: input.note, date: input.date, source: data?.resolution?.pending ? "landlord" : null } });
       await reload();
+      void refreshBootstrap(token, true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not resolve the request.");
     } finally {
@@ -71,6 +73,7 @@ export default function LogDetail() {
       setError("");
       await api("records/reopen", { token, body: { id } });
       await reload();
+      void refreshBootstrap(token, true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not reopen the request.");
     } finally {

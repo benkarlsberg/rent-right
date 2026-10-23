@@ -5,6 +5,7 @@ import { api } from "@/api";
 import type { Me } from "@/session";
 import { useSession } from "@/session";
 import { setSkippedSetup } from "@/setup-later";
+import { refreshBootstrap } from "@/tab-cache";
 import { colors } from "@/theme";
 import { Button, ErrorLine, Field, H1, Muted, Page } from "@/ui";
 
@@ -130,6 +131,7 @@ export default function Setup() {
       });
       await setSkippedSetup(false);
       await signIn(session);
+      void refreshBootstrap(session.token, true);
       router.replace("/chat");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save.");

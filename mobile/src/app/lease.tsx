@@ -4,6 +4,7 @@ import { api } from "@/api";
 import type { Notice } from "@/session";
 import { colors } from "@/theme";
 import { Button, Card, ErrorLine, Field, H1, Kicker, LegalNote, LearnMore, LocalNote, Muted, Page } from "@/ui";
+import { refreshBootstrap } from "@/tab-cache";
 import { useLoad } from "@/use-load";
 
 type LeaseData = {
@@ -21,6 +22,7 @@ export default function Lease() {
       setError("");
       await api(path, { token, body: body || {} });
       setText("");
+      if (token) void refreshBootstrap(token, true);
       await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not review.");

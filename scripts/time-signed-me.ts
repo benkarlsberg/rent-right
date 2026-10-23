@@ -101,6 +101,42 @@ async function main(): Promise<void> {
   if (limit > 0 && (!api || api.status !== 200 || !api.hasUser || api.ms > limit)) {
     throw new Error(`Signed /me was not ready (status ${api?.status ?? "missing"}, ${api?.ms ?? "n/a"} ms).`);
   }
+  const bootstrap = await timeBootstrap(token);
+  const bootstrapLimit = Number(process.env.ME_BOOTSTRAP_MAX_MS || "0");
+  if (bootstrapLimit > 0 && (bootstrap.status !== 200 || !bootstrap.ok || bootstrap.ms > bootstrapLimit)) {
+    throw new Error(`Bootstrap was not ready (status ${bootstrap.status}, ${bootstrap.ms} ms).`);
+  }
+}
+
+async function timeBootstrap(token: string): Promise<{ status: number | "timeout"; ms: number; ok: boolean }> {
+  const started = Date.now();
+  try {
+    const response = await fetch("https://api.rentrightportal.com/api/v1/bootstrap", {
+      headers: {
+        authorization: `Bearer ${token}`,
+        accept: "application/json",
+        "user-agent": "Mozilla/5.0",
+      },
+      signal: AbortSignal.timeout(12_000),
+    });
+    const ms = Date.now() - started;
+    const body = (await response.json().catch(() => null)) as { thread?: unknown; chat?: unknown; records?: unknown; error?: string } | null;
+    const ok = Boolean(body?.thread && body?.chat && body?.records);
+    console.log(`bootstrap_status: ${response.status}`);
+    console.log(`bootstrap_ms: ${ms}`);
+    console.log(`bootstrap_slices: ${ok}`);
+    console.log(`bootstrap_error: ${body?.error ?? ""}`);
+    console.log(`bootstrap_server_timing: ${response.headers.get("server-timing") ?? ""}`);
+    return { status: response.status, ms, ok };
+  } catch (error) {
+    const ms = Date.now() - started;
+    const message = error instanceof Error ? error.message : "request failed";
+    console.log("bootstrap_status: timeout");
+    console.log(`bootstrap_ms: ${ms}`);
+    console.log(`bootstrap_slices: false`);
+    console.log(`bootstrap_error: ${redact(message)}`);
+    return { status: "timeout", ms, ok: false };
+  }
 }
 
 main().catch((error: unknown) => {

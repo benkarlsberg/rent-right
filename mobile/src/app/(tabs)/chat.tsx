@@ -67,11 +67,10 @@ export default function AssistantChat() {
       setPending(body);
       setRetryNote("");
       setError("");
-      await api("thread", { token, body: { text: body, action: extra?.action, draftId: extra?.draftId, attachment: file } });
+      await reload(await api<Thread>("thread", { token, body: { text: body, action: extra?.action, draftId: extra?.draftId, attachment: file } }));
       setDraft("");
       setFile(null);
       setMenu(false);
-      await reload();
       setPending(null);
     } catch {
       setPending(null);
@@ -89,13 +88,12 @@ export default function AssistantChat() {
       lock.current = true;
       setBusy(true);
       setError("");
-      await api("thread", { token, body: { action: "clear" } });
+      await reload(await api<Thread>("thread", { token, body: { action: "clear" } }));
       setDraft("");
       setFile(null);
       setMenu(false);
       setAccount(false);
       setConfirm(null);
-      await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not clear the chat.");
     } finally {

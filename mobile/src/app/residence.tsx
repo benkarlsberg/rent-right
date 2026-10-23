@@ -8,6 +8,7 @@ import type { Me } from "@/session";
 import { useSession } from "@/session";
 import { colors } from "@/theme";
 import { Button, Card, ErrorLine, Field, H1, Muted, Page, wrapText } from "@/ui";
+import { refreshBootstrap } from "@/tab-cache";
 import { useLoad } from "@/use-load";
 
 type Suggestion = { label: string; street: string; city: string; region: string; postalCode: string };
@@ -223,6 +224,7 @@ export default function ResidenceScreen() {
         body: { ...body(), mode: nextMode, acknowledged },
       });
       await signIn(session);
+      void refreshBootstrap(session.token, true);
       setNote(session.note || labels?.nothingSent || "");
       setPreview(null);
       setMode(null);
@@ -240,7 +242,9 @@ export default function ResidenceScreen() {
       setBusy(true);
       setError("");
       setNote("");
-      await signIn(await api<Me>("residence/select", { token, body: { id } }));
+      const session = await api<Me>("residence/select", { token, body: { id } });
+      await signIn(session);
+      void refreshBootstrap(session.token, true);
       await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not switch homes.");

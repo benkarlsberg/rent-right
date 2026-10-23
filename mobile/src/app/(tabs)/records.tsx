@@ -179,9 +179,8 @@ export default function Records() {
     try {
       setBusy(true);
       setError("");
-      await api("records/resolve", { token, body: { id, note: input.note, date: input.date, source } });
+      await reload(await api<Records>("records/resolve", { token, body: { id, note: input.note, date: input.date, source } }));
       setOpenIssue(null);
-      await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not resolve the request.");
     } finally {
@@ -194,8 +193,7 @@ export default function Records() {
     try {
       setBusy(true);
       setError("");
-      await api("records/reopen", { token, body: { id } });
-      await reload();
+      await reload(await api<Records>("records/reopen", { token, body: { id } }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not reopen the request.");
     } finally {

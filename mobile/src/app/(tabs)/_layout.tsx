@@ -43,9 +43,9 @@ export default function TabsLayout() {
       safeAreaInsets={{ top: insets.top, right: insets.right, bottom, left: insets.left }}
       screenOptions={{
         headerShown: false,
-        tabBarButton: ({ ref: _ref, ...props }) => {
-          const href = typeof props.href === "string" ? props.href : "";
-          const selected = tabMatches(path, href) || Boolean(props.accessibilityState?.selected);
+        tabBarButton: ({ ref: _ref, href, onPress, ...props }) => {
+          const target = typeof href === "string" ? href : "";
+          const selected = tabMatches(path, target) || Boolean(props.accessibilityState?.selected);
           return (
             <Pressable
               {...props}
@@ -53,6 +53,10 @@ export default function TabsLayout() {
               accessibilityState={{ ...props.accessibilityState, selected }}
               aria-selected={selected}
               aria-current={selected ? "page" : undefined}
+              onPress={(event) => {
+                event?.preventDefault?.();
+                onPress?.(event);
+              }}
               style={[props.style, styles.hit, selected ? styles.hitOn : null]}
             />
           );

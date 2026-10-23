@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import { Platform } from "react-native";
 import { api } from "@/api";
 import { clearTabCache } from "@/tab-cache";
+import { userIdFromToken } from "@/tab-store";
 
 const KEY = "rr_session";
 
@@ -46,10 +47,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
 
   const apply = useCallback(async (session: Me) => {
+    if (token && userIdFromToken(token) !== userIdFromToken(session.token)) clearTabCache();
     await writeToken(session.token);
     setToken(session.token);
     setMe(session);
-  }, []);
+  }, [token]);
 
   const refresh = useCallback(async () => {
     if (!token) return;

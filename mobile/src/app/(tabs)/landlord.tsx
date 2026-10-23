@@ -78,9 +78,8 @@ export default function Landlord() {
     try {
       setSending(true);
       setError("");
-      await api("chat", { token, body: { text } });
+      await reload(await api<ChatData>("chat", { token, body: { text } }));
       setDraft("");
-      await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send.");
     } finally {
@@ -93,9 +92,8 @@ export default function Landlord() {
     try {
       setSending(true);
       setError("");
-      await api("chat/landlord-email", { token, body: { email } });
+      await reload(await api<ChatData>("chat/landlord-email", { token, body: { email } }));
       setEmail("");
-      await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the email.");
     } finally {
@@ -108,9 +106,8 @@ export default function Landlord() {
     try {
       setSending(true);
       setError("");
-      await api("chat/draft/send", { token, body: { id, body } });
+      await reload(await api<ChatData>("chat/draft/send", { token, body: { id, body } }));
       setEditingId(null);
-      await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send.");
     } finally {
@@ -123,9 +120,8 @@ export default function Landlord() {
     try {
       setSending(true);
       setError("");
-      await api("chat/draft/discard", { token, body: { id } });
+      await reload(await api<ChatData>("chat/draft/discard", { token, body: { id } }));
       if (editingId === id) setEditingId(null);
-      await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not discard the draft.");
     } finally {
@@ -138,9 +134,8 @@ export default function Landlord() {
     try {
       setSending(true);
       setError("");
-      await api("chat/draft", { token, body: { id, body: editBody } });
+      await reload(await api<ChatData>("chat/draft", { token, body: { id, body: editBody } }));
       setEditingId(null);
-      await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the draft.");
     } finally {

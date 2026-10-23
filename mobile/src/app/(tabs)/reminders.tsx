@@ -73,9 +73,8 @@ export default function Reminders() {
     try {
       setBusy(true);
       setError("");
-      await api("records/reminder", { token, body: { id, date } });
+      await reload(await api<Records>("records/reminder", { token, body: { id, date } }));
       setEditing(null);
-      await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the reminder.");
     } finally {
@@ -92,11 +91,10 @@ export default function Reminders() {
     try {
       setBusy(true);
       setError("");
-      await api("records/reminder/new", { token, body: { label: customLabel.trim(), date: customDate } });
+      await reload(await api<Records>("records/reminder/new", { token, body: { label: customLabel.trim(), date: customDate } }));
       setCustomLabel("");
       setCustomDate("");
       setSheet(false);
-      await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add the reminder.");
     } finally {
@@ -121,9 +119,8 @@ export default function Reminders() {
     try {
       setBusy(true);
       setError("");
-      await api("records/done", { token, body: { id } });
+      await reload(await api<Records>("records/done", { token, body: { id } }));
       if (openId === id) setOpenId(null);
-      await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not update the reminder.");
     } finally {
@@ -136,11 +133,10 @@ export default function Reminders() {
     try {
       setBusy(true);
       setError("");
-      await api("records/reminder/delete", { token, body: { id } });
+      await reload(await api<Records>("records/reminder/delete", { token, body: { id } }));
       setConfirmId(null);
       if (openId === id) setOpenId(null);
       showToast(id, labels?.deletedToast || (es ? "Recordatorio eliminado" : "Reminder deleted"));
-      await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not delete the reminder.");
     } finally {
@@ -153,11 +149,10 @@ export default function Reminders() {
     try {
       setBusy(true);
       setError("");
-      await api("records/reminder/dismiss", { token, body: { id } });
+      await reload(await api<Records>("records/reminder/dismiss", { token, body: { id } }));
       setConfirmId(null);
       if (openId === id) setOpenId(null);
       showToast(id, labels?.dismissedToast || (es ? "Recordatorio descartado" : "Reminder dismissed"));
-      await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not dismiss the reminder.");
     } finally {
@@ -172,8 +167,7 @@ export default function Reminders() {
     try {
       setBusy(true);
       setError("");
-      await api("records/reminder/restore", { token, body: { id } });
-      await reload();
+      await reload(await api<Records>("records/reminder/restore", { token, body: { id } }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not restore the reminder.");
     } finally {

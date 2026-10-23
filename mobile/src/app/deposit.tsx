@@ -5,6 +5,7 @@ import { saveAuthorizedFile } from "@/files";
 import type { Notice } from "@/session";
 import { colors } from "@/theme";
 import { Button, ErrorLine, Field, H1, LegalNote, LearnMore, Page } from "@/ui";
+import { refreshBootstrap } from "@/tab-cache";
 import { useLoad } from "@/use-load";
 
 type DepositData = {
@@ -28,6 +29,7 @@ export default function Deposit() {
     try {
       setError("");
       await api("deposit", { token, body: { moveOutDate: moveOut || data?.moveOut, amount: amount || undefined, forwardingAddress: forwarding } });
+      if (token) void refreshBootstrap(token, true);
       await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save.");
