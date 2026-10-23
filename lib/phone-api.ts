@@ -59,7 +59,14 @@ import { runChatTurn } from "@/lib/chat-turn";
 import { askAssistant, emailLandlord, extractPdfOrText, recordLog, runLeaseReview, sampleLeaseText, saveDepositAndDeadline } from "@/lib/workflow";
 
 function json(data: unknown, status = 200) {
-  return Response.json(data, { status });
+  return Response.json(data, {
+    status,
+    headers: {
+      "access-control-allow-origin": "*",
+      "access-control-allow-headers": "authorization, content-type",
+      "access-control-allow-methods": "GET, POST, OPTIONS",
+    },
+  });
 }
 
 async function readBody(request: Request): Promise<Record<string, unknown>> {

@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "async_hooks";
+import { env } from "cloudflare:workers";
 import postgres from "postgres";
 
 type Sql = ReturnType<typeof postgres>;
@@ -7,7 +8,12 @@ type Tx = postgres.TransactionSql;
 type Scope = { userId: string | null };
 
 const actors = new AsyncLocalStorage<Scope>();
+const requestClients = new AsyncLocalStorage<Sql>();
 let pool: Sql | null = null;
+
+function cloudflareRuntime(): boolean {
+  return typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers";
+}
 
 const connectionHint = "Use the Supabase Postgres URI (direct or session pooler, port 5432).";
 
@@ -26,30 +32,40 @@ export function databaseUrl(): string {
   return normalizeDatabaseUrl(url);
 }
 
-export function getSql(): Sql {
-  if (!pool) {
-    const url = databaseUrl();
-    const parsed = new URL(url);
-    const transactionPool = parsed.port === "6543" || parsed.searchParams.get("pgbouncer") === "true";
-    const cloudflare = typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers";
-    pool = postgres(url, {
-      max: cloudflare ? 1 : 8,
-      idle_timeout: 20,
-      connect_timeout: cloudflare ? 10 : 20,
-      fetch_types: !cloudflare,
-      prepare: !transactionPool,
-      onnotice: () => {},
-      types: {
-        bigint: {
-          to: 20,
-          from: [20],
-          parse: (value: string) => Number(value),
-          serialize: (value: number) => String(value),
-        },
+function createSql(url: string, hyperdrive: boolean): Sql {
+  const parsed = new URL(url);
+  const transactionPool = !hyperdrive && (parsed.port === "6543" || parsed.searchParams.get("pgbouncer") === "true");
+  return postgres(url, {
+    max: hyperdrive ? 1 : 8,
+    idle_timeout: 20,
+    connect_timeout: hyperdrive ? 10 : 20,
+    fetch_types: !hyperdrive,
+    prepare: hyperdrive ? false : !transactionPool,
+    ...(hyperdrive ? { ssl: false as const } : {}),
+    onnotice: () => {},
+    types: {
+      bigint: {
+        to: 20,
+        from: [20],
+        parse: (value: string) => Number(value),
+        serialize: (value: number) => String(value),
       },
-    });
+    },
+  });
+}
+
+export function getSql(): Sql {
+  if (!cloudflareRuntime()) {
+    if (!pool) pool = createSql(databaseUrl(), false);
+    return pool;
   }
-  return pool;
+  const current = requestClients.getStore();
+  if (current) return current;
+  const binding = env.HYPERDRIVE?.connectionString;
+  if (!binding) throw new Error("Database binding is not configured.");
+  const sql = createSql(binding, true);
+  requestClients.enterWith(sql);
+  return sql;
 }
 
 export async function closeSql(): Promise<void> {
@@ -243,14 +259,19 @@ export async function asUser<T>(userId: string, fn: () => Promise<T>): Promise<T
   return withActor(userId, fn);
 }
 
+function readResult(result: unknown): { rows: Record<string, unknown>[]; count: number } {
+  const rows = (result as Record<string, unknown>[]).map((row) => normalize(row) as Record<string, unknown>);
+  return { rows, count: Number((result as { count?: number }).count ?? rows.length) };
+}
+
 async function execute(sql: string, params: unknown[]): Promise<{ rows: Record<string, unknown>[]; count: number }> {
   const text = placeholders(sql);
   const userId = actors.getStore()?.userId ?? null;
-  return getSql().begin(async (tx) => {
+  const db = getSql();
+  if (!userId) return readResult(await db.unsafe(text, params as never[]));
+  return db.begin(async (tx) => {
     await applyRole(tx, userId);
-    const result = await tx.unsafe(text, params as never[]);
-    const rows = (result as unknown as Record<string, unknown>[]).map((row) => normalize(row) as Record<string, unknown>);
-    return { rows, count: Number((result as { count?: number }).count ?? rows.length) };
+    return readResult(await tx.unsafe(text, params as never[]));
   }) as Promise<{ rows: Record<string, unknown>[]; count: number }>;
 }
 

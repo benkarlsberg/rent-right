@@ -14,6 +14,7 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "."),
       "server-only": path.resolve(__dirname, "node_modules/server-only/empty.js"),
+      "cloudflare:workers": path.resolve(__dirname, "lib/cloudflare-workers-stub.ts"),
     },
   },
 });

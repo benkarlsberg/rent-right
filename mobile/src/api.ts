@@ -10,16 +10,30 @@ export function apiBase(): string {
   return "http://localhost:3000";
 }
 
+export function reachError(error: unknown): string {
+  const message = error instanceof Error ? error.message : "network error";
+  if (message === "Failed to fetch" || message === "Network request failed" || message === "Load failed") {
+    return "Could not reach Rent Right. The browser blocked the response or the connection failed. This is not a message from the server.";
+  }
+  return message;
+}
+
 export async function api<T = Record<string, unknown>>(path: string, options?: { method?: string; body?: unknown; token?: string | null }): Promise<T> {
   const headers: Record<string, string> = {};
   if (options?.body !== undefined) headers["content-type"] = "application/json";
   if (options?.token) headers.authorization = `Bearer ${options.token}`;
-  const response = await fetch(`${apiBase()}/api/v1/${path}`.replace(/\/$/, ""), {
-    method: options?.method || (options?.body !== undefined ? "POST" : "GET"),
-    headers,
-    body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
-  });
-  const data = (await response.json().catch(() => ({}))) as T & { error?: string };
-  if (!response.ok) throw new Error(data.error || "Something went wrong.");
+  let response: Response;
+  try {
+    response = await fetch(`${apiBase()}/api/v1/${path}`.replace(/\/$/, ""), {
+      method: options?.method || (options?.body !== undefined ? "POST" : "GET"),
+      headers,
+      body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
+    });
+  } catch (error) {
+    throw new Error(reachError(error));
+  }
+  const data = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
+  if (!response.ok) throw new Error(data?.error || `The server returned HTTP ${response.status}.`);
+  if (!data) throw new Error(`The server returned HTTP ${response.status} without a JSON body.`);
   return data;
 }
