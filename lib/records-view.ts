@@ -49,6 +49,8 @@ export type DeadlineCard = {
   status: string;
   sortOn: string;
   closed: boolean;
+  deletable: boolean;
+  legalNote: string | null;
 };
 
 export type LogCard = {
@@ -200,7 +202,12 @@ function cardFor(item: DeadlineInput, log: LogInput | null, locale: Locale, toda
       ? tx(locale, "Resolved", "Resuelto")
       : item.status === "replaced"
         ? tx(locale, "Replaced", "Reemplazado")
-        : tx(locale, "Open", "Abierto");
+        : item.status === "deleted"
+          ? tx(locale, "Deleted", "Eliminado")
+          : item.status === "dismissed"
+            ? tx(locale, "Dismissed", "Descartado")
+            : tx(locale, "Open", "Abierto");
+  const deletable = item.kind === "custom_reminder" || item.kind === "repair";
   return {
     id: item.id,
     kind: item.kind,
@@ -214,7 +221,15 @@ function cardFor(item: DeadlineInput, log: LogInput | null, locale: Locale, toda
     learnMore,
     status,
     sortOn: item.dueDate || item.tenantReminderOn || "",
-    closed: item.status === "done" || item.status === "resolved" || item.status === "replaced",
+    closed: item.status === "done" || item.status === "resolved" || item.status === "replaced" || item.status === "deleted" || item.status === "dismissed",
+    deletable,
+    legalNote: deletable
+      ? null
+      : tx(
+          locale,
+          "This date is a legal fact from the rules. It stays in your records. Dismiss hides it on Reminders. Mark done closes it.",
+          "Esta fecha es un dato legal de las reglas. Se queda en sus registros. Descartar la oculta en Recordatorios. Marcar como hecho la cierra.",
+        ),
   };
 }
 
@@ -550,6 +565,13 @@ export function recordsLabels(locale: Locale) {
     later: tx(locale, "Later", "Más adelante"),
     markDone: tx(locale, "Mark done", "Marcar como hecho"),
     nextStepsLink: tx(locale, "Your next steps are on Reminders", "Sus próximos pasos están en Recordatorios"),
+    deleteReminder: tx(locale, "Delete", "Eliminar"),
+    deleteConfirm: tx(locale, "Delete this reminder?", "¿Eliminar este recordatorio?"),
+    dismissReminder: tx(locale, "Dismiss", "Descartar"),
+    cancelAction: tx(locale, "Cancel", "Cancelar"),
+    undo: tx(locale, "Undo", "Deshacer"),
+    deletedToast: tx(locale, "Reminder deleted", "Recordatorio eliminado"),
+    dismissedToast: tx(locale, "Reminder dismissed", "Recordatorio descartado"),
   };
 }
 

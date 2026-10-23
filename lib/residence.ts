@@ -284,7 +284,9 @@ async function refreshOpenDeadlines(userId: string, unitId: string) {
   const deadlines = await listDeadlines(userId, unitId);
   const logs = await listLogs(userId, unitId);
   for (const item of deadlines) {
-    if (item.status !== "open" || item.kind === "custom_reminder") continue;
+    if (item.kind === "custom_reminder") continue;
+    const kept = item.status === "open" || (item.status === "dismissed" && item.kind !== "repair");
+    if (!kept) continue;
     let next: { ruleId: string; dueDate: string | null; explanation: string; explanationEs: string; computation: string; unsure: boolean } | null = null;
     if (item.kind === "repair") {
       const log = logs.find((entry) => entry.id === item.sourceId);

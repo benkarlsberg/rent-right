@@ -791,13 +791,14 @@ function timeText(value: unknown): string | null {
   return String(value);
 }
 
-export async function listDeadlines(userId: string, unitId: string): Promise<Deadline[]> {
-  await requireUnit(userId, unitId);
-  return (await all<{
-    id: string; unit_id: string; rule_id: string; kind: string; anchor_date: string | null; due_date: string | null;
-    explanation: string; explanation_es: string; computation: string; source_id: string | null; status: string;
-    unsure: number; tenant_reminder_on: string | null; created_at: string;
-  }>("select * from deadlines where unit_id = ? order by coalesce(due_date, tenant_reminder_on, '9999-12-31') asc", [unitId])).map((row) => ({
+type DeadlineRow = {
+  id: string; unit_id: string; rule_id: string; kind: string; anchor_date: string | null; due_date: string | null;
+  explanation: string; explanation_es: string; computation: string; source_id: string | null; status: string;
+  unsure: number; tenant_reminder_on: string | null; created_at: string;
+};
+
+function mapDeadline(row: DeadlineRow): Deadline {
+  return {
     id: row.id,
     unitId: row.unit_id,
     ruleId: row.rule_id,
@@ -812,7 +813,28 @@ export async function listDeadlines(userId: string, unitId: string): Promise<Dea
     unsure: isOn(row.unsure),
     tenantReminderOn: dateText(row.tenant_reminder_on),
     createdAt: row.created_at,
-  }));
+  };
+}
+
+export async function listDeadlines(userId: string, unitId: string): Promise<Deadline[]> {
+  await requireUnit(userId, unitId);
+  return (await all<DeadlineRow>(
+    "select * from deadlines where unit_id = ? order by coalesce(due_date, tenant_reminder_on, '9999-12-31') asc",
+    [unitId],
+  )).map(mapDeadline);
+}
+
+export async function getDeadline(userId: string, id: string): Promise<Deadline> {
+  const row = await one<DeadlineRow>("select * from deadlines where id = ?", [id]);
+  if (!row) throw new HttpError("Reminder not found.");
+  await requireWritable(userId, row.unit_id);
+  return mapDeadline(row);
+}
+
+export async function setReminderStatus(userId: string, id: string, status: "open" | "deleted" | "dismissed") {
+  await getDeadline(userId, id);
+  const result = await run("update deadlines set status = ? where id = ?", [status, id]);
+  if (!result.changes) throw new HttpError("Reminder not found.");
 }
 
 export async function updateLogResolution(userId: string, id: string, patch: {

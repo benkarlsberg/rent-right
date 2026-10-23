@@ -38,6 +38,8 @@ export type Records = {
     status: string;
     sortOn?: string;
     closed?: boolean;
+    deletable?: boolean;
+    legalNote?: string | null;
   }[];
   notes: { id: string; line: string; title: string; status: string; when: string; issue: string; message: string | null }[];
   issues?: {
@@ -108,6 +110,13 @@ export type Records = {
     later?: string;
     markDone?: string;
     nextStepsLink?: string;
+    deleteReminder?: string;
+    deleteConfirm?: string;
+    dismissReminder?: string;
+    cancelAction?: string;
+    undo?: string;
+    deletedToast?: string;
+    dismissedToast?: string;
   };
   reminderNote: string;
   packetFile: string;

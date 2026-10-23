@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/api";
@@ -31,6 +31,9 @@ export default function Reminders() {
   const [busy, setBusy] = useState(false);
   const [sheet, setSheet] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ id: string; text: string } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const es = me?.user.locale === "es" || (!me && data?.locale === "es");
   const labels = data?.labels;
@@ -103,6 +106,16 @@ export default function Reminders() {
 
   const canAdd = Boolean(token && data && !me?.needsUnit && !data.archived);
 
+  useEffect(() => () => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+  }, []);
+
+  function showToast(id: string, text: string) {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ id, text });
+    toastTimer.current = setTimeout(() => setToast(null), 5000);
+  }
+
   async function markDone(id: string) {
     if (!token || busy) return;
     try {
@@ -116,6 +129,62 @@ export default function Reminders() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function remove(id: string) {
+    if (!token || busy) return;
+    try {
+      setBusy(true);
+      setError("");
+      await api("records/reminder/delete", { token, body: { id } });
+      setConfirmId(null);
+      if (openId === id) setOpenId(null);
+      showToast(id, labels?.deletedToast || (es ? "Recordatorio eliminado" : "Reminder deleted"));
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete the reminder.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function dismiss(id: string) {
+    if (!token || busy) return;
+    try {
+      setBusy(true);
+      setError("");
+      await api("records/reminder/dismiss", { token, body: { id } });
+      setConfirmId(null);
+      if (openId === id) setOpenId(null);
+      showToast(id, labels?.dismissedToast || (es ? "Recordatorio descartado" : "Reminder dismissed"));
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not dismiss the reminder.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function undo(id: string) {
+    if (!token || busy) return;
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(null);
+    try {
+      setBusy(true);
+      setError("");
+      await api("records/reminder/restore", { token, body: { id } });
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not restore the reminder.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function askDelete(id: string) {
+    setEditing(null);
+    setOpenId(id);
+    setConfirmId(id);
   }
 
   const today = data?.today || "";
@@ -171,6 +240,10 @@ export default function Reminders() {
             {group.items.map((card) => {
           const open = openId === card.id;
           const line = card.due || card.reminder;
+          const deletable = card.deletable ?? (card.kind === "custom_reminder" || card.kind === "repair");
+          const confirming = confirmId === card.id;
+          const deleteLabel = labels?.deleteReminder || (es ? "Eliminar" : "Delete");
+          const dismissLabel = labels?.dismissReminder || (es ? "Descartar" : "Dismiss");
           return (
             <View key={card.id} style={styles.card}>
               <Pressable
@@ -178,7 +251,10 @@ export default function Reminders() {
                 accessibilityRole="button"
                 accessibilityState={{ expanded: open }}
                 accessibilityLabel={card.title}
-                onPress={() => setOpenId(open ? null : card.id)}
+                onPress={() => {
+                  setConfirmId(null);
+                  setOpenId(open ? null : card.id);
+                }}
               >
                 <View style={styles.rowText}>
                   <Text style={styles.cardTitle}>{card.title}</Text>
@@ -194,33 +270,71 @@ export default function Reminders() {
                   {card.owes ? <Text style={styles.body}>{card.owes}</Text> : null}
                   {card.due && card.reminder ? <Text style={styles.body}>{card.reminder}</Text> : null}
                   {card.aside ? <Text style={styles.body}>{card.aside}</Text> : null}
+                  {!deletable && card.legalNote ? <Text style={styles.body}>{card.legalNote}</Text> : null}
                   {card.learnMore ? <LearnMore label={labels?.learnMore} hideLabel={labels?.hide}>{card.learnMore}</LearnMore> : null}
-                  {labels && !data?.archived ? (
-                    editing === card.id ? (
-                      <View>
-                        <DateField label={labels.dateLabel} value={draftDate} onChange={setDraftDate} />
-                        <Button label={labels.saveReminder} onPress={() => saveDate(card.id, draftDate)} disabled={busy} />
-                      </View>
-                    ) : (
-                      <Button
-                        label={labels.editReminder}
-                        ghost
-                        onPress={() => {
-                          setEditing(card.id);
-                          setDraftDate(card.reminderOn || "");
-                        }}
-                      />
-                    )
-                  ) : null}
-                  {labels?.markDone && !data?.archived ? (
-                    <Button label={labels.markDone} ghost onPress={() => markDone(card.id)} disabled={busy} />
-                  ) : null}
+                  {confirming ? (
+                    <View accessibilityRole="alert">
+                      <Text style={styles.confirm}>{labels?.deleteConfirm || (es ? "¿Eliminar este recordatorio?" : "Delete this reminder?")}</Text>
+                      <Pressable
+                        style={styles.danger}
+                        accessibilityRole="button"
+                        accessibilityLabel={deleteLabel}
+                        disabled={busy}
+                        onPress={() => void remove(card.id)}
+                      >
+                        <Text style={styles.dangerText}>{deleteLabel}</Text>
+                      </Pressable>
+                      <Button label={labels?.cancelAction || (es ? "Cancelar" : "Cancel")} ghost onPress={() => setConfirmId(null)} disabled={busy} />
+                    </View>
+                  ) : (
+                    <>
+                      {labels && !data?.archived ? (
+                        editing === card.id ? (
+                          <View>
+                            <DateField label={labels.dateLabel} value={draftDate} onChange={setDraftDate} />
+                            <Button label={labels.saveReminder} onPress={() => saveDate(card.id, draftDate)} disabled={busy} />
+                          </View>
+                        ) : (
+                          <Button
+                            label={labels.editReminder}
+                            ghost
+                            onPress={() => {
+                              setEditing(card.id);
+                              setDraftDate(card.reminderOn || "");
+                            }}
+                          />
+                        )
+                      ) : null}
+                      {labels?.markDone && !data?.archived ? (
+                        <Button label={labels.markDone} ghost onPress={() => markDone(card.id)} disabled={busy} />
+                      ) : null}
+                      {!data?.archived && deletable ? (
+                        <Button label={deleteLabel} ghost onPress={() => askDelete(card.id)} disabled={busy} />
+                      ) : null}
+                      {!data?.archived && !deletable ? (
+                        <Button label={dismissLabel} ghost onPress={() => void dismiss(card.id)} disabled={busy} />
+                      ) : null}
+                    </>
+                  )}
                 </View>
               ) : null}
-              {labels?.markDone && !data?.archived && !open ? (
-                <Pressable style={styles.linkHit} accessibilityRole="button" accessibilityLabel={labels.markDone} onPress={() => markDone(card.id)}>
-                  <Text style={styles.addText}>{labels.markDone}</Text>
-                </Pressable>
+              {!data?.archived && !open ? (
+                <View style={styles.actions}>
+                  {labels?.markDone ? (
+                    <Pressable style={styles.linkHit} accessibilityRole="button" accessibilityLabel={labels.markDone} onPress={() => markDone(card.id)}>
+                      <Text style={styles.addText}>{labels.markDone}</Text>
+                    </Pressable>
+                  ) : null}
+                  {deletable ? (
+                    <Pressable style={styles.linkHit} accessibilityRole="button" accessibilityLabel={deleteLabel} onPress={() => askDelete(card.id)}>
+                      <Text style={styles.deleteText}>{deleteLabel}</Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable style={styles.linkHit} accessibilityRole="button" accessibilityLabel={dismissLabel} onPress={() => void dismiss(card.id)}>
+                      <Text style={styles.addText}>{dismissLabel}</Text>
+                    </Pressable>
+                  )}
+                </View>
               ) : null}
             </View>
           );
@@ -248,6 +362,19 @@ export default function Reminders() {
           </View>
         </View>
       ) : null}
+      {toast ? (
+        <View style={styles.toast} accessibilityRole="alert" accessibilityLiveRegion="polite">
+          <Text style={styles.toastText}>{toast.text}</Text>
+          <Pressable
+            style={styles.toastHit}
+            accessibilityRole="button"
+            accessibilityLabel={labels?.undo || (es ? "Deshacer" : "Undo")}
+            onPress={() => void undo(toast.id)}
+          >
+            <Text style={styles.toastAction}>{labels?.undo || (es ? "Deshacer" : "Undo")}</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -263,7 +390,16 @@ const styles = StyleSheet.create({
   empty: { ...wrapText, marginTop: 16, color: colors.mute, fontSize: 15, lineHeight: 21 },
   group: { ...wrapText, marginTop: 16, fontSize: 13, lineHeight: 18, color: colors.mute, fontWeight: "700" },
   groupOverdue: { color: colors.bad },
-  linkHit: { minHeight: 44, justifyContent: "center" },
+  linkHit: { minHeight: 44, justifyContent: "center", paddingRight: 12 },
+  actions: { flexDirection: "row", alignItems: "center", flexWrap: "wrap" },
+  deleteText: { color: colors.bad, fontSize: 14, fontWeight: "700" },
+  confirm: { ...wrapText, fontSize: 16, lineHeight: 22, color: colors.ink, fontWeight: "700", marginTop: 12 },
+  danger: { backgroundColor: colors.bad, borderRadius: 14, minHeight: 48, alignItems: "center", justifyContent: "center", paddingHorizontal: 18, marginTop: 12 },
+  dangerText: { color: "white", fontWeight: "700", fontSize: 16 },
+  toast: { position: "absolute", left: 16, right: 16, bottom: 12, backgroundColor: colors.pine, borderRadius: 14, minHeight: 48, flexDirection: "row", alignItems: "center", paddingHorizontal: 14, gap: 8 },
+  toastText: { ...wrapText, flex: 1, color: "white", fontSize: 15, lineHeight: 20, fontWeight: "600" },
+  toastHit: { minHeight: 44, justifyContent: "center", paddingHorizontal: 8 },
+  toastAction: { color: "white", fontSize: 15, fontWeight: "700" },
   card: { backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.line, marginTop: 10, paddingHorizontal: 12, paddingVertical: 10 },
   row: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 44 },
   rowText: { flex: 1, minWidth: 0 },

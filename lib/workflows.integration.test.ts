@@ -2,11 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { handlePhone } from "@/lib/phone-api";
 import { sampleLeaseText } from "@/lib/workflow";
 import { dispatchReminders } from "@/lib/workflow";
-import { getSql } from "@/lib/pg";
+import { getSql, run, withActor } from "@/lib/pg";
 import { DEMO_EMAIL, startSampleTenancy } from "@/lib/seed";
-import { getUser } from "@/lib/db";
+import { getUser, getUserByEmail } from "@/lib/db";
 import { GET as packetPdf } from "@/app/api/packet/route";
-import { todayISO } from "@/lib/rules/dates";
+import { addDays, todayISO } from "@/lib/rules/dates";
 
 const auth = vi.hoisted(() => ({ authorization: "" }));
 
@@ -281,6 +281,182 @@ describe("renter workflows", () => {
     expect(slots.map((row) => row.slot)).toContain(`nudge:${today}`);
     const still = await getSql()<{ due: string }[]>`select due_date::text as due from deadlines where id = ${repair!.id}`;
     expect(still[0]?.due).toBe(before[0]?.due);
+  });
+
+  it("deletes a tenant reminder, dismisses a legal date, and keeps the audit row", async () => {
+    const email = `drop-${Date.now()}@example.com`;
+    const magic = await api("POST", "auth/magic", { email });
+    const session = await api("POST", "auth/verify", { token: magic.json?.devToken });
+    const token = String(session.json?.token);
+    await api("POST", "unit", {
+      name: "Ada Tenant",
+      street: "10 Main St",
+      city: "Los Angeles",
+      postalCode: "90026",
+      landlordName: "Pat Landlord",
+      landlordEmail: "pat@example.com",
+      rent: "2000",
+    }, token);
+    const today = todayISO();
+    await api("POST", "thread", { text: "My sink is leaking" }, token);
+    await api("POST", "records/reminder/new", { label: "Call about the sink", date: today }, token);
+    await api("POST", "deposit", { amount: "1500", moveOutDate: addDays(today, -21) }, token);
+    await api("POST", "log", {
+      type: "notice_received",
+      noticeKind: "pay_or_quit_3day",
+      description: "A 3-day notice was posted on the door.",
+      eventDate: today,
+    }, token);
+
+    const spanish = await api("POST", "settings", { locale: "es" }, token);
+    expect(spanish.status).toBe(200);
+    const esRecords = await api("GET", "records", undefined, token);
+    const esLabels = esRecords.json?.labels as { deleteConfirm: string; dismissReminder: string; undo: string };
+    expect(esLabels.deleteConfirm).toBe("¿Eliminar este recordatorio?");
+    expect(esLabels.dismissReminder).toBe("Descartar");
+    expect(esLabels.undo).toBe("Deshacer");
+    const esCards = esRecords.json?.deadlines as { kind: string; deletable: boolean; legalNote: string | null }[];
+    expect(esCards.find((item) => item.kind === "deposit")?.legalNote).toMatch(/dato legal/);
+    expect(esCards.find((item) => item.kind === "custom_reminder")?.deletable).toBe(true);
+    expect(esCards.find((item) => item.kind === "repair")?.deletable).toBe(true);
+    await api("POST", "settings", { locale: "en" }, token);
+
+    const records = await api("GET", "records", undefined, token);
+    const cards = records.json?.deadlines as { id: string; kind: string; deletable: boolean; legalNote: string | null }[];
+    const repair = cards.find((item) => item.kind === "repair");
+    const custom = cards.find((item) => item.kind === "custom_reminder");
+    const deposit = cards.find((item) => item.kind === "deposit");
+    const notice = cards.find((item) => item.kind === "notice_3day");
+    expect(repair?.deletable).toBe(true);
+    expect(custom?.deletable).toBe(true);
+    expect(deposit?.deletable).toBe(false);
+    expect(deposit?.legalNote).toMatch(/legal fact/);
+    expect(notice?.deletable).toBe(false);
+    const depositBefore = await getSql()<{ due: string; status: string }[]>`
+      select due_date::text as due, status from deadlines where id = ${deposit!.id}
+    `;
+    const repairBefore = await getSql()<{ due: string }[]>`select due_date::text as due from deadlines where id = ${repair!.id}`;
+
+    await getSql()`
+      update deadlines
+      set due_date = ${today}, tenant_reminder_on = ${today}
+      where id = ${repair!.id}
+    `;
+    const blockedDeposit = await api("POST", "records/reminder/delete", { id: deposit!.id }, token);
+    expect(blockedDeposit.status).toBe(400);
+    expect(blockedDeposit.json?.error).toMatch(/Dismiss it from Reminders/);
+    const blockedNotice = await api("POST", "records/reminder/delete", { id: notice!.id }, token);
+    expect(blockedNotice.status).toBe(400);
+    const depositStill = await getSql()<{ due: string; status: string }[]>`
+      select due_date::text as due, status from deadlines where id = ${deposit!.id}
+    `;
+    expect(depositStill[0]?.status).toBe("open");
+    expect(depositStill[0]?.due).toBe(depositBefore[0]?.due);
+
+    const dismissed = await api("POST", "records/reminder/dismiss", { id: deposit!.id }, token);
+    expect(dismissed.status).toBe(200);
+    expect((dismissed.json?.deadlines as { id: string }[]).some((item) => item.id === deposit!.id)).toBe(false);
+    await api("POST", "records/reminder/dismiss", { id: notice!.id }, token);
+    const deletedRepair = await api("POST", "records/reminder/delete", { id: repair!.id }, token);
+    expect(deletedRepair.status).toBe(200);
+    expect((deletedRepair.json?.deadlines as { id: string }[]).some((item) => item.id === repair!.id)).toBe(false);
+    const deletedCustom = await api("POST", "records/reminder/delete", { id: custom!.id }, token);
+    expect(deletedCustom.status).toBe(200);
+
+    const stored = await getSql()<{ id: string; status: string; due: string | null; nudge: string | null }[]>`
+      select id, status, due_date::text as due, tenant_reminder_on::text as nudge from deadlines
+    `;
+    const repairRow = stored.find((row) => row.id === repair!.id);
+    const customRow = stored.find((row) => row.id === custom!.id);
+    const depositRow = stored.find((row) => row.id === deposit!.id);
+    expect(repairRow?.status).toBe("deleted");
+    expect(repairRow?.due).toBe(today);
+    expect(repairBefore[0]?.due).toBeTruthy();
+    expect(customRow?.status).toBe("deleted");
+    expect(customRow?.nudge).toBe(today);
+    expect(depositRow?.status).toBe("dismissed");
+    expect(depositRow?.due).toBe(depositBefore[0]?.due);
+
+    const slotCount = async () => {
+      const rows = await getSql()<{ n: number }[]>`
+        select count(*)::int as n from reminder_sent
+        where deadline_id = ${repair!.id}
+           or deadline_id = ${custom!.id}
+           or deadline_id = ${deposit!.id}
+           or deadline_id = ${notice!.id}
+      `;
+      return rows[0]?.n ?? 0;
+    };
+    const noteCount = async () => {
+      const rows = await getSql()<{ n: number }[]>`select count(*)::int as n from notifications`;
+      return rows[0]?.n ?? 0;
+    };
+    const slotsBefore = await slotCount();
+    const notesBefore = await noteCount();
+    expect(await dispatchReminders(today)).toBe(0);
+    expect(await slotCount()).toBe(slotsBefore);
+    expect(await noteCount()).toBe(notesBefore);
+
+    const audit = await getSql()<{ description: string; flags: string; created_at: Date | string }[]>`
+      select description, flags::text as flags, created_at
+      from log_entries
+      where type = 'issue_event'
+      order by created_at asc
+    `;
+    const events = audit.map((row) => {
+      const parsed = JSON.parse(row.flags) as { event?: string } | string;
+      const flags = typeof parsed === "string" ? JSON.parse(parsed) as { event?: string } : parsed;
+      return flags.event;
+    });
+    expect(events).toEqual([
+      "reminder_dismissed",
+      "reminder_dismissed",
+      "reminder_deleted",
+      "reminder_deleted",
+    ]);
+    expect(audit[2]?.description).toMatch(/Follow-up reminder/);
+    expect(audit[3]?.description).toMatch(/Call about the sink/);
+    for (const row of audit) {
+      const at = row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at);
+      expect(at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    }
+
+    const restored = await api("POST", "records/reminder/restore", { id: custom!.id }, token);
+    expect(restored.status).toBe(200);
+    const back = (restored.json?.deadlines as { id: string; reminder: string | null }[]).find((item) => item.id === custom!.id);
+    expect(back?.reminder).toMatch(/^Your reminder: /);
+    const afterUndo = await getSql()<{ flags: string }[]>`
+      select flags::text as flags from log_entries where type = 'issue_event' order by created_at asc
+    `;
+    const afterEvents = afterUndo.map((row) => {
+      const parsed = JSON.parse(row.flags) as { event?: string } | string;
+      const flags = typeof parsed === "string" ? JSON.parse(parsed) as { event?: string } : parsed;
+      return flags.event;
+    });
+    expect(afterEvents).toContain("reminder_deleted");
+    expect(afterEvents[afterEvents.length - 1]).toBe("reminder_restored");
+
+    const otherEmail = `other-${Date.now()}@example.com`;
+    const otherMagic = await api("POST", "auth/magic", { email: otherEmail });
+    const otherSession = await api("POST", "auth/verify", { token: otherMagic.json?.devToken });
+    const otherToken = String(otherSession.json?.token);
+    await api("POST", "unit", {
+      name: "Other Tenant",
+      street: "20 Other St",
+      city: "Los Angeles",
+      postalCode: "90026",
+      landlordName: "Other Landlord",
+      landlordEmail: "other@example.com",
+      rent: "1800",
+    }, otherToken);
+    const denied = await api("POST", "records/reminder/delete", { id: custom!.id }, otherToken);
+    expect(denied.status).toBe(400);
+    expect(denied.json?.error).toBe("Reminder not found.");
+    const stranger = await getUserByEmail(otherEmail);
+    const rls = await withActor(stranger!.id, () => run("update deadlines set status = 'deleted' where id = ?", [custom!.id]));
+    expect(rls.changes).toBe(0);
+    const untouched = await getSql()<{ status: string }[]>`select status from deadlines where id = ${custom!.id}`;
+    expect(untouched[0]?.status).toBe("open");
   });
 
   it("keeps the same unit email on a typo, archives a move, and never emails the landlord", async () => {

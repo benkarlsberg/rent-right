@@ -80,6 +80,7 @@ import { runChatTurn } from "@/lib/chat-turn";
 import { drainRoundTrips, withActor } from "@/lib/pg";
 import { archivedNote, previewResidence, residencePayload, saveResidence, selectResidence } from "@/lib/residence";
 import { issueHistory, issueSummary, reopenRepair, resolveRepair } from "@/lib/issues";
+import { deleteReminder, dismissReminder, restoreReminder } from "@/lib/reminders";
 import { askAssistant, emailLandlord, extractPdfOrText, recordLog, runLeaseReview, sampleLeaseText, saveDepositAndDeadline } from "@/lib/workflow";
 
 function json(data: unknown, status = 200) {
@@ -388,6 +389,9 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "POST" && key === "records/done") return json(await markReminderDone(await readBody(request)));
   if (method === "POST" && key === "records/reminder") return json(await saveReminder(await readBody(request)));
   if (method === "POST" && key === "records/reminder/new") return json(await addReminder(await readBody(request)));
+  if (method === "POST" && key === "records/reminder/delete") return json(await deletePostedReminder(await readBody(request)));
+  if (method === "POST" && key === "records/reminder/dismiss") return json(await dismissPostedReminder(await readBody(request)));
+  if (method === "POST" && key === "records/reminder/restore") return json(await restorePostedReminder(await readBody(request)));
   if (method === "POST" && key === "records/resolve") return json(await resolvePosted(await readBody(request)));
   if (method === "POST" && key === "records/reopen") return json(await reopenPosted(await readBody(request)));
   if (method === "POST" && key === "thread") return json(await postThread(await readBody(request)));
@@ -689,7 +693,8 @@ async function depositPayload() {
   const { user, unit } = await withUnit();
   const locale = user.locale;
   const deposit = await getDeposit(user.id, unit.id);
-  const deadline = (await listDeadlines(user.id, unit.id)).find((item) => item.kind === "deposit" && item.status === "open");
+  const depositDates = (await listDeadlines(user.id, unit.id)).filter((item) => item.kind === "deposit" && (item.status === "open" || item.status === "dismissed"));
+  const deadline = depositDates.find((item) => item.status === "open") || depositDates[0];
   const line = dueLine(deadline?.dueDate || null, todayISO(), locale);
   return {
     title: deadline ? line.title : tx(locale, "No move-out date", "Sin fecha de salida"),
@@ -965,7 +970,12 @@ async function recordsBundle(user: User, unit: NonNullable<Awaited<ReturnType<ty
   }));
   const mail = Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM);
   return {
-    deadlines: deadlineCards(deadlineInput.filter((item) => item.status !== "resolved"), logInput, locale, today),
+    deadlines: deadlineCards(
+      deadlineInput.filter((item) => item.status !== "resolved" && item.status !== "deleted" && item.status !== "dismissed"),
+      logInput,
+      locale,
+      today,
+    ),
     notes: logCards(logInput.filter((item) => item.type !== "repair" && item.type !== "issue_event"), messageInput, locale).slice(0, 20),
     issues: board.open,
     archive: board.archive,
@@ -1089,6 +1099,30 @@ async function addReminder(input: Record<string, unknown>) {
   const date = reminderDate(input.date, user.locale, true);
   if (!date) throw new Error(tx(user.locale, "Enter a date.", "Escriba una fecha."));
   await insertCustomReminder(user.id, unit.id, label, date);
+  return recordsPayload();
+}
+
+async function deletePostedReminder(input: Record<string, unknown>) {
+  const { user } = await withUnit();
+  const id = text(input.id);
+  if (!id) throw new Error(tx(user.locale, "Choose a reminder.", "Elija un recordatorio."));
+  await deleteReminder(user, id);
+  return recordsPayload();
+}
+
+async function dismissPostedReminder(input: Record<string, unknown>) {
+  const { user } = await withUnit();
+  const id = text(input.id);
+  if (!id) throw new Error(tx(user.locale, "Choose a reminder.", "Elija un recordatorio."));
+  await dismissReminder(user, id);
+  return recordsPayload();
+}
+
+async function restorePostedReminder(input: Record<string, unknown>) {
+  const { user } = await withUnit();
+  const id = text(input.id);
+  if (!id) throw new Error(tx(user.locale, "Choose a reminder.", "Elija un recordatorio."));
+  await restoreReminder(user, id);
   return recordsPayload();
 }
 
