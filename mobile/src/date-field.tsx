@@ -2,7 +2,7 @@ import { Platform, StyleSheet, Text, TextInput, View } from "react-native";
 import { createElement } from "react";
 import { colors } from "@/theme";
 
-export function DateField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+export function DateField({ label, value, onChange, min, max }: { label: string; value: string; onChange: (value: string) => void; min?: string; max?: string }) {
   if (Platform.OS === "web") {
     return (
       <View style={styles.field}>
@@ -10,6 +10,8 @@ export function DateField({ label, value, onChange }: { label: string; value: st
         {createElement("input", {
           type: "date",
           value,
+          min,
+          max,
           "aria-label": label,
           onChange: (event: { target: { value: string } }) => onChange(event.target.value || ""),
           style: {

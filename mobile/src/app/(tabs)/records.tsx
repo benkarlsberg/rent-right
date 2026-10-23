@@ -1,40 +1,66 @@
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { SvgXml } from "react-native-svg";
 import { api } from "@/api";
-import { DateField } from "@/date-field";
 import { DeleteAccount } from "@/delete-account";
 import { saveAuthorizedFile } from "@/files";
-import { NextSteps, type StepItem } from "@/next-steps";
+import { LanguageToggle } from "@/language-toggle";
+import type { StepItem } from "@/next-steps";
+import { ResolvePanel } from "@/resolve-panel";
 import type { Me, Notice } from "@/session";
 import { useSession } from "@/session";
 import { colors } from "@/theme";
-import { LanguageToggle } from "@/language-toggle";
-import { Button, Card, ErrorLine, Field, H1, LearnMore, Muted, Page, wrapText } from "@/ui";
+import { Button, ErrorLine, clipX, wrapText } from "@/ui";
 import { useLoad } from "@/use-load";
 
-type DeadlineCard = {
-  id: string;
-  kind: string;
-  title: string;
-  started: string;
-  owes: string;
-  due: string | null;
-  reminder: string | null;
-  aside: string | null;
-  reminderOn: string | null;
-  learnMore: string;
-  status: string;
-};
+type Segment = "issues" | "documents" | "evidence";
 
-type Records = {
+export type Records = {
   name: string;
   address: string;
   sample: boolean;
   locale: "en" | "es";
   notice: Notice;
-  deadlines: DeadlineCard[];
+  deadlines: {
+    id: string;
+    kind: string;
+    title: string;
+    started: string;
+    owes: string;
+    due: string | null;
+    reminder: string | null;
+    aside: string | null;
+    reminderOn: string | null;
+    learnMore: string;
+    status: string;
+  }[];
   notes: { id: string; line: string; title: string; status: string; when: string; issue: string; message: string | null }[];
+  issues?: {
+    id: string;
+    title: string;
+    status: string;
+    when: string;
+    reported?: string;
+    issue: string;
+    message: string | null;
+    pending: boolean;
+    pendingTitle: string | null;
+    pendingNote: string | null;
+    earliest: string;
+  }[];
+  archive?: {
+    id: string;
+    title: string;
+    reported: string;
+    resolved: string;
+    duration: string;
+    summary: string;
+    source: string | null;
+    note: string | null;
+  }[];
+  today?: string;
   steps: { title: string; held: string; items: StepItem[] };
   lease: { filename: string; headline: string; detail: string } | null;
   labels: {
@@ -49,6 +75,31 @@ type Records = {
     packetBody: string;
     learnMore: string;
     hide: string;
+    openTitle?: string;
+    markResolved?: string;
+    confirmResolved?: string;
+    resolutionNote?: string;
+    resolutionDate?: string;
+    reopen?: string;
+    history?: string;
+    archiveTitle?: string;
+    issues?: string;
+    documents?: string;
+    evidence?: string;
+    reminders?: string;
+    change?: string;
+    seeAll?: string;
+    addButton?: string;
+    photos?: string;
+    notes?: string;
+    emptyIssues?: string;
+    emptyDocs?: string;
+    emptyReminders?: string;
+    account?: string;
+    logOut?: string;
+    menu?: string;
+    downloadData?: string;
+    close?: string;
   };
   reminderNote: string;
   packetFile: string;
@@ -56,19 +107,28 @@ type Records = {
   archivedNote?: string | null;
 };
 
+const gearXml = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.2" stroke="#0B5C6E" stroke-width="1.8"/><path d="M12 2.6v2.2M12 19.2v2.2M4.2 6.2l1.9 1.1M17.9 16.7l1.9 1.1M4.2 17.8l1.9-1.1M17.9 7.3l1.9-1.1M2.6 12h2.2M19.2 12h2.2" stroke="#0B5C6E" stroke-width="1.8" stroke-linecap="round"/></svg>`;
+
+function Gear() {
+  return <SvgXml xml={gearXml} width={22} height={22} />;
+}
+
 export default function Records() {
   const { data, error, reload, token, setError } = useLoad<Records>("records");
   const { me, signIn, signOut } = useSession();
-  const [editing, setEditing] = useState<string | null>(null);
-  const [draftDate, setDraftDate] = useState("");
-  const [customLabel, setCustomLabel] = useState("");
-  const [customDate, setCustomDate] = useState("");
-  const [held, setHeld] = useState("");
   const [busy, setBusy] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [openIssue, setOpenIssue] = useState<string | null>(null);
+  const [openNote, setOpenNote] = useState<string | null>(null);
+  const [openArchive, setOpenArchive] = useState<string | null>(null);
+  const [section, setSection] = useState<Segment>("issues");
+  const [menu, setMenu] = useState(false);
   const [pendingLocale, setPendingLocale] = useState<"en" | "es" | null>(null);
   useFocusEffect(useCallback(() => { void reload(); }, [reload]));
 
   const locale: "en" | "es" = pendingLocale ?? (me?.user.locale === "es" || (!me && data?.locale === "es") ? "es" : "en");
+  const labels = data?.labels;
+  const es = locale === "es";
 
   async function language(next: "en" | "es") {
     if (!token || !me || next === locale) return;
@@ -94,176 +154,324 @@ export default function Records() {
     }
   }
 
-  async function onStep(step: StepItem) {
-    if (step.action === "wait") {
-      setHeld(data?.steps.held || "Nothing was sent.");
-      return;
-    }
-    if (step.action === "followup" || step.action === "send") {
-      router.push("/landlord");
-      return;
-    }
-    if (step.action === "export") {
-      await download();
-      return;
-    }
-    if (step.action === "small_claims" && step.href) {
-      await Linking.openURL(step.href);
-    }
-  }
-
-  async function saveDate(id: string, date: string) {
-    if (!token || busy) return;
-    if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      setError(data?.locale === "es" ? "Use una fecha real." : "Use a real date.");
-      return;
-    }
-    try {
-      setBusy(true);
-      setError("");
-      await api("records/reminder", { token, body: { id, date } });
-      setEditing(null);
-      await reload();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save the reminder.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function addCustom() {
+  async function resolveIssue(id: string, input: { note: string; date: string }, source: "landlord" | null) {
     if (!token || busy || !data) return;
-    if (!customLabel.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(customDate)) {
-      setError(data.locale === "es" ? "Escriba para qué es y una fecha." : "Say what it is for, and enter a date.");
+    if (input.date && !/^\d{4}-\d{2}-\d{2}$/.test(input.date)) {
+      setError(es ? "Use una fecha real." : "Use a real date.");
       return;
     }
     try {
       setBusy(true);
       setError("");
-      await api("records/reminder/new", { token, body: { label: customLabel.trim(), date: customDate } });
-      setCustomLabel("");
-      setCustomDate("");
+      await api("records/resolve", { token, body: { id, note: input.note, date: input.date, source } });
+      setOpenIssue(null);
       await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not add the reminder.");
+      setError(err instanceof Error ? err.message : "Could not resolve the request.");
     } finally {
       setBusy(false);
     }
   }
 
-  const labels = data?.labels;
+  async function reopenIssue(id: string) {
+    if (!token || busy) return;
+    try {
+      setBusy(true);
+      setError("");
+      await api("records/reopen", { token, body: { id } });
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not reopen the request.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const issues = data?.issues || [];
+  const archive = data?.archive || [];
+  const notes = data?.notes || [];
+  const address = data?.address || (me?.needsUnit ? (es ? "Agregue su vivienda cuando pueda." : "Add your place when you are ready.") : (es ? "Sus solicitudes, documentos y evidencia." : "Your requests, documents, and evidence."));
 
   return (
-    <Page onRefresh={reload}>
-      <H1>{data?.name || "Records"}</H1>
-      <Muted>{data?.address || (me?.needsUnit ? "Add your place when you are ready." : "Notes, your lease, and dates live here.")}</Muted>
-      {data?.archivedNote ? <Muted>{data.archivedNote}</Muted> : null}
-      {me?.needsUnit ? <Button label="Add your place" onPress={() => router.push("/setup")} /> : null}
-      {data?.sample ? <Text style={styles.sample}>Sample</Text> : null}
-      <ErrorLine message={error} />
-      {data || me ? <LanguageToggle locale={locale} onChange={(next) => void language(next)} /> : null}
-      {data?.steps ? <NextSteps title={data.steps.title} steps={data.steps.items} note={held} onAction={onStep} /> : null}
-      {data?.deadlines.map((card) => (
-        <Card key={card.id}>
-          <Text style={styles.cardTitle}>{card.title}</Text>
-          <Text style={styles.cardStatus}>{card.status}</Text>
-          <Text style={styles.cardBody}>{card.started}</Text>
-          <Text style={styles.cardBody}>{card.owes}</Text>
-          {card.due ? <Text style={styles.due}>{card.due}</Text> : null}
-          {card.reminder ? <Text style={styles.reminder}>{card.reminder}</Text> : null}
-          {card.aside ? <Text style={styles.cardBody}>{card.aside}</Text> : null}
-          {card.learnMore ? <LearnMore label={labels?.learnMore} hideLabel={labels?.hide}>{card.learnMore}</LearnMore> : null}
-          {labels && !data?.archived ? (
-            <Pressable
-              style={styles.textButton}
-              accessibilityRole="button"
-              accessibilityLabel={labels.editReminder}
-              onPress={() => {
-                setEditing(editing === card.id ? null : card.id);
-                setDraftDate(card.reminderOn || "");
-              }}
-            >
-              <Text style={styles.textButtonLabel}>{labels.editReminder}</Text>
+    <SafeAreaView style={styles.screen} edges={["top"]}>
+      <View style={styles.header}>
+        <View style={styles.headerText}>
+          <Text style={styles.address}>{address}</Text>
+          {data?.sample ? <Text style={styles.sample}>{es ? "Muestra" : "Sample"}</Text> : null}
+          {data?.archivedNote ? <Text style={styles.note}>{data.archivedNote}</Text> : null}
+          {me?.needsUnit ? (
+            <Pressable style={styles.linkHit} accessibilityRole="button" accessibilityLabel={es ? "Agregar su vivienda" : "Add your place"} onPress={() => router.push("/setup")}>
+              <Text style={styles.link}>{es ? "Agregar su vivienda" : "Add your place"}</Text>
+            </Pressable>
+          ) : data?.address ? (
+            <Pressable style={styles.linkHit} accessibilityRole="link" accessibilityLabel={labels?.change || (es ? "Cambiar" : "Change")} onPress={() => router.push("/residence")}>
+              <Text style={styles.link}>{labels?.change || (es ? "Cambiar" : "Change")}</Text>
             </Pressable>
           ) : null}
-          {editing === card.id && labels ? (
-            <View>
-              <DateField label={labels.dateLabel} value={draftDate} onChange={setDraftDate} />
-              <Button label={labels.saveReminder} onPress={() => saveDate(card.id, draftDate)} disabled={busy} />
-            </View>
-          ) : null}
-        </Card>
-      ))}
-      {data && labels && !me?.needsUnit && !data.archived ? (
-        <Card>
-          <Text style={styles.cardTitle}>{labels.addTitle}</Text>
-          <Text style={styles.cardBody}>{labels.addHelp}</Text>
-          <Text style={styles.cardBody}>{data.reminderNote}</Text>
-          <Field label={labels.reminderFor} value={customLabel} onChange={setCustomLabel} />
-          <DateField label={labels.dateLabel} value={customDate} onChange={setCustomDate} />
-          <Button label={labels.saveReminder} onPress={addCustom} disabled={busy} />
-        </Card>
-      ) : null}
-      {data?.notes.map((note) => (
-        <Card key={note.id}>
-          <Text style={styles.cardTitle}>{note.title}</Text>
-          <Text style={styles.cardStatus}>{note.status}</Text>
-          <Text style={styles.cardBody}>{note.when}</Text>
-          <Text style={styles.cardBody}>{note.issue}</Text>
-          {note.message ? <Text style={styles.cardBody}>{note.message}</Text> : null}
-        </Card>
-      ))}
-      {data?.lease ? (
-        <Card>
-          <Text style={styles.cardTitle}>{data.lease.filename}</Text>
-          <Text style={styles.cardStatus}>{data.lease.headline}</Text>
-          {data.lease.detail ? <LearnMore label={labels?.learnMore} hideLabel={labels?.hide}>{data.lease.detail}</LearnMore> : null}
-        </Card>
-      ) : null}
-      {data && labels ? (
-        <Card>
-          <Text style={styles.cardTitle}>{labels.packetTitle}</Text>
-          <Text style={styles.cardBody}>{labels.packetBody}</Text>
-          <Button label={labels.exportLabel} onPress={download} />
-        </Card>
-      ) : null}
-      {token ? (
-        <>
+        </View>
+        {token ? (
           <Pressable
-            style={styles.textButton}
+            style={styles.gear}
             accessibilityRole="button"
-            accessibilityLabel="Log out"
-            onPress={async () => { await signOut(); router.replace("/"); }}
+            accessibilityLabel={labels?.menu || (es ? "Menú de la cuenta" : "Account menu")}
+            accessibilityState={{ expanded: menu }}
+            onPress={() => setMenu(true)}
           >
-            <Text style={styles.textButtonLabel}>Log out</Text>
+            <Gear />
           </Pressable>
-          <LearnMore label={locale === "es" ? "Cuenta" : "Account"}>
-            <Muted>{me?.user.email}</Muted>
-            <Pressable onPress={() => saveAuthorizedFile("/api/export", "rent-right.json", token)} style={styles.textButton} accessibilityRole="button" accessibilityLabel={locale === "es" ? "Descargar mis datos" : "Download my data"}>
-              <Text style={styles.textButtonLabel}>{locale === "es" ? "Descargar mis datos" : "Download my data"}</Text>
+        ) : null}
+      </View>
+      <View style={styles.segment} accessibilityRole="tablist">
+        {(["issues", "documents", "evidence"] as Segment[]).map((item) => {
+          const label = item === "issues"
+            ? labels?.issues || (es ? "Solicitudes" : "Issues")
+            : item === "documents"
+              ? labels?.documents || (es ? "Documentos" : "Documents")
+              : labels?.evidence || (es ? "Evidencia" : "Evidence");
+          const on = section === item;
+          return (
+            <Pressable
+              key={item}
+              accessibilityRole="tab"
+              accessibilityLabel={label}
+              accessibilityState={{ selected: on }}
+              onPress={() => setSection(item)}
+              style={[styles.segmentItem, on && styles.segmentOn]}
+            >
+              <Text style={[styles.segmentText, on && styles.segmentTextOn]}>{label}</Text>
             </Pressable>
-            <DeleteAccount
-              token={token}
-              spanish={locale === "es"}
-              onDeleted={async () => {
-                await signOut();
-                router.replace("/");
-              }}
-            />
-          </LearnMore>
-        </>
+          );
+        })}
+      </View>
+      <ErrorLine message={error} />
+      <ScrollView
+        style={clipX}
+        contentContainerStyle={styles.page}
+        refreshControl={<RefreshControl refreshing={false} onRefresh={reload} tintColor={colors.pine} />}
+      >
+        {section === "issues" ? (
+          <View>
+            {!issues.length && !archive.length ? <Text style={styles.empty}>{labels?.emptyIssues || (es ? "No hay solicitudes abiertas." : "No open requests.")}</Text> : null}
+            {issues.map((issue) => {
+              const open = openIssue === issue.id;
+              return (
+                <View key={issue.id} style={styles.card}>
+                  <Pressable
+                    style={styles.row}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: open }}
+                    accessibilityLabel={issue.title}
+                    onPress={() => setOpenIssue(open ? null : issue.id)}
+                  >
+                    <View style={styles.rowText}>
+                      <Text style={styles.cardTitle}>{issue.title}</Text>
+                      <Text style={styles.meta}>{issue.reported || issue.when}</Text>
+                    </View>
+                    <View style={[styles.chip, issue.pending && styles.chipPending]}>
+                      <Text style={[styles.chipText, issue.pending && styles.chipTextPending]}>{issue.status}</Text>
+                    </View>
+                  </Pressable>
+                  {open ? (
+                    <View style={styles.expand}>
+                      <Text style={styles.body}>{issue.issue}</Text>
+                      {issue.message ? <Text style={styles.body}>{issue.message}</Text> : null}
+                      <Pressable style={styles.linkHit} accessibilityRole="button" accessibilityLabel={labels?.history || "History"} onPress={() => router.push(`/log/${issue.id}`)}>
+                        <Text style={styles.link}>{labels?.history || (es ? "Historial" : "History")}</Text>
+                      </Pressable>
+                      {labels && !data?.archived ? (
+                        <ResolvePanel
+                          pending={issue.pending}
+                          pendingTitle={issue.pendingTitle}
+                          pendingNote={issue.pendingNote}
+                          markLabel={labels.markResolved || "Mark as resolved"}
+                          confirmLabel={labels.confirmResolved || "Confirm"}
+                          noteLabel={labels.resolutionNote || "Note (optional)"}
+                          dateLabel={labels.resolutionDate || "Resolution date"}
+                          earliest={issue.earliest}
+                          today={data?.today || issue.earliest}
+                          busy={busy}
+                          quiet
+                          onSubmit={(input) => resolveIssue(issue.id, input, issue.pending ? "landlord" : null)}
+                        />
+                      ) : null}
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
+            {archive.length ? (
+              <View style={styles.archiveBlock}>
+                <Pressable
+                  style={styles.archiveHeader}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: archiveOpen }}
+                  accessibilityLabel={`${labels?.archiveTitle || "Resolved"} (${archive.length})`}
+                  onPress={() => setArchiveOpen((value) => !value)}
+                >
+                  <Text style={styles.sectionInline}>{`${labels?.archiveTitle || (es ? "Resueltos" : "Resolved")} (${archive.length})`}</Text>
+                  <Text style={styles.link}>{archiveOpen ? labels?.hide || (es ? "Ocultar" : "Hide") : (es ? "Ver" : "Show")}</Text>
+                </Pressable>
+                {archiveOpen ? archive.map((item) => {
+                  const open = openArchive === item.id;
+                  return (
+                    <View key={item.id} style={styles.card}>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityState={{ expanded: open }}
+                        accessibilityLabel={`${item.title}. ${item.duration}`}
+                        onPress={() => setOpenArchive(open ? null : item.id)}
+                      >
+                        <Text style={styles.cardTitle}>{item.title}</Text>
+                        <Text style={styles.duration}>{item.duration}</Text>
+                        <Text style={styles.meta}>{item.reported}</Text>
+                      </Pressable>
+                      {open ? (
+                        <View style={styles.expand}>
+                          {item.source ? <Text style={styles.meta}>{item.source}</Text> : null}
+                          <Text style={styles.body}>{item.resolved}</Text>
+                          <Text style={styles.body}>{item.summary}</Text>
+                          {item.note ? <Text style={styles.body}>{item.note}</Text> : null}
+                          <Pressable style={styles.linkHit} accessibilityRole="button" accessibilityLabel={labels?.history || "History"} onPress={() => router.push(`/log/${item.id}`)}>
+                            <Text style={styles.link}>{labels?.history || (es ? "Historial" : "History")}</Text>
+                          </Pressable>
+                          {labels && !data?.archived ? (
+                            <Button label={labels.reopen || "Reopen"} ghost onPress={() => reopenIssue(item.id)} disabled={busy} />
+                          ) : null}
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                }) : null}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+        {section === "documents" ? (
+          <View>
+            {data?.lease ? (
+              <View style={styles.card}>
+                <Text style={styles.kicker}>{es ? "Contrato" : "Lease"}</Text>
+                <Text style={styles.cardTitle}>{data.lease.filename}</Text>
+                <Text style={styles.meta}>{data.lease.headline}</Text>
+                {data.lease.detail ? <Text style={styles.body}>{data.lease.detail}</Text> : null}
+              </View>
+            ) : null}
+            <Pressable style={styles.card} accessibilityRole="button" accessibilityLabel={labels?.photos || "Condition photos"} onPress={() => router.push("/photos")}>
+              <View style={styles.row}>
+                <Text style={[styles.cardTitle, styles.rowText]}>{labels?.photos || (es ? "Fotos del estado" : "Condition photos")}</Text>
+                <Text style={styles.chevron}>›</Text>
+              </View>
+            </Pressable>
+            {notes.length ? <Text style={styles.section}>{labels?.notes || (es ? "Notas" : "Notes")}</Text> : null}
+            {notes.map((note) => {
+              const open = openNote === note.id;
+              return (
+                <View key={note.id} style={styles.card}>
+                  <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={note.title} onPress={() => setOpenNote(open ? null : note.id)}>
+                    <Text style={styles.cardTitle}>{note.title}</Text>
+                    <Text style={styles.meta}>{note.status}</Text>
+                    <Text style={styles.meta}>{note.when}</Text>
+                  </Pressable>
+                  {open ? (
+                    <View style={styles.expand}>
+                      <Text style={styles.body}>{note.issue}</Text>
+                      {note.message ? <Text style={styles.body}>{note.message}</Text> : null}
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
+        {section === "evidence" && labels ? (
+          <View style={styles.card}>
+            <View style={styles.evidenceRow}>
+              <View style={styles.rowText}>
+                <Text style={styles.cardTitle}>{labels.packetTitle}</Text>
+                <Text style={styles.body}>{labels.packetBody}</Text>
+              </View>
+            </View>
+            <Button label={labels.exportLabel} ghost onPress={download} />
+          </View>
+        ) : null}
+      </ScrollView>
+      {menu && token ? (
+        <View style={styles.overlay}>
+          <Pressable style={styles.backdrop} accessibilityLabel={labels?.close || "Close"} onPress={() => setMenu(false)} />
+          <View style={styles.sheet}>
+            <ScrollView contentContainerStyle={styles.sheetBody}>
+              <View style={styles.sheetHead}>
+                <Text style={styles.sheetTitle}>{labels?.account || (es ? "Cuenta" : "Account")}</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel={labels?.close || "Close"} onPress={() => setMenu(false)} style={styles.linkHit}>
+                  <Text style={styles.link}>{labels?.close || (es ? "Cerrar" : "Close")}</Text>
+                </Pressable>
+              </View>
+              {me?.user.email ? <Text style={styles.body}>{me.user.email}</Text> : null}
+              <Button label={labels?.downloadData || (es ? "Descargar mis datos" : "Download my data")} ghost onPress={() => saveAuthorizedFile("/api/export", "rent-right.json", token)} />
+              <Text style={styles.section}>{es ? "Idioma" : "Language"}</Text>
+              <LanguageToggle locale={locale} onChange={(next) => void language(next)} />
+              <Button
+                label={labels?.logOut || (es ? "Salir" : "Log out")}
+                ghost
+                onPress={async () => { setMenu(false); await signOut(); router.replace("/"); }}
+              />
+              <Text style={styles.section}>{es ? "Eliminar la cuenta" : "Delete account"}</Text>
+              <DeleteAccount
+                token={token}
+                spanish={es}
+                onDeleted={async () => {
+                  await signOut();
+                  router.replace("/");
+                }}
+              />
+            </ScrollView>
+          </View>
+        </View>
       ) : null}
-    </Page>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  sample: { marginTop: 8, color: colors.mute, fontSize: 14 },
-  cardTitle: { ...wrapText, fontSize: 22, lineHeight: 28, color: colors.ink, fontWeight: "600" },
-  cardStatus: { ...wrapText, fontSize: 16, lineHeight: 22, color: colors.pine, marginTop: 6 },
-  due: { ...wrapText, fontSize: 16, lineHeight: 22, color: colors.ink, fontWeight: "700", marginTop: 8 },
-  reminder: { ...wrapText, fontSize: 16, lineHeight: 22, color: colors.pine, fontWeight: "700", marginTop: 8 },
-  cardBody: { ...wrapText, fontSize: 16, lineHeight: 22, color: colors.mute, marginTop: 6 },
-  textButton: { minHeight: 48, justifyContent: "center", marginTop: 8 },
-  textButtonLabel: { color: colors.pine, fontSize: 16, fontWeight: "700" },
+  screen: { flex: 1, backgroundColor: colors.paper, width: "100%", minWidth: 0 },
+  header: { flexDirection: "row", alignItems: "flex-start", paddingHorizontal: 16, paddingTop: 8, gap: 8 },
+  headerText: { flex: 1, minWidth: 0 },
+  address: { ...wrapText, fontSize: 17, lineHeight: 23, color: colors.ink, fontWeight: "600" },
+  sample: { ...wrapText, marginTop: 4, color: colors.mute, fontSize: 13 },
+  note: { ...wrapText, marginTop: 4, color: colors.mute, fontSize: 14, lineHeight: 20 },
+  gear: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 22, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
+  linkHit: { minHeight: 44, justifyContent: "center" },
+  link: { color: colors.pine, fontSize: 14, fontWeight: "700" },
+  segment: { flexDirection: "row", marginHorizontal: 16, marginTop: 4, backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.line, padding: 3 },
+  segmentItem: { flex: 1, minHeight: 40, alignItems: "center", justifyContent: "center", borderRadius: 9, paddingHorizontal: 4, paddingVertical: 6 },
+  segmentOn: { backgroundColor: colors.pine },
+  segmentText: { ...wrapText, fontSize: 13, lineHeight: 16, fontWeight: "700", color: colors.ink, textAlign: "center" },
+  segmentTextOn: { color: "white" },
+  page: { paddingHorizontal: 16, paddingBottom: 28 },
+  empty: { ...wrapText, marginTop: 16, color: colors.mute, fontSize: 15, lineHeight: 21 },
+  card: { backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.line, marginTop: 10, paddingHorizontal: 12, paddingVertical: 10 },
+  row: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 44 },
+  rowText: { flex: 1, minWidth: 0 },
+  cardTitle: { ...wrapText, fontSize: 16, lineHeight: 21, color: colors.ink, fontWeight: "600" },
+  meta: { ...wrapText, fontSize: 13, lineHeight: 18, color: colors.mute, marginTop: 2 },
+  body: { ...wrapText, fontSize: 14, lineHeight: 20, color: colors.mute, marginTop: 6 },
+  duration: { ...wrapText, fontSize: 14, lineHeight: 20, color: colors.ink, fontWeight: "700", marginTop: 4 },
+  chip: { maxWidth: "46%", backgroundColor: "#E7F3F1", borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
+  chipPending: { backgroundColor: "#F8F1E4" },
+  chipText: { ...wrapText, fontSize: 12, lineHeight: 16, color: colors.pine, fontWeight: "700", textAlign: "center" },
+  chipTextPending: { color: colors.warn },
+  expand: { paddingBottom: 4 },
+  archiveBlock: { marginTop: 8 },
+  archiveHeader: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  section: { marginTop: 14, fontSize: 13, lineHeight: 18, color: colors.mute, fontWeight: "700" },
+  sectionInline: { fontSize: 13, lineHeight: 18, color: colors.mute, fontWeight: "700" },
+  kicker: { fontSize: 12, lineHeight: 16, color: colors.mute, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.4 },
+  chevron: { color: colors.mute, fontSize: 22, lineHeight: 22, fontWeight: "400" },
+  evidenceRow: { minHeight: 44 },
+  overlay: { ...StyleSheet.absoluteFill, justifyContent: "flex-end" },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(20, 52, 60, 0.35)" },
+  sheet: { maxHeight: "88%", backgroundColor: colors.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, borderWidth: 1, borderColor: colors.line },
+  sheetBody: { padding: 16, paddingBottom: 28 },
+  sheetHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  sheetTitle: { fontSize: 18, lineHeight: 24, color: colors.ink, fontWeight: "700" },
 });

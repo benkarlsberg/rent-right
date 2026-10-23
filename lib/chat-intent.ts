@@ -1,4 +1,5 @@
 import { aiConfigured, completeJson } from "@/lib/ai";
+import { isResolvedClaim } from "@/lib/resolution";
 
 export type ChatIntent = "repair" | "lease" | "rent" | "deposit" | "packet" | "deadlines" | "confirm" | "letter" | "rights" | "unclear";
 
@@ -16,6 +17,7 @@ export type TurnPlan =
   | { type: "deadlines" }
   | { type: "letter_text"; text: string }
   | { type: "continue_date"; date: string }
+  | { type: "resolve_issue"; summary: string }
   | { type: "rights" }
   | { type: "unclear" };
 
@@ -145,6 +147,7 @@ function switchedPlan(text: string): TurnPlan | null {
 
 export function planTurn(text: string, pending: PendingKind): TurnPlan {
   const trimmed = text.trim();
+  if (isResolvedClaim(trimmed)) return { type: "resolve_issue", summary: trimmed };
   if (pending === "repair" && isConfirm(trimmed)) return { type: "confirm_send" };
   if (isConfirm(trimmed)) return { type: "unclear" };
   const changed = switchedPlan(trimmed);

@@ -436,6 +436,10 @@ export type LogEntry = {
   contentHash: string;
   eventDate: string;
   createdAt: string;
+  status: string;
+  resolvedAt: string | null;
+  resolvedBy: "tenant" | "landlord" | null;
+  resolutionNote: string | null;
 };
 
 type LogRow = {
@@ -456,6 +460,10 @@ type LogRow = {
   content_hash: string;
   event_date: string;
   created_at: string;
+  status: string | null;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  resolution_note: string | null;
 };
 
 function mapLog(row: LogRow): LogEntry {
@@ -475,8 +483,12 @@ function mapLog(row: LogRow): LogEntry {
     photoFileId: row.photo_file_id,
     prevHash: row.prev_hash,
     contentHash: row.content_hash,
-    eventDate: row.event_date,
-    createdAt: row.created_at,
+    eventDate: dateText(row.event_date) || "",
+    createdAt: timeText(row.created_at) || new Date().toISOString(),
+    status: row.status || "open",
+    resolvedAt: timeText(row.resolved_at),
+    resolvedBy: row.resolved_by === "tenant" || row.resolved_by === "landlord" ? row.resolved_by : null,
+    resolutionNote: row.resolution_note || null,
   };
 }
 
@@ -789,6 +801,31 @@ export async function listDeadlines(userId: string, unitId: string): Promise<Dea
     tenantReminderOn: dateText(row.tenant_reminder_on),
     createdAt: row.created_at,
   }));
+}
+
+export async function updateLogResolution(userId: string, id: string, patch: {
+  status: "open" | "pending_confirm" | "resolved";
+  resolvedAt: string | null;
+  resolvedBy: "tenant" | "landlord" | null;
+  resolutionNote: string | null;
+  flags: Record<string, unknown>;
+}) {
+  const current = await getLog(userId, id);
+  await requireWritable(userId, current.unitId);
+  if (current.type !== "repair") throw new HttpError("Only a repair request can be resolved.");
+  await run(
+    "update log_entries set status = ?, resolved_at = ?, resolved_by = ?, resolution_note = ?, flags = ? where id = ?",
+    [patch.status, patch.resolvedAt, patch.resolvedBy, patch.resolutionNote, JSON.stringify(patch.flags), id],
+  );
+  return await getLog(userId, id);
+}
+
+export async function setLinkedDeadlines(userId: string, unitId: string, sourceId: string, from: string, to: string) {
+  await requireWritable(userId, unitId);
+  return await run(
+    "update deadlines set status = ? where unit_id = ? and source_id = ? and status = ?",
+    [to, unitId, sourceId, from],
+  );
 }
 
 export async function setDeadlineStatus(userId: string, id: string, status: "open" | "done") {

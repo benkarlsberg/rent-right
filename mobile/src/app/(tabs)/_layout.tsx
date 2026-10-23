@@ -28,12 +28,13 @@ export default function TabsLayout() {
           paddingBottom: bottom,
         },
         tabBarItemStyle: { justifyContent: "center" },
-        tabBarLabelStyle: { fontSize: 15, fontWeight: "600", lineHeight: 20 },
+        tabBarLabelStyle: { fontSize: 12, fontWeight: "600", lineHeight: 16 },
       }}
     >
       <Tabs.Screen name="chat" options={{ title: "Chat" }} />
       <Tabs.Screen name="landlord" options={{ title: spanish ? "Propietario" : "Landlord" }} />
       <Tabs.Screen name="records" options={{ title: spanish ? "Registros" : "Records" }} />
+      <Tabs.Screen name="reminders" options={{ title: spanish ? "Recordatorios" : "Reminders" }} />
     </Tabs>
   );
 }

@@ -1,5 +1,6 @@
 import type { Locale } from "@/lib/disclaimer";
 import { formatDate, formatTimestamp } from "@/lib/format";
+import { issueTitle, landlordFixedNote, resolutionPhrase, sourceLabel, timelineSummary, type ResolutionSource } from "@/lib/resolution";
 import { daysBetween } from "@/lib/rules/dates";
 import { tx } from "@/lib/text";
 
@@ -23,6 +24,7 @@ export type LogInput = {
   description: string;
   eventDate: string;
   createdAt: string;
+  status?: string;
 };
 
 export type MessageInput = {
@@ -192,9 +194,11 @@ function cardFor(item: DeadlineInput, log: LogInput | null, locale: Locale, toda
     : [explanation, item.computation, item.ruleId].filter(Boolean).join("\n\n");
   const status = item.status === "done"
     ? tx(locale, "Done", "Hecho")
-    : item.status === "replaced"
-      ? tx(locale, "Replaced", "Reemplazado")
-      : tx(locale, "Open", "Abierto");
+    : item.status === "resolved"
+      ? tx(locale, "Resolved", "Resuelto")
+      : item.status === "replaced"
+        ? tx(locale, "Replaced", "Reemplazado")
+        : tx(locale, "Open", "Abierto");
   return {
     id: item.id,
     kind: item.kind,
@@ -254,7 +258,7 @@ export function logCards(logs: LogInput[], messages: MessageInput[], locale: Loc
 function sentRepairIds(logs: LogInput[], messages: MessageInput[]): Set<string> {
   const ids = new Set<string>();
   for (const log of logs) {
-    if (log.type !== "repair") continue;
+    if (log.type !== "repair" || log.status === "resolved") continue;
     const sent = messages.some((message) =>
       message.logEntryId === log.id
       && message.direction === "outbound"
@@ -288,7 +292,7 @@ export function nextSteps(input: {
   const futureDeposit = open
     .filter((item) => item.kind === "deposit" && item.dueDate && daysBetween(input.today, item.dueDate) > 0)
     .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)));
-  const unsent = input.logs.find((log) => log.type === "repair" && !sent.has(log.id));
+  const unsent = input.logs.find((log) => log.type === "repair" && log.status !== "resolved" && !sent.has(log.id));
   const items: StepItem[] = [];
   if (followUpDue[0]?.dueDate) {
     const date = formatDate(followUpDue[0].dueDate, locale);
@@ -403,6 +407,97 @@ export function reminderNote(mail: boolean, locale: Locale): string {
   );
 }
 
+export type OpenIssueCard = {
+  id: string;
+  title: string;
+  status: string;
+  when: string;
+  reported: string;
+  issue: string;
+  message: string | null;
+  pending: boolean;
+  pendingTitle: string | null;
+  pendingNote: string | null;
+  earliest: string;
+};
+
+export type ArchiveIssueCard = {
+  id: string;
+  title: string;
+  reported: string;
+  resolved: string;
+  duration: string;
+  summary: string;
+  source: string | null;
+  note: string | null;
+};
+
+export function issueBoard(input: {
+  locale: Locale;
+  logs: (LogInput & {
+    room?: string | null;
+    resolvedAt?: string | null;
+    resolvedBy?: ResolutionSource | null;
+    resolutionNote?: string | null;
+    flags?: Record<string, unknown>;
+  })[];
+  messages: MessageInput[];
+}): { open: OpenIssueCard[]; archive: ArchiveIssueCard[] } {
+  const locale = input.locale;
+  const repairs = input.logs.filter((log) => log.type === "repair");
+  const cards = new Map(logCards(repairs, input.messages, locale).map((card) => [card.id, card]));
+  const open: OpenIssueCard[] = [];
+  const archive: ArchiveIssueCard[] = [];
+  for (const log of repairs) {
+    const card = cards.get(log.id);
+    const title = issueTitle(log.description, tx(locale, "request", "solicitud"));
+    if (log.status === "resolved" && log.resolvedAt) {
+      const reported = formatDate(log.eventDate || log.resolvedAt.slice(0, 10), locale);
+      const resolved = formatDate(log.resolvedAt.slice(0, 10), locale);
+      const related = input.messages.filter((message) => message.logEntryId === log.id);
+      archive.push({
+        id: log.id,
+        title,
+        reported: tx(locale, `Reported ${reported}`, `Reportado el ${reported}`),
+        resolved: tx(locale, `Resolved ${resolved}`, `Resuelto el ${resolved}`),
+        duration: resolutionPhrase(log.createdAt, log.resolvedAt, locale),
+        summary: timelineSummary({
+          locale,
+          reportedLabel: reported,
+          messages: related.length,
+          replies: related.filter((message) => message.direction === "inbound").length,
+          sourceLabel: sourceLabel(log.resolvedBy || null, locale),
+          resolvedLabel: resolved,
+        }),
+        source: sourceLabel(log.resolvedBy || null, locale),
+        note: log.resolutionNote || null,
+      });
+      continue;
+    }
+    const pending = log.status === "pending_confirm";
+    open.push({
+      id: log.id,
+      title,
+      status: pending
+        ? tx(locale, "Landlord says fixed", "El propietario dice que está arreglado")
+        : card?.status || tx(locale, "Open", "Abierto"),
+      when: card?.when || formatTimestamp(log.createdAt, locale),
+      reported: tx(
+        locale,
+        `Reported ${formatDate(log.eventDate || log.createdAt.slice(0, 10), locale)}`,
+        `Reportado el ${formatDate(log.eventDate || log.createdAt.slice(0, 10), locale)}`,
+      ),
+      issue: log.description,
+      message: card?.message || null,
+      pending,
+      pendingTitle: pending ? tx(locale, "Landlord says fixed, confirm?", "El propietario dice que está arreglado. ¿Confirmar?") : null,
+      pendingNote: landlordFixedNote(log.flags),
+      earliest: log.eventDate || log.createdAt.slice(0, 10),
+    });
+  }
+  return { open, archive };
+}
+
 export function recordsLabels(locale: Locale) {
   return {
     editReminder: tx(locale, "Edit reminder date", "Editar la fecha del recordatorio"),
@@ -421,6 +516,31 @@ export function recordsLabels(locale: Locale) {
     learnMore: tx(locale, "Learn more", "Más información"),
     hide: tx(locale, "Hide", "Ocultar"),
     recordsTitle: tx(locale, "Records", "Registros"),
+    openTitle: tx(locale, "Open requests", "Solicitudes abiertas"),
+    markResolved: tx(locale, "Mark as resolved", "Marcar como resuelto"),
+    confirmResolved: tx(locale, "Confirm", "Confirmar"),
+    resolutionNote: tx(locale, "Note (optional)", "Nota (opcional)"),
+    resolutionDate: tx(locale, "Resolution date", "Fecha de resolución"),
+    reopen: tx(locale, "Reopen", "Reabrir"),
+    history: tx(locale, "History", "Historial"),
+    archiveTitle: tx(locale, "Resolved", "Resueltos"),
+    issues: tx(locale, "Issues", "Solicitudes"),
+    documents: tx(locale, "Documents", "Documentos"),
+    evidence: tx(locale, "Evidence", "Evidencia"),
+    reminders: tx(locale, "Reminders", "Recordatorios"),
+    change: tx(locale, "Change", "Cambiar"),
+    seeAll: tx(locale, "See all steps", "Ver todos los pasos"),
+    addButton: tx(locale, "+ Add reminder", "+ Agregar recordatorio"),
+    photos: tx(locale, "Condition photos", "Fotos del estado"),
+    notes: tx(locale, "Notes", "Notas"),
+    emptyIssues: tx(locale, "No open requests.", "No hay solicitudes abiertas."),
+    emptyDocs: tx(locale, "No documents yet.", "Aún no hay documentos."),
+    emptyReminders: tx(locale, "No reminders yet.", "Aún no hay recordatorios."),
+    account: tx(locale, "Account", "Cuenta"),
+    logOut: tx(locale, "Log out", "Salir"),
+    menu: tx(locale, "Account menu", "Menú de la cuenta"),
+    downloadData: tx(locale, "Download my data", "Descargar mis datos"),
+    close: tx(locale, "Close", "Cerrar"),
   };
 }
 

@@ -175,14 +175,14 @@ describe("renter workflows", () => {
     expect(suggestions).toEqual(expect.arrayContaining(["My sink is leaking", "Check my lease", "Check a rent increase", "Where's my deposit?", "Start over"]));
 
     const records = await api("GET", "records", undefined, token);
-    expect((records.json?.notes as { line: string }[]).length).toBeGreaterThan(0);
+    expect((records.json?.issues as { title: string }[]).length).toBeGreaterThan(0);
 
     const cleared = await api("POST", "thread", { action: "clear" }, token);
     expect(cleared.status).toBe(200);
     expect(cleared.json?.items).toEqual([]);
     expect((cleared.json?.chips as unknown[]).length).toBeGreaterThan(0);
     const stillThere = await api("GET", "records", undefined, token);
-    expect((stillThere.json?.notes as { line: string }[]).length).toBeGreaterThan(0);
+    expect((stillThere.json?.issues as { title: string }[]).length).toBeGreaterThan(0);
     const kept = await getSql()<{ n: number }[]>`
       select count(*)::int as n from assistant_messages where archived_at is not null
     `;
@@ -247,10 +247,10 @@ describe("renter workflows", () => {
     expect(repair?.title).toMatch(/^Reminder: follow up on /);
     expect(repair?.title).not.toMatch(/Landlord's deadline to respond/);
     expect(repair?.due).toMatch(/^Due /);
-    const notes = records.json?.notes as { line: string; title: string; status: string }[];
-    expect(notes.length).toBeGreaterThan(0);
-    expect(notes[0].title).toBe("Repair request");
-    expect(notes[0].line.length).toBeGreaterThan(0);
+    const issues = records.json?.issues as { title: string; issue: string; status: string }[];
+    expect(issues.length).toBeGreaterThan(0);
+    expect(issues[0].title).toMatch(/sink/i);
+    expect(issues[0].issue).toMatch(/sink/i);
 
     const before = await getSql()<{ due: string }[]>`select due_date::text as due from deadlines where id = ${repair!.id}`;
     const edited = await api("POST", "records/reminder", { id: repair!.id, date: "2026-12-01" }, token);

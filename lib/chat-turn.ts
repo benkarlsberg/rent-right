@@ -28,6 +28,8 @@ import { checkRentIncrease, depositReturnDeadline, repairReminder, type AreaKey,
 import { getRule } from "@/lib/rules/library";
 import { formatMoney, percentLabel } from "@/lib/format";
 import { tx } from "@/lib/text";
+import { findResolutionTarget, resolveRepair } from "@/lib/issues";
+import { issueTitle } from "@/lib/resolution";
 import { CHAT_MONTHLY_CAP, emailLandlord, extractPdfOrText, recordLog, runLeaseReview, saveDepositAndDeadline } from "@/lib/workflow";
 
 const AREAS = new Set<AreaKey>(["los_angeles_orange", "riverside_san_bernardino", "san_diego", "san_francisco_bay", "other_ca"]);
@@ -68,6 +70,10 @@ export async function runChatTurn(user: User, unit: Unit, input: {
   if (action.startsWith("prompt:")) text = action.slice("prompt:".length).trim();
   if (action === "send") {
     await confirmSend(user, unit, input.draftId || "");
+    return;
+  }
+  if (action.startsWith("resolve:")) {
+    await confirmResolve(user, unit, action.slice("resolve:".length));
     return;
   }
   if (action === "letter") {
@@ -158,6 +164,10 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: Awaited<
   if (plan.type === "letter_text" && pending?.kind === "letter") {
     await writeLetter(user, unit, plan.text);
     await closeChatDraft(user.id, pending.id, "done");
+    return;
+  }
+  if (plan.type === "resolve_issue") {
+    await offerResolve(user, unit, plan.summary);
     return;
   }
   if (plan.type === "repair") {
@@ -306,6 +316,64 @@ async function answerRights(user: User, unit: Unit, question: string) {
     detail: answer.text,
     ruleId: answer.ruleIds[0] || null,
   });
+}
+
+async function offerResolve(user: User, unit: Unit, summary: string) {
+  const target = await findResolutionTarget(user, unit.id, summary);
+  if (target.kind === "none") {
+    await say(user, unit, {
+      headline: tx(user.locale, "No open request", "No hay una solicitud abierta"),
+      status: tx(user.locale, "Nothing changed", "Nada cambió"),
+      action: null,
+      detail: tx(user.locale, "There is no open request to mark resolved.", "No hay una solicitud abierta para marcar como resuelta."),
+      ruleId: null,
+    });
+    return;
+  }
+  if (target.kind === "ambiguous") {
+    await say(user, unit, {
+      headline: tx(user.locale, "More than one open request", "Hay más de una solicitud abierta"),
+      status: tx(user.locale, "Nothing changed", "Nada cambió"),
+      action: null,
+      detail: tx(user.locale, "Open Records and mark the request that was fixed. Nothing was changed.", "Abra Registros y marque la solicitud que se arregló. No se cambió nada."),
+      ruleId: null,
+    });
+    return;
+  }
+  const name = target.title || issueTitle(summary);
+  await say(user, unit, {
+    headline: target.pending
+      ? tx(user.locale, "Landlord says fixed, confirm?", "El propietario dice que está arreglado. ¿Confirmar?")
+      : tx(user.locale, `Mark your ${name} as resolved?`, `¿Marcar ${name} como resuelto?`),
+    status: tx(user.locale, "Not resolved yet", "Aún no está resuelto"),
+    action: { id: `resolve:${target.id}`, label: tx(user.locale, "Confirm", "Confirmar") },
+    detail: tx(user.locale, "Confirming closes the reminders for this request. Nothing is emailed.", "Confirmar cierra los recordatorios de esta solicitud. No se envía ningún correo."),
+    ruleId: null,
+  });
+}
+
+async function confirmResolve(user: User, unit: Unit, issueId: string) {
+  try {
+    const entry = await resolveRepair(user, issueId, { note: "", date: null });
+    const name = issueTitle(entry.description, tx(user.locale, "request", "solicitud"));
+    await say(user, unit, {
+      headline: tx(user.locale, `${name} is resolved`, `${name} está resuelto`),
+      status: entry.resolvedBy === "landlord"
+        ? tx(user.locale, "Landlord confirmed", "Confirmado por el propietario")
+        : tx(user.locale, "Tenant marked", "Marcado por el inquilino"),
+      action: null,
+      detail: tx(user.locale, "The open reminders for this request are closed. Nothing was emailed. The history stays in Records.", "Los recordatorios abiertos de esta solicitud quedaron cerrados. No se envió ningún correo. El historial se queda en Registros."),
+      ruleId: null,
+    });
+  } catch (error) {
+    await say(user, unit, {
+      headline: tx(user.locale, "Not resolved", "No se resolvió"),
+      status: tx(user.locale, "Nothing changed", "Nada cambió"),
+      action: null,
+      detail: error instanceof Error ? error.message : tx(user.locale, "The request was not changed.", "La solicitud no cambió."),
+      ruleId: null,
+    });
+  }
 }
 
 async function logRepair(user: User, unit: Unit, summary: string, severity: RepairSeverity, room: string | null, attachment: { name: string; mime: string; base64: string } | null) {

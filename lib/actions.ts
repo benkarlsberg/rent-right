@@ -32,6 +32,7 @@ import {
   type UnitInput,
   type User,
 } from "@/lib/db";
+import { landlordSaysFixed } from "@/lib/issues";
 import { centsField, dateField, emailValue, field, fileOf, must } from "@/lib/forms";
 import { demandLetter } from "@/lib/letters";
 import { checkRentIncrease, type AreaKey, type Jurisdiction, type RsoStatus, type RstpoTier } from "@/lib/rules/engine";
@@ -463,7 +464,20 @@ export async function landlordReply(form: FormData) {
       await blockLandlord(message.unitId, note || "Blocked from the response link.");
     } else if (action === "abuse") {
       await reportAbuse(message.unitId, "landlord-link", note || "Abuse report from the response link.");
-    } else if (["acknowledge", "schedule", "fixed", "dispute"].includes(action)) {
+    } else if (action === "fixed") {
+      await addLandlordResponse(message.unitId, message.id, action, note);
+      const unit = await peekUnit(message.unitId);
+      const noted = unit ? await landlordSaysFixed(unit.createdBy, unit, message.logEntryId, note) : false;
+      if (unit && !noted) {
+        await insertLog({
+          unitId: unit.id,
+          userId: unit.createdBy,
+          type: "conversation",
+          description: `Landlord used the response link: fixed.${note ? ` Note: ${note}` : ""}`,
+          eventDate: new Date().toISOString().slice(0, 10),
+        });
+      }
+    } else if (["acknowledge", "schedule", "dispute"].includes(action)) {
       await addLandlordResponse(message.unitId, message.id, action, note);
       const unit = await peekUnit(message.unitId);
       if (unit) {
@@ -481,7 +495,7 @@ export async function landlordReply(form: FormData) {
   } catch (error) {
     fail(`/r/${token}`, error);
   }
-  redirect(`/r/${token}?done=1`);
+  redirect(action === "fixed" ? `/r/${token}?done=fixed` : `/r/${token}?done=1`);
   });
 }
 

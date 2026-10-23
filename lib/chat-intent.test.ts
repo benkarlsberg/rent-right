@@ -69,6 +69,14 @@ describe("chat intent", () => {
     expect(moneyCents("$2,257.50")).toEqual([225_750]);
   });
 
+  it("offers to resolve a request when the tenant says it is fixed", () => {
+    expect(planTurn("the sink is fixed", null)).toEqual({ type: "resolve_issue", summary: "the sink is fixed" });
+    expect(planTurn("el fregadero ya está arreglado", null).type).toBe("resolve_issue");
+    expect(planTurn("my sink is leaking", null).type).toBe("repair");
+    expect(planTurn("yes, send it", "repair").type).toBe("confirm_send");
+    expect(planTurn("the sink is fixed", "repair").type).toBe("resolve_issue");
+  });
+
   it("keeps a gas leak separate from a water leak", () => {
     expect(repairFacts("I smell a gas leak in the kitchen").severity).toBe("gas_leak");
     expect(repairFacts("the bathroom faucet is dripping").room).toBe("Bathroom");

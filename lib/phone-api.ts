@@ -50,6 +50,7 @@ import { parseISODate, todayISO } from "@/lib/rules/dates";
 import {
   deadlineCards,
   evidenceFilename,
+  issueBoard,
   logCards,
   nextSteps,
   recordsLabels,
@@ -77,6 +78,7 @@ import { appUrl, relayAddress, tx } from "@/lib/text";
 import { parseCard } from "@/lib/chat-card";
 import { runChatTurn } from "@/lib/chat-turn";
 import { archivedNote, previewResidence, residencePayload, saveResidence, selectResidence } from "@/lib/residence";
+import { issueHistory, issueSummary, reopenRepair, resolveRepair } from "@/lib/issues";
 import { askAssistant, emailLandlord, extractPdfOrText, recordLog, runLeaseReview, sampleLeaseText, saveDepositAndDeadline } from "@/lib/workflow";
 
 function json(data: unknown, status = 200) {
@@ -374,6 +376,8 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "GET" && key === "thread") return json(await threadPayload());
   if (method === "POST" && key === "records/reminder") return json(await saveReminder(await readBody(request)));
   if (method === "POST" && key === "records/reminder/new") return json(await addReminder(await readBody(request)));
+  if (method === "POST" && key === "records/resolve") return json(await resolvePosted(await readBody(request)));
+  if (method === "POST" && key === "records/reopen") return json(await reopenPosted(await readBody(request)));
   if (method === "POST" && key === "thread") return json(await postThread(await readBody(request)));
   if (method === "GET" && key === "records") return json(await recordsPayload());
   if (method === "GET" && key === "ledger") return json(await ledgerPayload());
@@ -540,10 +544,13 @@ async function logPayload() {
 }
 
 async function logDetail(id: string) {
-  const { user } = await withUnit();
+  const { user, unit } = await withUnit();
   const locale = user.locale;
   const entry = await getLog(user.id, id);
   const flag = entry.flags.retaliation as { flagged?: boolean; explanation?: string; explanationEs?: string; ruleId?: string } | undefined;
+  const repair = entry.type === "repair";
+  const summary = repair ? issueSummary(entry, await listMessages(user.id, unit.id), locale) : null;
+  const labels = recordsLabels(locale);
   return {
     id: entry.id,
     kind: logKind(entry.type, locale),
@@ -553,6 +560,32 @@ async function logDetail(id: string) {
     flag: flag?.flagged
       ? { title: tx(locale, "Inside 180 days of a repair", "Dentro de 180 días de una reparación"), detail: `${locale === "es" ? flag.explanationEs : flag.explanation} Rule ${flag.ruleId}.`, notice: notice(locale) }
       : null,
+    history: repair ? await issueHistory(user, entry.id) : [],
+    resolution: repair && summary
+      ? {
+          status: entry.status,
+          pending: entry.status === "pending_confirm",
+          canResolve: entry.status !== "resolved" && !unit.archivedAt,
+          canReopen: entry.status === "resolved" && !unit.archivedAt,
+          source: summary.source,
+          duration: summary.duration,
+          note: entry.resolutionNote,
+          reported: summary.reportedLabel,
+          resolved: summary.resolvedLabel,
+          pendingTitle: entry.status === "pending_confirm" ? tx(locale, "Landlord says fixed, confirm?", "El propietario dice que está arreglado. ¿Confirmar?") : null,
+          pendingNote: summary.pendingNote,
+          earliest: entry.eventDate || entry.createdAt.slice(0, 10),
+          today: todayISO(),
+        }
+      : null,
+    labels: {
+      markResolved: labels.markResolved,
+      confirmResolved: labels.confirmResolved,
+      resolutionNote: labels.resolutionNote,
+      resolutionDate: labels.resolutionDate,
+      reopen: labels.reopen,
+      history: labels.history,
+    },
   };
 }
 
@@ -881,7 +914,31 @@ async function recordsBundle(user: User, unit: NonNullable<Awaited<ReturnType<ty
     description: item.description,
     eventDate: item.eventDate,
     createdAt: item.createdAt,
+    status: item.status,
   }));
+  const board = issueBoard({
+    locale,
+    logs: logs.map((item) => ({
+      id: item.id,
+      type: item.type,
+      description: item.description,
+      eventDate: item.eventDate,
+      createdAt: item.createdAt,
+      status: item.status,
+      room: item.room,
+      resolvedAt: item.resolvedAt,
+      resolvedBy: item.resolvedBy,
+      resolutionNote: item.resolutionNote,
+      flags: item.flags,
+    })),
+    messages: messages.map((item) => ({
+      logEntryId: item.logEntryId,
+      direction: item.direction,
+      subject: item.subject,
+      deliveryStatus: item.deliveryStatus,
+      createdAt: item.createdAt,
+    })),
+  });
   const messageInput: MessageInput[] = messages.map((item) => ({
     logEntryId: item.logEntryId,
     direction: item.direction,
@@ -891,8 +948,10 @@ async function recordsBundle(user: User, unit: NonNullable<Awaited<ReturnType<ty
   }));
   const mail = Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM);
   return {
-    deadlines: deadlineCards(deadlineInput, logInput, locale, today),
-    notes: logCards(logInput, messageInput, locale).slice(0, 20),
+    deadlines: deadlineCards(deadlineInput.filter((item) => item.status !== "resolved"), logInput, locale, today),
+    notes: logCards(logInput.filter((item) => item.type !== "repair" && item.type !== "issue_event"), messageInput, locale).slice(0, 20),
+    issues: board.open,
+    archive: board.archive,
     steps: (() => {
       const planned = nextSteps({
         locale,
@@ -910,6 +969,7 @@ async function recordsBundle(user: User, unit: NonNullable<Awaited<ReturnType<ty
     reminderNote: reminderNote(mail, locale),
     reminderMail: mail,
     packetFile: evidenceFilename(today),
+    today,
   };
 }
 
@@ -927,6 +987,8 @@ async function recordsPayload() {
       notice: notice(locale),
       deadlines: [],
       notes: [],
+      issues: [],
+      archive: [],
       steps: { title: tx(locale, "Your next steps", "Sus próximos pasos"), held: tx(locale, "Nothing was sent.", "No se envió nada."), items: [] },
       lease: null,
       needsUnit: true,
@@ -934,6 +996,7 @@ async function recordsPayload() {
       reminderNote: reminderNote(false, locale),
       reminderMail: false,
       packetFile: evidenceFilename(todayISO()),
+      today: todayISO(),
       archived: false,
       archivedNote: null,
     };
@@ -949,6 +1012,8 @@ async function recordsPayload() {
     notice: notice(locale),
     deadlines: bundle.deadlines,
     notes: bundle.notes,
+    issues: bundle.issues,
+    archive: bundle.archive,
     steps: bundle.steps,
     lease: review
       ? {
@@ -961,9 +1026,26 @@ async function recordsPayload() {
     reminderNote: bundle.reminderNote,
     reminderMail: bundle.reminderMail,
     packetFile: bundle.packetFile,
+    today: bundle.today,
     archived: Boolean(unit.archivedAt),
     archivedNote: archivedNote(unit, locale),
   };
+}
+
+async function resolvePosted(input: Record<string, unknown>) {
+  const { user } = await withUnit();
+  const id = text(input.id);
+  if (!id) throw new Error(tx(user.locale, "Choose a request.", "Elija una solicitud."));
+  await resolveRepair(user, id, { note: text(input.note), date: text(input.date) || null, source: text(input.source) === "landlord" ? "landlord" : null });
+  return recordsPayload();
+}
+
+async function reopenPosted(input: Record<string, unknown>) {
+  const { user } = await withUnit();
+  const id = text(input.id);
+  if (!id) throw new Error(tx(user.locale, "Choose a request.", "Elija una solicitud."));
+  await reopenRepair(user, id);
+  return recordsPayload();
 }
 
 async function saveReminder(input: Record<string, unknown>) {

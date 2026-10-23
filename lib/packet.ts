@@ -9,7 +9,7 @@ const SMALL_CLAIMS_URL = "https://selfhelp.courts.ca.gov/small-claims";
 export function packetLines(input: {
   user: User;
   unit: Unit;
-  logs: { eventDate: string; createdAt: string; type: string; description: string; contentHash: string; prevHash: string; version: number; photoFileId?: string | null }[];
+  logs: { eventDate: string; createdAt: string; type: string; description: string; contentHash: string; prevHash: string; version: number; photoFileId?: string | null; status?: string; resolvedAt?: string | null; resolvedBy?: string | null; resolutionNote?: string | null }[];
   messages: { createdAt: string; direction: string; fromEmail: string; toEmail: string; ccEmail: string | null; subject: string; body: string; deliveryStatus: string; deliveryDetail: string | null; openIndicative: boolean }[];
   deadlines: { ruleId: string; kind: string; dueDate: string | null; computation: string; explanation: string; status: string; tenantReminderOn?: string | null; anchorDate?: string | null; createdAt?: string }[];
   ledger: { paidOn: string; amountCents: number; method: string; notes: string; voidedAt: string | null }[];
@@ -41,6 +41,9 @@ export function packetLines(input: {
         ...photo,
         `Hash ${entry.contentHash}`,
         `Previous hash ${entry.prevHash}`,
+        ...(entry.status === "resolved"
+          ? [`Resolved ${entry.resolvedAt || ""} by ${entry.resolvedBy || "unknown"}.${entry.resolutionNote ? ` Note: ${entry.resolutionNote}` : ""}`]
+          : []),
       ],
     });
   }

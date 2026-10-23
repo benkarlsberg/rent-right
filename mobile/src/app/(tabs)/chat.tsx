@@ -125,6 +125,10 @@ export default function AssistantChat() {
     }
     if (action.id.startsWith("send:")) {
       await send("", { action: "send", draftId: action.id.slice(5) });
+      return;
+    }
+    if (action.id.startsWith("resolve:")) {
+      await send("", { action: action.id });
     }
   }
 
@@ -221,6 +225,8 @@ export default function AssistantChat() {
               title={data.steps.title}
               steps={data.steps.items}
               note={held}
+              moreLabel={spanish ? "Ver todos los pasos" : "See all steps"}
+              hideLabel={spanish ? "Ocultar" : "Hide"}
               onAction={(step) => {
                 if (step.action === "wait") {
                   setHeld(data.steps?.held || "Nothing was sent.");

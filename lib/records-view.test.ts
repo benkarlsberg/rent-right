@@ -161,6 +161,19 @@ describe("records view", () => {
     expect(unsent.title).toBe("Sus próximos pasos");
     expect(unsent.items.map((item) => item.action)).toEqual(["send", "export", "small_claims"]);
     expect(unsent.items).toHaveLength(3);
+
+    const resolved = nextSteps({
+      locale: "en",
+      today,
+      hasRecords: true,
+      logs: [{ id: "log1", type: "repair", description: "Kitchen sink leak.", eventDate: today, createdAt: `${today}T18:00:00.000Z`, status: "resolved" }],
+      messages: [],
+      deadlines: [{
+        id: "d1", kind: "repair", ruleId: "CA-CC-1942", anchorDate: today, dueDate: "2026-10-30",
+        explanation: "", explanationEs: "", computation: "", sourceId: "log1", status: "resolved", tenantReminderOn: null,
+      }],
+    });
+    expect(resolved.items.map((item) => item.action)).toEqual(["export", "small_claims"]);
   });
 });
 

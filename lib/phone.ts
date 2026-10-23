@@ -75,6 +75,7 @@ export function logKind(type: string, locale: Locale): string {
     notice_received: ["Notice", "Aviso"],
     conversation: ["Note", "Nota"],
     payment: ["Payment", "Pago"],
+    issue_event: ["Record", "Registro"],
   };
   const pair = map[type] || [type.replaceAll("_", " "), type.replaceAll("_", " ")];
   return locale === "es" ? pair[1] : pair[0];
