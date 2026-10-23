@@ -1,5 +1,5 @@
-import { router, useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { router } from "expo-router";
+import { useState } from "react";
 import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/api";
@@ -8,12 +8,20 @@ import { saveAuthorizedFile } from "@/files";
 import { NextSteps, type StepItem } from "@/next-steps";
 import type { Records } from "@/app/(tabs)/records";
 import { useSession } from "@/session";
+import { Skeleton } from "@/skeleton";
 import { colors } from "@/theme";
 import { Button, ErrorLine, Field, LearnMore, clipX, wrapText } from "@/ui";
 import { useLoad } from "@/use-load";
 
+function shiftDate(iso: string, days: number): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  const date = new Date(Date.UTC(year || 1970, (month || 1) - 1, day || 1));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 export default function Reminders() {
-  const { data, error, reload, token, setError } = useLoad<Records>("records");
+  const { data, error, loading, reload, token, setError } = useLoad<Records>("records");
   const { me } = useSession();
   const [editing, setEditing] = useState<string | null>(null);
   const [draftDate, setDraftDate] = useState("");
@@ -23,7 +31,6 @@ export default function Reminders() {
   const [busy, setBusy] = useState(false);
   const [sheet, setSheet] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
-  useFocusEffect(useCallback(() => { void reload(); }, [reload]));
 
   const es = me?.user.locale === "es" || (!me && data?.locale === "es");
   const labels = data?.labels;
@@ -94,8 +101,31 @@ export default function Reminders() {
     }
   }
 
-  const deadlines = data?.deadlines || [];
   const canAdd = Boolean(token && data && !me?.needsUnit && !data.archived);
+
+  async function markDone(id: string) {
+    if (!token || busy) return;
+    try {
+      setBusy(true);
+      setError("");
+      await api("records/done", { token, body: { id } });
+      if (openId === id) setOpenId(null);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update the reminder.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const today = data?.today || "";
+  const soonUntil = today ? shiftDate(today, 7) : "";
+  const openDeadlines = (data?.deadlines || []).filter((card) => !card.closed).sort((a, b) => (a.sortOn || "9999-12-31").localeCompare(b.sortOn || "9999-12-31") || a.title.localeCompare(b.title));
+  const groups = [
+    { key: "overdue", title: labels?.overdue || (es ? "Vencidos" : "Overdue"), items: openDeadlines.filter((card) => Boolean(card.sortOn) && today && (card.sortOn || "") < today) },
+    { key: "soon", title: labels?.soon || (es ? "Pronto" : "Soon"), items: openDeadlines.filter((card) => Boolean(card.sortOn) && today && (card.sortOn || "") >= today && (card.sortOn || "") <= soonUntil) },
+    { key: "later", title: labels?.later || (es ? "Más adelante" : "Later"), items: openDeadlines.filter((card) => !card.sortOn || !today || (card.sortOn || "") > soonUntil) },
+  ].filter((group) => group.items.length);
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -123,6 +153,7 @@ export default function Reminders() {
         contentContainerStyle={styles.page}
         refreshControl={<RefreshControl refreshing={false} onRefresh={reload} tintColor={colors.pine} />}
       >
+        {loading && !data ? <Skeleton /> : null}
         {data?.steps ? (
           <NextSteps
             title={data.steps.title}
@@ -133,8 +164,11 @@ export default function Reminders() {
             onAction={(step) => void onStep(step)}
           />
         ) : null}
-        {!deadlines.length ? <Text style={styles.empty}>{labels?.emptyReminders || (es ? "Aún no hay recordatorios." : "No reminders yet.")}</Text> : null}
-        {deadlines.map((card) => {
+        {data && !openDeadlines.length ? <Text style={styles.empty}>{labels?.emptyReminders || (es ? "Aún no hay recordatorios." : "No reminders yet.")}</Text> : null}
+        {groups.map((group) => (
+          <View key={group.key}>
+            <Text style={[styles.group, group.key === "overdue" && styles.groupOverdue]}>{group.title}</Text>
+            {group.items.map((card) => {
           const open = openId === card.id;
           const line = card.due || card.reminder;
           return (
@@ -178,11 +212,21 @@ export default function Reminders() {
                       />
                     )
                   ) : null}
+                  {labels?.markDone && !data?.archived ? (
+                    <Button label={labels.markDone} ghost onPress={() => markDone(card.id)} disabled={busy} />
+                  ) : null}
                 </View>
+              ) : null}
+              {labels?.markDone && !data?.archived && !open ? (
+                <Pressable style={styles.linkHit} accessibilityRole="button" accessibilityLabel={labels.markDone} onPress={() => markDone(card.id)}>
+                  <Text style={styles.addText}>{labels.markDone}</Text>
+                </Pressable>
               ) : null}
             </View>
           );
-        })}
+            })}
+          </View>
+        ))}
       </ScrollView>
       {sheet && labels && data ? (
         <View style={styles.overlay}>
@@ -217,6 +261,9 @@ const styles = StyleSheet.create({
   place: { marginHorizontal: 16, marginTop: 8, minHeight: 44, justifyContent: "center" },
   page: { paddingHorizontal: 16, paddingBottom: 28 },
   empty: { ...wrapText, marginTop: 16, color: colors.mute, fontSize: 15, lineHeight: 21 },
+  group: { ...wrapText, marginTop: 16, fontSize: 13, lineHeight: 18, color: colors.mute, fontWeight: "700" },
+  groupOverdue: { color: colors.bad },
+  linkHit: { minHeight: 44, justifyContent: "center" },
   card: { backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.line, marginTop: 10, paddingHorizontal: 12, paddingVertical: 10 },
   row: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 44 },
   rowText: { flex: 1, minWidth: 0 },

@@ -1,11 +1,12 @@
-import { router, useFocusEffect } from "expo-router";
-import { useCallback, useRef, useState } from "react";
+import { router } from "expo-router";
+import { useRef, useState } from "react";
 import { FlatList, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/api";
 import { saveAuthorizedFile } from "@/files";
 import type { Notice } from "@/session";
 import { useSession } from "@/session";
+import { Skeleton } from "@/skeleton";
 import { Logo } from "@/logo";
 import { colors } from "@/theme";
 import { ErrorLine, clipX, wrapMarker, wrapText } from "@/ui";
@@ -31,7 +32,7 @@ type Thread = {
 type Attachment = { name: string; mime: string; base64: string };
 
 export default function AssistantChat() {
-  const { data, error, reload, setError, token } = useLoad<Thread>("thread");
+  const { data, error, loading, reload, setError, token } = useLoad<Thread>("thread");
   const { me, signOut } = useSession();
   const spanish = me?.user.locale === "es";
   const [draft, setDraft] = useState("");
@@ -43,8 +44,6 @@ export default function AssistantChat() {
   const [held, setHeld] = useState("");
   const lock = useRef(false);
   const shiftHeld = useRef(false);
-
-  useFocusEffect(useCallback(() => { void reload(); }, [reload]));
 
   const canSend = !busy && !data?.archived && (draft.trim().length > 0 || Boolean(file));
 
@@ -209,7 +208,7 @@ export default function AssistantChat() {
               ) : null}
             </View>
           ) : null}
-          ListEmptyComponent={
+          ListEmptyComponent={loading && !data ? <Skeleton /> : (
             <View>
               <Text style={styles.intro}>{spanish ? "Cuénteme qué pasó." : "Tell me what happened."}</Text>
               <Text style={styles.support}>{spanish ? "Un fregadero que gotea, un aumento, o su depósito." : "A leaking sink, a rent increase, or your deposit."}</Text>
@@ -219,7 +218,7 @@ export default function AssistantChat() {
                 </Pressable>
               ))}
             </View>
-          }
+          )}
           ListFooterComponent={data?.steps?.items?.length ? (
             <NextSteps
               title={data.steps.title}

@@ -70,13 +70,14 @@ import {
 } from "@/lib/phone";
 import { sendTenantEmail } from "@/lib/email";
 import { signInMessage, signInUrl } from "@/lib/email-template";
-import { currentUser } from "@/lib/session";
+import { currentUser, sessionUserId } from "@/lib/session";
 import { reviewerEmail, reviewerMatch } from "@/lib/reviewer";
 import { DEMO_EMAIL, startSampleTenancy } from "@/lib/seed";
 import { userFromAppleIdToken } from "@/lib/supabase-auth";
 import { appUrl, relayAddress, tx } from "@/lib/text";
 import { parseCard } from "@/lib/chat-card";
 import { runChatTurn } from "@/lib/chat-turn";
+import { drainRoundTrips, withActor } from "@/lib/pg";
 import { archivedNote, previewResidence, residencePayload, saveResidence, selectResidence } from "@/lib/residence";
 import { issueHistory, issueSummary, reopenRepair, resolveRepair } from "@/lib/issues";
 import { askAssistant, emailLandlord, extractPdfOrText, recordLog, runLeaseReview, sampleLeaseText, saveDepositAndDeadline } from "@/lib/workflow";
@@ -235,15 +236,25 @@ function unitLocal(unit: Unit, locale: Locale) {
   return localProtectionNote(place.localOrdinance, locale);
 }
 
+function stamp(response: Response, started: number): Response {
+  const headers = new Headers(response.headers);
+  const trips = drainRoundTrips();
+  headers.set("server-timing", `app;dur=${Date.now() - started};desc="${trips} queries"`);
+  headers.set("access-control-expose-headers", "server-timing");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 export async function handlePhone(request: Request, path: string[]): Promise<Response> {
+  const started = Date.now();
+  drainRoundTrips();
   try {
-    const user = await currentUser();
-    const { runAsUser } = await import("@/lib/session");
-    return await runAsUser(user, () => route(request, path));
+    const id = await sessionUserId();
+    const response = await withActor(id, () => route(request, path));
+    return stamp(response, started);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Something went wrong.";
     const status = message === "Sign in required." ? 401 : 400;
-    return json({ error: message }, status);
+    return stamp(json({ error: message }, status), started);
   }
 }
 
@@ -374,6 +385,7 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "GET" && key === "assistant") return json(await assistantPayload());
   if (method === "POST" && key === "assistant") return json(await ask(await readBody(request)));
   if (method === "GET" && key === "thread") return json(await threadPayload());
+  if (method === "POST" && key === "records/done") return json(await markReminderDone(await readBody(request)));
   if (method === "POST" && key === "records/reminder") return json(await saveReminder(await readBody(request)));
   if (method === "POST" && key === "records/reminder/new") return json(await addReminder(await readBody(request)));
   if (method === "POST" && key === "records/resolve") return json(await resolvePosted(await readBody(request)));
@@ -829,7 +841,10 @@ async function threadPayload() {
   const unit = await primaryUnit(user.id);
   if (!unit) return emptyThread(user);
   const locale = user.locale;
-  const rows = await listAssistant(user.id, "visible");
+  const [rows, bundle] = await Promise.all([
+    listAssistant(user.id, "visible"),
+    recordsBundle(user, unit, { reviews: false }),
+  ]);
   const items = rows.map((row) => {
     if (row.role === "user") return { role: "user" as const, text: row.content };
     const card = parseCard(row.content);
@@ -852,7 +867,7 @@ async function threadPayload() {
     items,
     chips: rows.some((row) => row.role === "user") ? [] : chips(locale),
     notice: notice(locale),
-    steps: (await recordsBundle(user, unit)).steps,
+    steps: bundle.steps,
     packetFile: evidenceFilename(todayISO()),
     archived: Boolean(unit.archivedAt),
     archivedNote: archivedNote(unit, locale),
@@ -888,13 +903,15 @@ async function postThread(input: Record<string, unknown>) {
   return threadPayload();
 }
 
-async function recordsBundle(user: User, unit: NonNullable<Awaited<ReturnType<typeof primaryUnit>>>) {
+async function recordsBundle(user: User, unit: NonNullable<Awaited<ReturnType<typeof primaryUnit>>>, options?: { reviews?: boolean }) {
   const locale = user.locale;
   const today = todayISO();
-  const deadlines = await listDeadlines(user.id, unit.id);
-  const logs = await listLogs(user.id, unit.id);
-  const messages = await listMessages(user.id, unit.id);
-  const reviews = await listLeaseReviews(user.id, unit.id);
+  const [deadlines, logs, messages, reviews] = await Promise.all([
+    listDeadlines(user.id, unit.id),
+    listLogs(user.id, unit.id),
+    listMessages(user.id, unit.id),
+    options?.reviews === false ? Promise.resolve([]) : listLeaseReviews(user.id, unit.id),
+  ]);
   const deadlineInput: DeadlineInput[] = deadlines.map((item) => ({
     id: item.id,
     kind: item.kind,
@@ -1045,6 +1062,14 @@ async function reopenPosted(input: Record<string, unknown>) {
   const id = text(input.id);
   if (!id) throw new Error(tx(user.locale, "Choose a request.", "Elija una solicitud."));
   await reopenRepair(user, id);
+  return recordsPayload();
+}
+
+async function markReminderDone(input: Record<string, unknown>) {
+  const { user } = await withUnit();
+  const id = text(input.id);
+  if (!id) throw new Error(tx(user.locale, "Choose a reminder.", "Elija un recordatorio."));
+  await setDeadlineStatus(user.id, id, "done");
   return recordsPayload();
 }
 

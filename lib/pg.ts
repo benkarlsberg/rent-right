@@ -3,8 +3,46 @@ import postgres from "postgres";
 
 type Sql = ReturnType<typeof postgres>;
 type Tx = postgres.TransactionSql;
+type Reserved = Awaited<ReturnType<Sql["reserve"]>>;
 
-type Scope = { userId: string | null; sql?: Sql; opening?: Promise<Sql> };
+type Scope = {
+  userId: string | null;
+  sql?: Sql;
+  opening?: Promise<Sql>;
+  reserved?: Reserved;
+  memo?: Map<string, Promise<unknown>>;
+};
+
+let roundTrips = 0;
+
+export function drainRoundTrips(): number {
+  const count = roundTrips;
+  roundTrips = 0;
+  return count;
+}
+
+function noteRoundTrip() {
+  roundTrips += 1;
+}
+
+/** Share one in-flight read across the request so parallel callers do not repeat it. */
+export function dropRequestMemo(key: string) {
+  actors.getStore()?.memo?.delete(key);
+}
+
+export function requestMemo<T>(key: string, load: () => Promise<T>): Promise<T> {
+  const scope = actors.getStore();
+  if (!scope) return load();
+  if (!scope.memo) scope.memo = new Map();
+  const hit = scope.memo.get(key) as Promise<T> | undefined;
+  if (hit) return hit;
+  const pending = load().catch((error: unknown) => {
+    if (scope.memo?.get(key) === pending) scope.memo.delete(key);
+    throw error;
+  });
+  scope.memo.set(key, pending);
+  return pending;
+}
 
 const actors = new AsyncLocalStorage<Scope>();
 let pool: Sql | null = null;
@@ -266,16 +304,60 @@ export function adoptActor(userId: string | null) {
 }
 
 async function applyRole(tx: Tx, userId: string | null) {
+  noteRoundTrip();
   await tx.unsafe("select set_config('request.jwt.claim.sub', $1, true)", [userId ?? ""]);
-  if (userId) await tx.unsafe("set local role authenticated");
+  if (userId) {
+    noteRoundTrip();
+    await tx.unsafe("set local role authenticated");
+  }
+}
+
+async function bindRole<T>(scope: Scope, userId: string, fn: () => Promise<T>): Promise<T> {
+  const db = await client();
+  const reserved = await db.reserve();
+  scope.reserved = reserved;
+  try {
+    noteRoundTrip();
+    await reserved.unsafe("select set_config('request.jwt.claim.sub', $1, false)", [userId]);
+    noteRoundTrip();
+    await reserved.unsafe("set role authenticated");
+    return await fn();
+  } finally {
+    scope.reserved = undefined;
+    noteRoundTrip();
+    await reserved.unsafe("reset role").catch(() => {});
+    noteRoundTrip();
+    await reserved.unsafe("select set_config('request.jwt.claim.sub', '', false)").catch(() => {});
+    reserved.release();
+  }
+}
+
+async function suspendRole<T>(parent: Scope, fn: () => Promise<T>): Promise<T> {
+  const reserved = parent.reserved;
+  if (!reserved || !parent.userId) return fn();
+  noteRoundTrip();
+  await reserved.unsafe("reset role");
+  noteRoundTrip();
+  await reserved.unsafe("select set_config('request.jwt.claim.sub', '', false)");
+  const scope: Scope = { userId: null, sql: parent.sql, reserved, memo: new Map() };
+  try {
+    return await actors.run(scope, fn);
+  } finally {
+    noteRoundTrip();
+    await reserved.unsafe("select set_config('request.jwt.claim.sub', $1, false)", [parent.userId]);
+    noteRoundTrip();
+    await reserved.unsafe("set role authenticated");
+  }
 }
 
 export async function withActor<T>(userId: string | null, fn: () => Promise<T>): Promise<T> {
   const current = actors.getStore();
   if (current && current.userId === userId) return fn();
-  const scope: Scope = { userId };
+  if (current?.reserved && userId === null) return suspendRole(current, fn);
+  const scope: Scope = { userId, memo: new Map() };
   try {
-    return await actors.run(scope, fn);
+    if (!userId) return await actors.run(scope, fn);
+    return await actors.run(scope, () => bindRole(scope, userId, fn));
   } finally {
     const sql = scope.sql;
     scope.sql = undefined;
@@ -301,12 +383,22 @@ async function execute(sql: string, params: unknown[]): Promise<{ rows: Record<s
   const text = placeholders(sql);
   const scope = actors.getStore();
   const userId = scope?.userId ?? null;
+  if (scope?.reserved) {
+    noteRoundTrip();
+    return readResult(await scope.reserved.unsafe(text, params as never[]));
+  }
   const db = await client();
   const transient = cloudflareRuntime() && !scope;
   try {
-    if (!userId) return readResult(await db.unsafe(text, params as never[]));
+    if (!userId) {
+      noteRoundTrip();
+      return readResult(await db.unsafe(text, params as never[]));
+    }
+    noteRoundTrip();
+    noteRoundTrip();
     return await (db.begin(async (tx) => {
       await applyRole(tx, userId);
+      noteRoundTrip();
       return readResult(await tx.unsafe(text, params as never[]));
     }) as Promise<{ rows: Record<string, unknown>[]; count: number }>);
   } finally {

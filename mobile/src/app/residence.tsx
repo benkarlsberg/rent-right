@@ -68,6 +68,16 @@ type Residence = {
   labels: Labels;
   archivedNote: string | null;
 };
+function placeLine(home: Pick<Home, "street" | "unitNumber" | "city" | "postalCode">): string {
+  const raw = home.unitNumber.trim().replace(/\s+/g, " ");
+  let unit = raw;
+  if (raw && !/^(apt|apartment|#)\b/i.test(raw)) {
+    const stripped = raw.replace(/^(unit\s+)+/i, "").trim();
+    unit = stripped ? `Unit ${stripped}` : "";
+  }
+  return [home.street, unit, home.city, "CA", home.postalCode].filter(Boolean).join(", ").replace(", CA,", " CA");
+}
+
 type Preview = {
   inCalifornia: boolean;
   summary: string;
@@ -323,7 +333,7 @@ export default function ResidenceScreen() {
       ) : null}
       {home && !home.canEdit ? (
         <Card>
-          <Text style={styles.body}>{[home.street, home.unitNumber, home.city, "CA", home.postalCode].filter(Boolean).join(", ")}</Text>
+          <Text style={styles.body}>{placeLine(home)}</Text>
           <Text style={styles.body}>{home.summary}</Text>
         </Card>
       ) : null}

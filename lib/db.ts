@@ -1,7 +1,7 @@
 import "server-only";
 import { randomUUID } from "crypto";
 import { decryptString, encryptString, hashToken, randomToken, shortCode } from "@/lib/crypto";
-import { all, hasUserActor, one, run, withActor } from "@/lib/pg";
+import { all, dropRequestMemo, hasUserActor, one, requestMemo, run, withActor } from "@/lib/pg";
 import { deleteSupabaseAuthUser, sendSupabaseMagicLink, supabaseAuthConfigured, userFromSupabaseOtp } from "@/lib/supabase-auth";
 import type { Locale } from "@/lib/disclaimer";
 import type { LeaseReview } from "@/lib/lease/review";
@@ -140,8 +140,17 @@ function mapUnit(row: UnitRow, role: "owner" | "roommate"): Unit {
   };
 }
 
+export function unitLabel(unitNumber: string): string {
+  const raw = unitNumber.trim().replace(/\s+/g, " ");
+  if (!raw) return "";
+  if (/^(apt|apartment|#)\b/i.test(raw)) return raw;
+  const stripped = raw.replace(/^(unit\s+)+/i, "").trim();
+  if (!stripped) return "";
+  return `Unit ${stripped}`;
+}
+
 export function unitAddress(unit: Unit): string {
-  return [unit.street, unit.unitNumber ? `Unit ${unit.unitNumber}` : "", unit.city, "CA", unit.postalCode]
+  return [unit.street, unitLabel(unit.unitNumber), unit.city, "CA", unit.postalCode]
     .filter(Boolean)
     .join(", ")
     .replace(", CA,", " CA");
@@ -295,11 +304,13 @@ export async function membership(userId: string, unitId: string) {
 }
 
 export async function requireUnit(userId: string, unitId: string) {
-  const role = await membership(userId, unitId);
-  if (!role) throw new HttpError("You do not have access to that unit.");
-  const row = await one<UnitRow>("select * from units where id = ?", [unitId]);
-  if (!row) throw new HttpError("Unit not found.");
-  return mapUnit(row, role);
+  return requestMemo(`unit:${userId}:${unitId}`, async () => {
+    const role = await membership(userId, unitId);
+    if (!role) throw new HttpError("You do not have access to that unit.");
+    const row = await one<UnitRow>("select * from units where id = ?", [unitId]);
+    if (!row) throw new HttpError("Unit not found.");
+    return mapUnit(row, role);
+  });
 }
 
 export async function peekUnit(id: string) {
@@ -415,6 +426,7 @@ export async function updateUnit(userId: string, unitId: string, input: UnitInpu
       input.landlordPhone, input.rentCents, input.depositCents, input.moveInDate, input.leaseEndDate, unitId,
     ],
   );
+  dropRequestMemo(`unit:${userId}:${unitId}`);
   return await requireUnit(userId, unitId);
 }
 

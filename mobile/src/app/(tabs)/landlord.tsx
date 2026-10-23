@@ -2,6 +2,8 @@ import { useState } from "react";
 import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/api";
+import { useSession } from "@/session";
+import { Skeleton } from "@/skeleton";
 import { colors } from "@/theme";
 import { ErrorLine, LearnMore, clipX, wrapText } from "@/ui";
 import { useLoad } from "@/use-load";
@@ -14,7 +16,9 @@ type ChatData = {
 };
 
 export default function Landlord() {
-  const { data, error, reload, setError, token } = useLoad<ChatData>("chat");
+  const { data, error, loading, reload, setError, token } = useLoad<ChatData>("chat");
+  const { me } = useSession();
+  const spanish = me?.user.locale === "es";
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -36,7 +40,7 @@ export default function Landlord() {
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
-      <Text style={styles.title}>{data?.landlord || "Landlord"}</Text>
+      <Text style={styles.title}>{data?.landlord || me?.unit?.landlordName || (spanish ? "Propietario" : "Landlord")}</Text>
       {data?.archivedNote ? <Text style={styles.empty}>{data.archivedNote}</Text> : null}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <FlatList
@@ -44,7 +48,7 @@ export default function Landlord() {
           data={data?.items || []}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
-          ListEmptyComponent={<Text style={styles.empty}>Messages you send to your landlord show up here. Nothing is sent until you confirm.</Text>}
+          ListEmptyComponent={loading && !data ? <Skeleton /> : <Text style={styles.empty}>{spanish ? "Los mensajes que envíe a su propietario aparecen aquí. No se envía nada hasta que usted confirme." : "Messages you send to your landlord show up here. Nothing is sent until you confirm."}</Text>}
           renderItem={({ item }) => {
             const mine = item.side === "tenant";
             return (

@@ -1,31 +1,50 @@
-import { useCallback, useEffect, useState } from "react";
-import { api } from "@/api";
+import { useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "@/session";
+import { cachedTab, fetchTab } from "@/tab-cache";
+
+export { clearTabCache, prefetchTabs } from "@/tab-cache";
 
 export function useLoad<T>(path: string) {
   const { token } = useSession();
-  const [data, setData] = useState<T | null>(null);
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
+  const seeded = token ? cachedTab<T>(token, path) : null;
+  const [data, setData] = useState<T | null>(seeded);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!seeded);
 
-  const reload = useCallback(async () => {
-    if (!token) {
+  const run = useCallback(async (force: boolean) => {
+    const current = tokenRef.current;
+    if (!current) {
       setLoading(false);
       return;
     }
+    const cached = cachedTab<T>(current, path);
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     try {
       setError("");
-      setData(await api<T>(path, { token }));
+      const next = await fetchTab<T>(current, path, force);
+      if (tokenRef.current === current) setData(next);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      if (tokenRef.current === current) setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
-      setLoading(false);
+      if (tokenRef.current === current) setLoading(false);
     }
-  }, [path, token]);
+  }, [path]);
 
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    void run(false);
+  }, [run, token]);
 
-  return { data, error, loading, reload, setError, token };
+  useFocusEffect(useCallback(() => {
+    void run(false);
+  }, [run]));
+
+  return { data, error, loading, reload: () => run(true), setError, token };
 }

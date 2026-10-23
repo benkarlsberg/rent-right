@@ -1,5 +1,5 @@
-import { router, useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { router } from "expo-router";
+import { useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SvgXml } from "react-native-svg";
@@ -11,6 +11,7 @@ import type { StepItem } from "@/next-steps";
 import { ResolvePanel } from "@/resolve-panel";
 import type { Me, Notice } from "@/session";
 import { useSession } from "@/session";
+import { Skeleton } from "@/skeleton";
 import { colors } from "@/theme";
 import { Button, ErrorLine, clipX, wrapText } from "@/ui";
 import { useLoad } from "@/use-load";
@@ -35,6 +36,8 @@ export type Records = {
     reminderOn: string | null;
     learnMore: string;
     status: string;
+    sortOn?: string;
+    closed?: boolean;
   }[];
   notes: { id: string; line: string; title: string; status: string; when: string; issue: string; message: string | null }[];
   issues?: {
@@ -100,6 +103,11 @@ export type Records = {
     menu?: string;
     downloadData?: string;
     close?: string;
+    overdue?: string;
+    soon?: string;
+    later?: string;
+    markDone?: string;
+    nextStepsLink?: string;
   };
   reminderNote: string;
   packetFile: string;
@@ -114,7 +122,7 @@ function Gear() {
 }
 
 export default function Records() {
-  const { data, error, reload, token, setError } = useLoad<Records>("records");
+  const { data, error, loading, reload, token, setError } = useLoad<Records>("records");
   const { me, signIn, signOut } = useSession();
   const [busy, setBusy] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -124,7 +132,6 @@ export default function Records() {
   const [section, setSection] = useState<Segment>("issues");
   const [menu, setMenu] = useState(false);
   const [pendingLocale, setPendingLocale] = useState<"en" | "es" | null>(null);
-  useFocusEffect(useCallback(() => { void reload(); }, [reload]));
 
   const locale: "en" | "es" = pendingLocale ?? (me?.user.locale === "es" || (!me && data?.locale === "es") ? "es" : "en");
   const labels = data?.labels;
@@ -190,7 +197,7 @@ export default function Records() {
   const issues = data?.issues || [];
   const archive = data?.archive || [];
   const notes = data?.notes || [];
-  const address = data?.address || (me?.needsUnit ? (es ? "Agregue su vivienda cuando pueda." : "Add your place when you are ready.") : (es ? "Sus solicitudes, documentos y evidencia." : "Your requests, documents, and evidence."));
+  const address = data?.address || me?.unit?.address || (me?.needsUnit ? (es ? "Agregue su vivienda cuando pueda." : "Add your place when you are ready.") : (es ? "Sus solicitudes, documentos y evidencia." : "Your requests, documents, and evidence."));
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -249,9 +256,20 @@ export default function Records() {
         contentContainerStyle={styles.page}
         refreshControl={<RefreshControl refreshing={false} onRefresh={reload} tintColor={colors.pine} />}
       >
+        {loading && !data ? <Skeleton /> : null}
+        {data?.steps?.items?.length ? (
+          <Pressable
+            style={styles.linkHit}
+            accessibilityRole="link"
+            accessibilityLabel={labels?.nextStepsLink || (es ? "Sus próximos pasos están en Recordatorios" : "Your next steps are on Reminders")}
+            onPress={() => router.push("/reminders")}
+          >
+            <Text style={styles.link}>{labels?.nextStepsLink || (es ? "Sus próximos pasos están en Recordatorios" : "Your next steps are on Reminders")}</Text>
+          </Pressable>
+        ) : null}
         {section === "issues" ? (
           <View>
-            {!issues.length && !archive.length ? <Text style={styles.empty}>{labels?.emptyIssues || (es ? "No hay solicitudes abiertas." : "No open requests.")}</Text> : null}
+            {data && !issues.length && !archive.length ? <Text style={styles.empty}>{labels?.emptyIssues || (es ? "No hay solicitudes abiertas." : "No open requests.")}</Text> : null}
             {issues.map((issue) => {
               const open = openIssue === issue.id;
               return (

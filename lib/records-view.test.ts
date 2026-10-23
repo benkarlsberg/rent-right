@@ -30,6 +30,8 @@ describe("records view", () => {
       createdAt: "2026-10-23T18:00:00.000Z",
     }], "en", today);
     expect(card.title).toBe("Reminder: follow up on Kitchen sink leak");
+    expect(card.sortOn).toBe("2026-10-30");
+    expect(card.closed).toBe(false);
     expect(card.title).not.toMatch(/Landlord's deadline to respond/);
     expect(card.owes).toMatch(/does not decide that the landlord must answer/);
     expect(card.due).toBe("Due Oct 30, 2026 · in 7 days");
@@ -95,6 +97,8 @@ describe("records view", () => {
     expect(card.title).toBe("Llamar por el fregadero");
     expect(card.owes).toMatch(/No es una fecha legal/);
     expect(card.reminder).toMatch(/^Su recordatorio: /);
+    expect(card.sortOn).toBe("2026-11-02");
+    expect(card.closed).toBe(false);
     expect(reminderNote(false, "es")).toMatch(/se queda en la app/);
     expect(reminderNote(true, "en")).toMatch(/emails you/);
     expect(reminderNote(true, "en")).toMatch(/Nothing is sent to the landlord/);

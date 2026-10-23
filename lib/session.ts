@@ -3,22 +3,28 @@ import { cookies, headers } from "next/headers";
 import { readSession, signSession } from "@/lib/crypto";
 import { getUser, type User } from "@/lib/db";
 import type { Locale } from "@/lib/disclaimer";
-import { adoptActor, withActor } from "@/lib/pg";
+import { adoptActor, requestMemo, withActor } from "@/lib/pg";
 import { userIdFromSupabaseToken } from "@/lib/supabase-auth";
 
 export { adoptActor };
 
 const SESSION = "rr_session";
 
-export async function currentUser(): Promise<User | null> {
+export async function sessionUserId(): Promise<string | null> {
   const jar = await cookies();
   const headerList = await headers();
   const header = headerList.get("authorization");
   const bearer = header?.match(/^Bearer\s+(\S+)/i)?.[1];
   const token = bearer || jar.get(SESSION)?.value;
-  const id = readSession(token) || (await userIdFromSupabaseToken(token));
-  if (!id) return null;
-  return await getUser(id);
+  return readSession(token) || (await userIdFromSupabaseToken(token));
+}
+
+export async function currentUser(): Promise<User | null> {
+  return requestMemo("rr-user", async () => {
+    const id = await sessionUserId();
+    if (!id) return null;
+    return (await getUser(id)) ?? null;
+  });
 }
 
 export async function runAsUser<T>(user: User | null, fn: () => Promise<T>): Promise<T> {

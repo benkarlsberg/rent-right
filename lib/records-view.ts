@@ -47,6 +47,8 @@ export type DeadlineCard = {
   reminderOn: string | null;
   learnMore: string;
   status: string;
+  sortOn: string;
+  closed: boolean;
 };
 
 export type LogCard = {
@@ -211,6 +213,8 @@ function cardFor(item: DeadlineInput, log: LogInput | null, locale: Locale, toda
     reminderOn: item.tenantReminderOn,
     learnMore,
     status,
+    sortOn: item.dueDate || item.tenantReminderOn || "",
+    closed: item.status === "done" || item.status === "resolved" || item.status === "replaced",
   };
 }
 
@@ -541,6 +545,11 @@ export function recordsLabels(locale: Locale) {
     menu: tx(locale, "Account menu", "Menú de la cuenta"),
     downloadData: tx(locale, "Download my data", "Descargar mis datos"),
     close: tx(locale, "Close", "Cerrar"),
+    overdue: tx(locale, "Overdue", "Vencidos"),
+    soon: tx(locale, "Soon", "Pronto"),
+    later: tx(locale, "Later", "Más adelante"),
+    markDone: tx(locale, "Mark done", "Marcar como hecho"),
+    nextStepsLink: tx(locale, "Your next steps are on Reminders", "Sus próximos pasos están en Recordatorios"),
   };
 }
 

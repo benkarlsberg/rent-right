@@ -2,6 +2,7 @@ import * as SecureStore from "expo-secure-store";
 import { createContext, useContext, useEffect, useState } from "react";
 import { Platform } from "react-native";
 import { api } from "@/api";
+import { clearTabCache } from "@/tab-cache";
 
 const KEY = "rr_session";
 
@@ -76,6 +77,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         me,
         signIn: apply,
         signOut: async () => {
+          clearTabCache();
           await writeToken(null);
           setToken(null);
           setMe(null);
