@@ -710,7 +710,7 @@ export async function messageForUser(userId: string, id: string): Promise<Messag
   return mapMessage(row);
 }
 
-export async function saveDraftBody(userId: string, id: string, body: string) {
+export async function saveDraftBody(userId: string, id: string, body: string): Promise<void> {
   const current = await messageForUser(userId, id);
   if (current.deliveryStatus !== "draft") throw new HttpError("This message was already sent.");
   if (hasUserActor()) return withActor(null, () => saveDraftBody(userId, id, body));
@@ -721,7 +721,7 @@ export async function saveDraftBody(userId: string, id: string, body: string) {
   if (!result.changes) throw new HttpError("This message was already sent.");
 }
 
-export async function discardDraftMessage(userId: string, id: string) {
+export async function discardDraftMessage(userId: string, id: string): Promise<void> {
   const current = await messageForUser(userId, id);
   if (current.deliveryStatus !== "draft") throw new HttpError("This message was already sent.");
   if (hasUserActor()) return withActor(null, () => discardDraftMessage(userId, id));
@@ -740,7 +740,7 @@ export async function promoteDraftMessage(userId: string, id: string, patch: {
   deliveryDetail: string | null;
   providerId: string | null;
   responseToken: string | null;
-}) {
+}): Promise<void> {
   const current = await messageForUser(userId, id);
   if (current.deliveryStatus !== "draft") throw new HttpError("This message was already sent.");
   if (hasUserActor()) return withActor(null, () => promoteDraftMessage(userId, id, patch));
