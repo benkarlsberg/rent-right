@@ -117,12 +117,12 @@ export function ErrorLine({ message }: { message: string }) {
   );
 }
 
-export function LearnMore({ label, children }: { label?: string; children: React.ReactNode }) {
+export function LearnMore({ label, hideLabel, children }: { label?: string; hideLabel?: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <View style={wrapBox} {...wrapMarker()}>
-      <Pressable onPress={() => setOpen((value) => !value)} accessibilityRole="button">
-        <Text style={styles.more}>{open ? "Hide" : label || "Learn more"}</Text>
+      <Pressable onPress={() => setOpen((value) => !value)} accessibilityRole="button" accessibilityLabel={label || "Learn more"}>
+        <Text style={styles.more}>{open ? hideLabel || "Hide" : label || "Learn more"}</Text>
       </Pressable>
       {open ? <View style={[styles.moreBody, wrapBox]}>{typeof children === "string" ? <Text style={[styles.detail, wrapText]}>{children}</Text> : children}</View> : null}
     </View>

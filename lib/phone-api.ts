@@ -17,6 +17,7 @@ import {
   latestRentCheck,
   listAssistant,
   listConditions,
+  insertCustomReminder,
   listDeadlines,
   listLeaseReviews,
   listLedger,
@@ -27,6 +28,7 @@ import {
   saveFile,
   saveRentCheck,
   setDeadlineStatus,
+  setTenantReminder,
   unitAddress,
   updateUnit,
   updateUser,
@@ -42,7 +44,18 @@ import { suggestPlace } from "@/lib/geo";
 import { detectPlace, localProtectionNote, placeSummary } from "@/lib/rules/detect";
 import { isAllowedJurisdiction } from "@/lib/rules/cities";
 import { checkRentIncrease, type Jurisdiction, type RsoStatus, type RstpoTier } from "@/lib/rules/engine";
-import { todayISO } from "@/lib/rules/dates";
+import { parseISODate, todayISO } from "@/lib/rules/dates";
+import {
+  deadlineCards,
+  evidenceFilename,
+  logCards,
+  nextSteps,
+  recordsLabels,
+  reminderNote,
+  type DeadlineInput,
+  type LogInput,
+  type MessageInput,
+} from "@/lib/records-view";
 import {
   chatPreview,
   deliveryLabel,
@@ -93,6 +106,23 @@ function dateOrNull(value: unknown): string | null {
   const raw = text(value);
   if (!raw) return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) throw new Error("Use a real date.");
+  return raw;
+}
+
+function reminderDate(value: unknown, locale: Locale, required: boolean): string | null {
+  const raw = text(value);
+  if (!raw) {
+    if (required) throw new Error(tx(locale, "Enter a date.", "Escriba una fecha."));
+    return null;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw) || raw < "2000-01-01" || raw > "2100-12-31") {
+    throw new Error(tx(locale, "Use a real date.", "Use una fecha real."));
+  }
+  try {
+    parseISODate(raw);
+  } catch {
+    throw new Error(tx(locale, "Use a real date.", "Use una fecha real."));
+  }
   return raw;
 }
 
@@ -308,6 +338,8 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "GET" && key === "assistant") return json(await assistantPayload());
   if (method === "POST" && key === "assistant") return json(await ask(await readBody(request)));
   if (method === "GET" && key === "thread") return json(await threadPayload());
+  if (method === "POST" && key === "records/reminder") return json(await saveReminder(await readBody(request)));
+  if (method === "POST" && key === "records/reminder/new") return json(await addReminder(await readBody(request)));
   if (method === "POST" && key === "thread") return json(await postThread(await readBody(request)));
   if (method === "GET" && key === "records") return json(await recordsPayload());
   if (method === "GET" && key === "ledger") return json(await ledgerPayload());
@@ -702,6 +734,8 @@ function emptyThread(user: User) {
     items: [] as { role: "user" | "card" }[],
     chips: chips(locale),
     notice: notice(locale),
+    steps: { title: tx(locale, "Your next steps", "Sus próximos pasos"), held: tx(locale, "Nothing was sent.", "No se envió nada."), items: [] },
+    packetFile: evidenceFilename(todayISO()),
   };
 }
 
@@ -733,6 +767,8 @@ async function threadPayload() {
     items,
     chips: rows.some((row) => row.role === "user") ? [] : chips(locale),
     notice: notice(locale),
+    steps: (await recordsBundle(user, unit)).steps,
+    packetFile: evidenceFilename(todayISO()),
   };
 }
 
@@ -765,10 +801,65 @@ async function postThread(input: Record<string, unknown>) {
   return threadPayload();
 }
 
+async function recordsBundle(user: User, unit: NonNullable<Awaited<ReturnType<typeof primaryUnit>>>) {
+  const locale = user.locale;
+  const today = todayISO();
+  const deadlines = await listDeadlines(user.id, unit.id);
+  const logs = await listLogs(user.id, unit.id);
+  const messages = await listMessages(user.id, unit.id);
+  const reviews = await listLeaseReviews(user.id, unit.id);
+  const deadlineInput: DeadlineInput[] = deadlines.map((item) => ({
+    id: item.id,
+    kind: item.kind,
+    ruleId: item.ruleId,
+    anchorDate: item.anchorDate,
+    dueDate: item.dueDate,
+    explanation: item.explanation,
+    explanationEs: item.explanationEs,
+    computation: item.computation,
+    sourceId: item.sourceId,
+    status: item.status,
+    tenantReminderOn: item.tenantReminderOn,
+  }));
+  const logInput: LogInput[] = logs.map((item) => ({
+    id: item.id,
+    type: item.type,
+    description: item.description,
+    eventDate: item.eventDate,
+    createdAt: item.createdAt,
+  }));
+  const messageInput: MessageInput[] = messages.map((item) => ({
+    logEntryId: item.logEntryId,
+    direction: item.direction,
+    subject: item.subject,
+    deliveryStatus: item.deliveryStatus,
+    createdAt: item.createdAt,
+  }));
+  const mail = Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM);
+  return {
+    deadlines: deadlineCards(deadlineInput, logInput, locale, today),
+    notes: logCards(logInput, messageInput, locale).slice(0, 20),
+    steps: nextSteps({
+      locale,
+      today,
+      deadlines: deadlineInput,
+      logs: logInput,
+      messages: messageInput,
+      hasRecords: logs.length + messages.length + deadlines.length + reviews.length > 0,
+    }),
+    reviews,
+    labels: recordsLabels(locale),
+    reminderNote: reminderNote(mail, locale),
+    reminderMail: mail,
+    packetFile: evidenceFilename(today),
+  };
+}
+
 async function recordsPayload() {
   const user = await actor();
   const unit = await primaryUnit(user.id);
   const locale = user.locale;
+  const labels = recordsLabels(locale);
   if (!unit) {
     return {
       name: user.name,
@@ -776,17 +867,19 @@ async function recordsPayload() {
       sample: user.email === DEMO_EMAIL,
       locale,
       notice: notice(locale),
-      next: null,
+      deadlines: [],
       notes: [],
+      steps: { title: tx(locale, "Your next steps", "Sus próximos pasos"), held: tx(locale, "Nothing was sent.", "No se envió nada."), items: [] },
       lease: null,
       needsUnit: true,
+      labels,
+      reminderNote: reminderNote(false, locale),
+      reminderMail: false,
+      packetFile: evidenceFilename(todayISO()),
     };
   }
-  const today = todayISO();
-  const next = (await listDeadlines(user.id, unit.id)).find((item) => item.status === "open" && item.dueDate);
-  const line = next ? dueLine(next.dueDate, today, locale) : null;
-  const reviews = await listLeaseReviews(user.id, unit.id);
-  const review = reviews[0];
+  const bundle = await recordsBundle(user, unit);
+  const review = bundle.reviews[0];
   const finding = review?.result.findings.find((item) => item.label !== "looks_standard") || review?.result.findings[0];
   return {
     name: user.name,
@@ -794,13 +887,9 @@ async function recordsPayload() {
     sample: user.email === DEMO_EMAIL,
     locale,
     notice: notice(locale),
-    next: next && line
-      ? { title: line.title, status: line.subtitle, detail: `${locale === "es" ? next.explanationEs : next.explanation}\n\n${next.ruleId}` }
-      : null,
-    notes: (await listLogs(user.id, unit.id)).slice(0, 3).map((item) => ({
-      id: item.id,
-      line: `${logKind(item.type, locale)} · ${item.eventDate}`,
-    })),
+    deadlines: bundle.deadlines,
+    notes: bundle.notes,
+    steps: bundle.steps,
     lease: review
       ? {
           filename: review.filename || tx(locale, "Lease", "Contrato"),
@@ -808,7 +897,30 @@ async function recordsPayload() {
           detail: finding ? `${finding.quote}\n\n${finding.ruleId || ""}` : "",
         }
       : null,
+    labels: bundle.labels,
+    reminderNote: bundle.reminderNote,
+    reminderMail: bundle.reminderMail,
+    packetFile: bundle.packetFile,
   };
+}
+
+async function saveReminder(input: Record<string, unknown>) {
+  const { user } = await withUnit();
+  const id = text(input.id);
+  if (!id) throw new Error(tx(user.locale, "Choose a reminder.", "Elija un recordatorio."));
+  await setTenantReminder(user.id, id, reminderDate(input.date, user.locale, false));
+  return recordsPayload();
+}
+
+async function addReminder(input: Record<string, unknown>) {
+  const { user, unit } = await withUnit();
+  const label = text(input.label);
+  if (!label) throw new Error(tx(user.locale, "Say what this reminder is for.", "Diga para qué es este recordatorio."));
+  if (label.length > 200) throw new Error(tx(user.locale, "Keep the reminder under 200 characters.", "El recordatorio debe tener menos de 200 caracteres."));
+  const date = reminderDate(input.date, user.locale, true);
+  if (!date) throw new Error(tx(user.locale, "Enter a date.", "Escriba una fecha."));
+  await insertCustomReminder(user.id, unit.id, label, date);
+  return recordsPayload();
 }
 
 async function ledgerPayload() {

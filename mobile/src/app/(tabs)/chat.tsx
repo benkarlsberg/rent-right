@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
-import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { FlatList, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/api";
 import { saveAuthorizedFile } from "@/files";
@@ -10,13 +10,22 @@ import { Logo } from "@/logo";
 import { colors } from "@/theme";
 import { ErrorLine, clipX, wrapMarker, wrapText } from "@/ui";
 import { useLoad } from "@/use-load";
+import { NextSteps, type StepItem } from "@/next-steps";
 import * as ImagePicker from "expo-image-picker";
 
 type Action = { id: string; label: string };
 type Item =
   | { role: "user"; text: string }
   | { role: "card"; headline: string; status: string; action: Action | null; actions?: Action[]; detail: string; ruleId: string | null; notice: Notice };
-type Thread = { landlord: string; needsUnit?: boolean; items: Item[]; chips: { label: string; text: string }[]; notice: Notice };
+type Thread = {
+  landlord: string;
+  needsUnit?: boolean;
+  items: Item[];
+  chips: { label: string; text: string }[];
+  notice: Notice;
+  steps?: { title: string; held: string; items: StepItem[] };
+  packetFile?: string;
+};
 type Attachment = { name: string; mime: string; base64: string };
 
 export default function AssistantChat() {
@@ -29,6 +38,7 @@ export default function AssistantChat() {
   const [menu, setMenu] = useState(false);
   const [account, setAccount] = useState(false);
   const [confirm, setConfirm] = useState<"new" | "clear" | null>(null);
+  const [held, setHeld] = useState("");
   const lock = useRef(false);
   const shiftHeld = useRef(false);
 
@@ -95,7 +105,7 @@ export default function AssistantChat() {
     }
     if (action.id === "download-packet") {
       if (!token) return;
-      try { setError(""); await saveAuthorizedFile("/api/packet", "rent-right-records.pdf", token); }
+      try { setError(""); await saveAuthorizedFile("/api/packet", data?.packetFile || "rent-right-evidence.pdf", token); }
       catch (err) { setError(err instanceof Error ? err.message : "Could not download."); }
       return;
     }
@@ -195,6 +205,28 @@ export default function AssistantChat() {
               ))}
             </View>
           }
+          ListFooterComponent={data?.steps?.items?.length ? (
+            <NextSteps
+              title={data.steps.title}
+              steps={data.steps.items}
+              note={held}
+              onAction={(step) => {
+                if (step.action === "wait") {
+                  setHeld(data.steps?.held || "Nothing was sent.");
+                  return;
+                }
+                if (step.action === "followup" || step.action === "send") {
+                  router.push("/landlord");
+                  return;
+                }
+                if (step.action === "export") {
+                  void onAction({ id: "download-packet", label: step.button });
+                  return;
+                }
+                if (step.action === "small_claims" && step.href) void Linking.openURL(step.href);
+              }}
+            />
+          ) : null}
           renderItem={({ item }) => item.role === "user" ? (
             <View style={styles.userRow}>
               <View style={styles.userBubble}><Text style={styles.userText}>{item.text}</Text></View>

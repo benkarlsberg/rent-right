@@ -663,17 +663,19 @@ export type Deadline = {
   sourceId: string | null;
   status: string;
   unsure: boolean;
+  tenantReminderOn: string | null;
   createdAt: string;
 };
 
-export async function insertDeadline(input: Omit<Deadline, "id" | "createdAt">) {
+export async function insertDeadline(input: Omit<Deadline, "id" | "createdAt" | "tenantReminderOn"> & { tenantReminderOn?: string | null }) {
   await run(
     `insert into deadlines (
-      id, unit_id, rule_id, kind, anchor_date, due_date, explanation, explanation_es, computation, source_id, status, unsure, created_at
-    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, unit_id, rule_id, kind, anchor_date, due_date, explanation, explanation_es, computation, source_id, status, unsure, tenant_reminder_on, created_at
+    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       randomUUID(), input.unitId, input.ruleId, input.kind, input.anchorDate, input.dueDate, input.explanation,
-      input.explanationEs, input.computation, input.sourceId, input.status, input.unsure, new Date().toISOString(),
+      input.explanationEs, input.computation, input.sourceId, input.status, input.unsure, input.tenantReminderOn || null,
+      new Date().toISOString(),
     ],
   );
 }
@@ -682,25 +684,33 @@ export async function replaceOpenDeadline(unitId: string, kind: string) {
   await run("update deadlines set status = 'replaced' where unit_id = ? and kind = ? and status = 'open'", [unitId, kind]);
 }
 
-export async function listDeadlines(userId: string, unitId: string) {
+function dateText(value: unknown): string | null {
+  if (value == null || value === "") return null;
+  const text = value instanceof Date ? value.toISOString() : String(value);
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(text);
+  return match ? match[1] : text;
+}
+
+export async function listDeadlines(userId: string, unitId: string): Promise<Deadline[]> {
   await requireUnit(userId, unitId);
   return (await all<{
     id: string; unit_id: string; rule_id: string; kind: string; anchor_date: string | null; due_date: string | null;
     explanation: string; explanation_es: string; computation: string; source_id: string | null; status: string;
-    unsure: number; created_at: string;
-  }>("select * from deadlines where unit_id = ? order by coalesce(due_date, '9999-12-31') asc", [unitId])).map((row) => ({
+    unsure: number; tenant_reminder_on: string | null; created_at: string;
+  }>("select * from deadlines where unit_id = ? order by coalesce(due_date, tenant_reminder_on, '9999-12-31') asc", [unitId])).map((row) => ({
     id: row.id,
     unitId: row.unit_id,
     ruleId: row.rule_id,
     kind: row.kind,
-    anchorDate: row.anchor_date,
-    dueDate: row.due_date,
+    anchorDate: dateText(row.anchor_date),
+    dueDate: dateText(row.due_date),
     explanation: row.explanation,
     explanationEs: row.explanation_es,
     computation: row.computation,
     sourceId: row.source_id,
     status: row.status,
     unsure: isOn(row.unsure),
+    tenantReminderOn: dateText(row.tenant_reminder_on),
     createdAt: row.created_at,
   }));
 }
@@ -710,6 +720,37 @@ export async function setDeadlineStatus(userId: string, id: string, status: "ope
   if (!row) throw new HttpError("Deadline not found.");
   await requireUnit(userId, row.unit_id);
   await run("update deadlines set status = ? where id = ?", [status, id]);
+}
+
+export async function setTenantReminder(userId: string, id: string, date: string | null) {
+  const row = await one<{ unit_id: string }>("select unit_id from deadlines where id = ?", [id]);
+  if (!row) throw new HttpError("Reminder not found.");
+  await requireUnit(userId, row.unit_id);
+  await run("update deadlines set tenant_reminder_on = ? where id = ?", [date, id]);
+}
+
+export async function insertCustomReminder(userId: string, unitId: string, label: string, date: string) {
+  await requireUnit(userId, unitId);
+  await insertDeadline({
+    unitId,
+    ruleId: "tenant-reminder",
+    kind: "custom_reminder",
+    anchorDate: null,
+    dueDate: null,
+    explanation: label,
+    explanationEs: label,
+    computation: "Tenant-added reminder. Not a date from the rules library.",
+    sourceId: null,
+    status: "open",
+    unsure: false,
+    tenantReminderOn: date,
+  });
+}
+
+export async function listDueNudges() {
+  return await all<{
+    id: string; unit_id: string; tenant_reminder_on: string; explanation: string; kind: string;
+  }>("select id, unit_id, tenant_reminder_on, explanation, kind from deadlines where status = 'open' and tenant_reminder_on is not null");
 }
 
 export async function openDeadlines() {

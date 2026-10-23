@@ -36,7 +36,7 @@ import {
 } from "@/lib/rules/engine";
 import { appUrl, relayAddress } from "@/lib/text";
 import { randomToken } from "@/lib/crypto";
-import { todayISO } from "@/lib/rules/dates";
+import { daysBetween, todayISO } from "@/lib/rules/dates";
 
 const EMAIL_DAILY_CAP = 20;
 export const CHAT_MONTHLY_CAP = 40;
@@ -373,10 +373,29 @@ export async function extractPdfOrText(bytes: Buffer, mime: string, filename: st
   return "";
 }
 
+function isoDay(value: unknown): string {
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
 export async function dispatchReminders(today = todayISO()) {
-  const { openDeadlines, reminderSlotsSent, markReminder, unitMemberUserIds } = await import("@/lib/db");
+  const { openDeadlines, reminderSlotsSent, markReminder, unitMemberUserIds, listDueNudges } = await import("@/lib/db");
   const { sendTenantEmail } = await import("@/lib/email");
   let sent = 0;
+  const deliver = async (userId: string, subject: string, heading: string, body: string, paragraphs: string[], href: string, button: string) => {
+    const user = await getUser(userId);
+    if (!user) return false;
+    await addNotification(userId, heading, body, href);
+    const mail = renderMail({
+      subject,
+      heading,
+      paragraphs,
+      button: { label: button, href: `${appUrl()}${href}` },
+    });
+    const delivered = await sendTenantEmail(user.email, mail.subject, mail.text, mail.html);
+    if (!delivered && process.env.RESEND_API_KEY && process.env.RESEND_FROM) return false;
+    return true;
+  };
   for (const deadline of await openDeadlines()) {
     if (!deadline.due_date) continue;
     const slots = pendingReminderSlots(deadline.due_date, today, await reminderSlotsSent(deadline.id));
@@ -385,29 +404,64 @@ export async function dispatchReminders(today = todayISO()) {
     for (const slot of slots) {
       let failed = false;
       for (const userId of users) {
-        const user = await getUser(userId);
-        if (!user) continue;
         const title = slot === "0d" ? "A tracked date is today" : `A tracked date is ${slot === "7d" ? "7" : "3"} days away`;
-        await addNotification(userId, title, deadline.explanation, "/deadlines");
-        const mail = renderMail({
-          subject: `Rent Right: ${title}`,
-          heading: title,
-          paragraphs: [
+        const ok = await deliver(
+          userId,
+          `Rent Right: ${title}`,
+          title,
+          deadline.explanation,
+          [
             deadline.explanation,
             `Rule ID: ${deadline.rule_id}`,
             "This is a reminder of a date computed from what you entered. Confirm with the official source.",
           ],
-          button: { label: "Open deadlines", href: `${appUrl()}/deadlines` },
-        });
-        const delivered = await sendTenantEmail(user.email, mail.subject, mail.text, mail.html);
-        if (!delivered && process.env.RESEND_API_KEY && process.env.RESEND_FROM) {
-          failed = true;
+          "/deadlines",
+          "Open deadlines",
+        );
+        if (!ok) {
+          const user = await getUser(userId);
+          if (user) failed = true;
           continue;
         }
         sent += 1;
       }
       if (!failed) await markReminder(deadline.id, slot, "in_app_email");
     }
+  }
+  for (const nudge of await listDueNudges()) {
+    const on = isoDay(nudge.tenant_reminder_on);
+    const late = daysBetween(on, today);
+    if (late < 0 || late > 1) continue;
+    const slot = `nudge:${on}`;
+    if ((await reminderSlotsSent(nudge.id)).includes(slot)) continue;
+    const users = await unitMemberUserIds(nudge.unit_id);
+    const label = nudge.kind === "custom_reminder" && nudge.explanation
+      ? nudge.explanation
+      : "A reminder you saved on a record.";
+    const body = `This is a reminder you set for yourself for ${on}. It is not a legal deadline. ${label} Nothing was sent to the landlord.`;
+    let failed = false;
+    for (const userId of users) {
+      const ok = await deliver(
+        userId,
+        "Rent Right: Your reminder",
+        "Your reminder",
+        body,
+        [
+          `This is a reminder you set for yourself for ${on}. It is not a legal deadline.`,
+          label,
+          "Nothing was sent to the landlord.",
+        ],
+        "/records",
+        "Open records",
+      );
+      if (!ok) {
+        const user = await getUser(userId);
+        if (user) failed = true;
+        continue;
+      }
+      sent += 1;
+    }
+    if (!failed) await markReminder(nudge.id, slot, "in_app_email");
   }
   return sent;
 }

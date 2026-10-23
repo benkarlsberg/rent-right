@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { handlePhone } from "@/lib/phone-api";
 import { sampleLeaseText } from "@/lib/workflow";
+import { dispatchReminders } from "@/lib/workflow";
 import { getSql } from "@/lib/pg";
 import { DEMO_EMAIL, startSampleTenancy } from "@/lib/seed";
 import { getUser } from "@/lib/db";
+import { todayISO } from "@/lib/rules/dates";
 
 const auth = vi.hoisted(() => ({ authorization: "" }));
 
@@ -216,6 +218,68 @@ describe("renter workflows", () => {
     }, token);
     expect(elsewhere.json?.inCalifornia).toBe(false);
     expect(elsewhere.json?.summary).toBe("That address does not look like California.");
+  });
+
+  it("saves a tenant reminder without changing the computed date", async () => {
+    const email = `remind-${Date.now()}@example.com`;
+    const magic = await api("POST", "auth/magic", { email });
+    const session = await api("POST", "auth/verify", { token: magic.json?.devToken });
+    const token = String(session.json?.token);
+    await api("POST", "unit", {
+      name: "Ada Tenant",
+      street: "10 Main St",
+      city: "Los Angeles",
+      postalCode: "90026",
+      landlordName: "Pat Landlord",
+      landlordEmail: "pat@example.com",
+      rent: "2000",
+    }, token);
+    const logged = await api("POST", "thread", { text: "My sink is leaking" }, token);
+    expect(logged.status).toBe(200);
+    const threadSteps = (logged.json?.steps as { items: { action: string }[] }).items.map((item) => item.action);
+    expect(threadSteps).toContain("send");
+    expect(threadSteps).not.toContain("followup");
+
+    const records = await api("GET", "records", undefined, token);
+    const cards = records.json?.deadlines as { id: string; kind: string; title: string; due: string | null; reminder: string | null }[];
+    const repair = cards.find((item) => item.kind === "repair");
+    expect(repair?.title).toMatch(/^Reminder: follow up on /);
+    expect(repair?.title).not.toMatch(/Landlord's deadline to respond/);
+    expect(repair?.due).toMatch(/^Due /);
+    const notes = records.json?.notes as { line: string; title: string; status: string }[];
+    expect(notes.length).toBeGreaterThan(0);
+    expect(notes[0].title).toBe("Repair request");
+    expect(notes[0].line.length).toBeGreaterThan(0);
+
+    const before = await getSql()<{ due: string }[]>`select due_date::text as due from deadlines where id = ${repair!.id}`;
+    const edited = await api("POST", "records/reminder", { id: repair!.id, date: "2026-12-01" }, token);
+    expect(edited.status).toBe(200);
+    const after = await getSql()<{ due: string; nudge: string }[]>`select due_date::text as due, tenant_reminder_on::text as nudge from deadlines where id = ${repair!.id}`;
+    expect(after[0]?.due).toBe(before[0]?.due);
+    expect(after[0]?.nudge).toBe("2026-12-01");
+    const shown = (edited.json?.deadlines as { id: string; due: string | null; reminder: string | null }[]).find((item) => item.id === repair!.id);
+    expect(shown?.due).toBe(repair?.due);
+    expect(shown?.reminder).toMatch(/^Your reminder: /);
+
+    const added = await api("POST", "records/reminder/new", { label: "Call about the sink", date: "2026-12-15" }, token);
+    expect(added.status).toBe(200);
+    const custom = (added.json?.deadlines as { kind: string; title: string; due: string | null; reminder: string | null }[]).find((item) => item.kind === "custom_reminder");
+    expect(custom?.title).toBe("Call about the sink");
+    expect(custom?.due).toBeNull();
+    expect(custom?.reminder).toMatch(/^Your reminder: /);
+
+    const today = todayISO();
+    await api("POST", "records/reminder", { id: repair!.id, date: today }, token);
+    await dispatchReminders(today);
+    const nudges = await getSql()<{ title: string; body: string }[]>`
+      select title, body from notifications where title = 'Your reminder' order by created_at desc limit 1
+    `;
+    expect(nudges[0]?.body).toMatch(/not a legal deadline/);
+    expect(nudges[0]?.body).toMatch(/Nothing was sent to the landlord/);
+    const slots = await getSql()<{ slot: string }[]>`select slot from reminder_sent where deadline_id = ${repair!.id}`;
+    expect(slots.map((row) => row.slot)).toContain(`nudge:${today}`);
+    const still = await getSql()<{ due: string }[]>`select due_date::text as due from deadlines where id = ${repair!.id}`;
+    expect(still[0]?.due).toBe(before[0]?.due);
   });
 
   it("loads the synthetic Los Angeles sample tenancy", async () => {
