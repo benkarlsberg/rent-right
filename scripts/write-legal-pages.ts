@@ -23,6 +23,7 @@ const iconFiles = [
   "favicon-16x16.png",
   "favicon-32x32.png",
   "apple-touch-icon.png",
+  "og.png",
   "manifest.webmanifest",
   "_headers",
 ];

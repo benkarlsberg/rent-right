@@ -25,6 +25,7 @@ const appRoutes = [
   `${appHost}/s/*`,
   `${appHost}/email/*`,
   `${appHost}/brand/*`,
+  // /og.png is a Pages file, so it is not a Worker route.
   `${appHost}/icons/*`,
   `${appHost}/privacy*`,
   `${appHost}/terms*`,
