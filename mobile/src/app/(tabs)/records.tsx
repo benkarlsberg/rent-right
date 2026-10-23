@@ -1,12 +1,12 @@
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
-import { Pressable, Text } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { api } from "@/api";
 import { saveAuthorizedFile } from "@/files";
 import type { Me, Notice } from "@/session";
 import { useSession } from "@/session";
 import { colors } from "@/theme";
-import { Button, ErrorLine, Field, H1, LearnMore, Muted, Page } from "@/ui";
+import { Button, Card, ErrorLine, Field, H1, LearnMore, Muted, Page } from "@/ui";
 import { useLoad } from "@/use-load";
 
 type Records = {
@@ -39,50 +39,100 @@ export default function Records() {
       await signOut();
       router.replace("/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not delete.");
+      setError(err instanceof Error ? err.message : "Could not delete the account.");
+    }
+  }
+
+  async function download() {
+    if (!token) return;
+    try {
+      setError("");
+      await saveAuthorizedFile("/api/packet", "rent-right-records.pdf", token);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not download the records.");
     }
   }
 
   return (
     <Page onRefresh={reload}>
       <H1>{data?.name || "Records"}</H1>
-      <Muted>{data?.address}</Muted>
-      {data?.sample ? <Text style={{ marginTop: 10, color: colors.pine, fontWeight: "700" }}>Sample</Text> : null}
+      <Muted>{data?.address || "Notes, your lease, and dates live here."}</Muted>
+      {data?.sample ? <Text style={styles.sample}>Sample</Text> : null}
       <ErrorLine message={error} />
-      <Text style={{ marginTop: 28, fontSize: 15, color: colors.mute, fontWeight: "700" }}>Language</Text>
-      <Button label="English" ghost={data?.locale === "es"} onPress={() => language("en")} />
-      <Button label="Español" ghost={data?.locale !== "es"} onPress={() => language("es")} />
-      {data?.next ? (
-        <ViewBlock title={data.next.title} status={data.next.status} detail={data.next.detail} />
+      {data ? (
+        <View style={styles.segment} accessibilityRole="tablist">
+          <Pressable accessibilityRole="button" accessibilityLabel="English" accessibilityState={{ selected: data.locale !== "es" }} style={[styles.segmentItem, data.locale !== "es" && styles.segmentOn]} onPress={() => language("en")}>
+            <Text style={[styles.segmentText, data.locale !== "es" && styles.segmentTextOn]}>English</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Español" accessibilityState={{ selected: data.locale === "es" }} style={[styles.segmentItem, data.locale === "es" && styles.segmentOn]} onPress={() => language("es")}>
+            <Text style={[styles.segmentText, data.locale === "es" && styles.segmentTextOn]}>Español</Text>
+          </Pressable>
+        </View>
       ) : null}
-      {data?.notes.map((note) => (
-        <Text key={note.id} style={{ fontSize: 18, color: colors.ink, marginTop: 18 }}>{note.line}</Text>
-      ))}
-      {data?.lease ? <ViewBlock title={data.lease.filename} status={data.lease.headline} detail={data.lease.detail} /> : null}
-      <Button label="Download records" onPress={async () => {
-        if (!token) return;
-        try { setError(""); await saveAuthorizedFile("/api/packet", "rent-right-records.pdf", token); }
-        catch (err) { setError(err instanceof Error ? err.message : "Could not download."); }
-      }} />
-      <Button label="Sign out" ghost onPress={async () => { await signOut(); router.replace("/"); }} />
-      <LearnMore label="Account">
-        <Muted>{me?.user.email}</Muted>
-        <Pressable onPress={() => token && saveAuthorizedFile("/api/export", "rent-right.json", token)} style={{ marginTop: 12 }}>
-          <Text style={{ color: colors.pine, fontSize: 17, fontWeight: "700" }}>Download my data</Text>
-        </Pressable>
-        <Field label="Type DELETE" value={confirm} onChange={setConfirm} />
-        <Button label="Delete account" onPress={remove} />
-      </LearnMore>
+      {data?.next ? (
+        <Card>
+          <Text style={styles.cardTitle}>{data.next.title}</Text>
+          <Text style={styles.cardStatus}>{data.next.status}</Text>
+          {data.next.detail ? <LearnMore>{data.next.detail}</LearnMore> : null}
+        </Card>
+      ) : null}
+      {data?.notes.length ? (
+        <Card>
+          {data.notes.map((note, index) => (
+            <Text key={note.id} style={[styles.note, index === 0 && styles.noteFirst]}>{note.line}</Text>
+          ))}
+        </Card>
+      ) : null}
+      {data?.lease ? (
+        <Card>
+          <Text style={styles.cardTitle}>{data.lease.filename}</Text>
+          <Text style={styles.cardStatus}>{data.lease.headline}</Text>
+          {data.lease.detail ? <LearnMore>{data.lease.detail}</LearnMore> : null}
+        </Card>
+      ) : null}
+      {data ? (
+        <Card>
+          <Text style={styles.cardTitle}>Your records</Text>
+          <Text style={styles.cardBody}>A PDF of the notes and dates saved in this account.</Text>
+          <Button label="Download records" onPress={download} />
+        </Card>
+      ) : null}
+      {token ? (
+        <>
+          <Pressable
+            style={styles.textButton}
+            accessibilityRole="button"
+            accessibilityLabel="Sign out"
+            onPress={async () => { await signOut(); router.replace("/"); }}
+          >
+            <Text style={styles.textButtonLabel}>Sign out</Text>
+          </Pressable>
+          <LearnMore label="Account">
+            <Muted>{me?.user.email}</Muted>
+            <Pressable onPress={() => saveAuthorizedFile("/api/export", "rent-right.json", token)} style={styles.textButton} accessibilityRole="button" accessibilityLabel="Download my data">
+              <Text style={styles.textButtonLabel}>Download my data</Text>
+            </Pressable>
+            <Field label="Type DELETE" value={confirm} onChange={setConfirm} autoCapitalize="characters" />
+            <Button label="Delete account" onPress={remove} />
+          </LearnMore>
+        </>
+      ) : null}
     </Page>
   );
 }
 
-function ViewBlock({ title, status, detail }: { title: string; status: string; detail: string }) {
-  return (
-    <>
-      <Text style={{ fontSize: 26, color: colors.ink, marginTop: 28, fontWeight: "600" }}>{title}</Text>
-      <Text style={{ fontSize: 18, color: colors.pine, marginTop: 4 }}>{status}</Text>
-      {detail ? <LearnMore>{detail}</LearnMore> : null}
-    </>
-  );
-}
+const styles = StyleSheet.create({
+  sample: { marginTop: 8, color: colors.mute, fontSize: 14 },
+  segment: { flexDirection: "row", marginTop: 20, backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.line, padding: 4 },
+  segmentItem: { flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 10 },
+  segmentOn: { backgroundColor: colors.pine },
+  segmentText: { fontSize: 16, fontWeight: "600", color: colors.ink },
+  segmentTextOn: { color: "white" },
+  cardTitle: { fontSize: 22, lineHeight: 28, color: colors.ink, fontWeight: "600" },
+  cardStatus: { fontSize: 16, lineHeight: 22, color: colors.pine, marginTop: 6 },
+  cardBody: { fontSize: 16, lineHeight: 22, color: colors.mute, marginTop: 6 },
+  note: { fontSize: 16, lineHeight: 24, color: colors.ink, marginTop: 12 },
+  noteFirst: { marginTop: 0 },
+  textButton: { minHeight: 48, justifyContent: "center", marginTop: 8 },
+  textButtonLabel: { color: colors.pine, fontSize: 16, fontWeight: "700" },
+});

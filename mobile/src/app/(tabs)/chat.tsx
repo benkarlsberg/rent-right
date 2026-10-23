@@ -105,8 +105,9 @@ export default function AssistantChat() {
           ListEmptyComponent={
             <View>
               <Text style={styles.intro}>Tell me what happened.</Text>
+              <Text style={styles.support}>A leaking sink, a rent increase, or your deposit.</Text>
               {(data?.chips || []).map((chip) => (
-                <Pressable key={chip.label} style={styles.chip} onPress={() => send(chip.text)}>
+                <Pressable key={chip.label} style={styles.chip} onPress={() => send(chip.text)} accessibilityRole="button" accessibilityLabel={chip.label}>
                   <Text style={styles.chipText}>{chip.label}</Text>
                 </Pressable>
               ))}
@@ -121,7 +122,7 @@ export default function AssistantChat() {
               <Text style={styles.headline}>{item.headline}</Text>
               <Text style={styles.status}>{item.status}</Text>
               {item.action ? (
-                <Pressable style={styles.action} onPress={() => onAction(item.action!)}>
+                <Pressable style={styles.action} onPress={() => onAction(item.action!)} accessibilityRole="button" accessibilityLabel={item.action.label}>
                   <Text style={styles.actionText}>{item.action.label}</Text>
                 </Pressable>
               ) : null}
@@ -139,12 +140,12 @@ export default function AssistantChat() {
           </View>
         ) : null}
         <View style={styles.composer}>
-          <Pressable style={styles.plus} onPress={() => setMenu((open) => !open)} accessibilityRole="button">
+          <Pressable style={styles.plus} onPress={() => setMenu((open) => !open)} accessibilityRole="button" accessibilityLabel="Add a photo or lease">
             <Text style={styles.plusText}>+</Text>
           </Pressable>
-          <TextInput value={draft} onChangeText={setDraft} placeholder="Message" style={styles.input} />
-          <Pressable style={styles.send} onPress={() => send(draft)} disabled={busy}>
-            <Text style={styles.sendText}>{busy ? "…" : "Send"}</Text>
+          <TextInput value={draft} onChangeText={setDraft} placeholder="Message" placeholderTextColor={colors.mute} accessibilityLabel="Message" style={styles.input} />
+          <Pressable style={styles.send} onPress={() => send(draft)} disabled={busy} accessibilityRole="button" accessibilityLabel="Send">
+            <Text style={styles.sendText}>{busy ? "Sending" : "Send"}</Text>
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -154,28 +155,29 @@ export default function AssistantChat() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper },
-  title: { fontSize: 34, fontWeight: "600", color: colors.ink, paddingHorizontal: 24, paddingTop: 12, paddingBottom: 8 },
-  list: { paddingHorizontal: 20, paddingBottom: 24, flexGrow: 1 },
-  intro: { fontSize: 22, color: colors.ink, marginTop: 28, marginBottom: 8, lineHeight: 30 },
-  chip: { backgroundColor: colors.card, borderRadius: 18, borderWidth: 1, borderColor: colors.line, paddingVertical: 16, paddingHorizontal: 18, marginTop: 12 },
-  chipText: { fontSize: 18, color: colors.ink },
+  title: { fontSize: 32, fontWeight: "600", color: colors.ink, letterSpacing: -0.4, paddingHorizontal: 24, paddingTop: 16, paddingBottom: 8 },
+  list: { paddingHorizontal: 24, paddingBottom: 24, flexGrow: 1 },
+  intro: { fontSize: 22, color: colors.ink, marginTop: 24, lineHeight: 30 },
+  support: { fontSize: 16, lineHeight: 24, color: colors.mute, marginTop: 8 },
+  chip: { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.line, minHeight: 48, justifyContent: "center", paddingVertical: 14, paddingHorizontal: 18, marginTop: 12 },
+  chipText: { fontSize: 17, color: colors.ink },
   userRow: { alignItems: "flex-end", marginTop: 16 },
   userBubble: { maxWidth: "82%", backgroundColor: colors.tenant, borderRadius: 20, borderBottomRightRadius: 6, paddingHorizontal: 16, paddingVertical: 14 },
   userText: { color: "white", fontSize: 17, lineHeight: 24 },
-  card: { marginTop: 16, backgroundColor: colors.card, borderRadius: 22, borderWidth: 1, borderColor: colors.line, padding: 18 },
-  headline: { fontSize: 26, color: colors.ink, fontWeight: "600" },
-  status: { fontSize: 18, color: colors.pine, marginTop: 6 },
-  action: { marginTop: 16, backgroundColor: colors.pine, borderRadius: 999, minHeight: 52, alignItems: "center", justifyContent: "center", paddingHorizontal: 18 },
+  card: { marginTop: 16, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.line, padding: 20 },
+  headline: { fontSize: 22, lineHeight: 28, color: colors.ink, fontWeight: "600" },
+  status: { fontSize: 16, lineHeight: 22, color: colors.pine, marginTop: 6 },
+  action: { marginTop: 16, backgroundColor: colors.pine, borderRadius: 14, minHeight: 48, alignItems: "center", justifyContent: "center", paddingHorizontal: 18 },
   actionText: { color: "white", fontSize: 17, fontWeight: "700" },
   short: { color: colors.mute, fontSize: 13, marginTop: 12 },
   file: { color: colors.pine, paddingHorizontal: 20, paddingBottom: 4 },
   menu: { flexDirection: "row", gap: 10, paddingHorizontal: 16, paddingBottom: 8 },
   menuButton: { flex: 1, minHeight: 48, borderRadius: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.card, alignItems: "center", justifyContent: "center" },
   menuText: { fontSize: 16, color: colors.ink, fontWeight: "600" },
-  composer: { flexDirection: "row", alignItems: "center", gap: 10, padding: 16, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: "#fffdf8" },
-  plus: { width: 48, height: 48, borderRadius: 24, borderWidth: 1, borderColor: colors.line, alignItems: "center", justifyContent: "center", backgroundColor: "white" },
+  composer: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.card },
+  plus: { width: 48, height: 48, borderRadius: 14, borderWidth: 1, borderColor: colors.line, alignItems: "center", justifyContent: "center", backgroundColor: "white" },
   plusText: { fontSize: 28, color: colors.pine, lineHeight: 32 },
-  input: { flex: 1, minHeight: 48, backgroundColor: "white", borderRadius: 24, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 16, fontSize: 17, color: colors.ink },
-  send: { minHeight: 48, justifyContent: "center", paddingHorizontal: 8 },
+  input: { flex: 1, minHeight: 48, backgroundColor: colors.paper, borderRadius: 14, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 16, fontSize: 16, color: colors.ink },
+  send: { minHeight: 48, minWidth: 48, justifyContent: "center", alignItems: "center", paddingHorizontal: 8 },
   sendText: { color: colors.pine, fontWeight: "700", fontSize: 17 },
 });

@@ -9,7 +9,10 @@ export function useLoad<T>(path: string) {
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     try {
       setError("");
       setData(await api<T>(path, { token }));

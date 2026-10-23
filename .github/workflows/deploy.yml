@@ -79,6 +79,8 @@ jobs:
           export APP_URL="$NEXT_PUBLIC_APP_URL"
           npx opennextjs-cloudflare build
       - name: Attach Hyperdrive
+        id: hyperdrive
+        continue-on-error: true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -88,11 +90,13 @@ jobs:
           if [ -f .database-url ]; then export DATABASE_URL="$(cat .database-url)"; fi
           npx tsx scripts/ensure-hyperdrive.ts
       - name: Register a workers.dev subdomain
+        if: steps.hyperdrive.outcome == 'success'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx tsx scripts/register-workers-subdomain.ts
       - name: Deploy the API Worker
+        if: steps.hyperdrive.outcome == 'success'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -107,6 +111,7 @@ jobs:
           echo "API_URL=$url" >> "$GITHUB_ENV"
           echo "Worker URL: $url"
       - name: Push Worker secrets
+        if: steps.hyperdrive.outcome == 'success'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

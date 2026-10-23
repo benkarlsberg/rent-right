@@ -18,6 +18,17 @@ export function reachError(error: unknown): string {
   return message;
 }
 
+export function plainServerError(serverMessage: string | undefined, status: number, fallback = "Something went wrong. Try again."): string {
+  if (serverMessage && /too many subrequests/i.test(serverMessage)) {
+    return "Rent Right could not finish that just now. Wait a moment and try again.";
+  }
+  if (serverMessage === "Sign in required.") return "Sign in to continue.";
+  if (serverMessage) return serverMessage;
+  if (status === 401) return "Sign in to continue.";
+  if (status >= 500) return "Rent Right could not finish that just now. Wait a moment and try again.";
+  return fallback;
+}
+
 export async function api<T = Record<string, unknown>>(path: string, options?: { method?: string; body?: unknown; token?: string | null }): Promise<T> {
   const headers: Record<string, string> = {};
   if (options?.body !== undefined) headers["content-type"] = "application/json";
@@ -33,7 +44,7 @@ export async function api<T = Record<string, unknown>>(path: string, options?: {
     throw new Error(reachError(error));
   }
   const data = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
-  if (!response.ok) throw new Error(data?.error || `The server returned HTTP ${response.status}.`);
-  if (!data) throw new Error(`The server returned HTTP ${response.status} without a JSON body.`);
+  if (!response.ok) throw new Error(plainServerError(data?.error, response.status));
+  if (!data) throw new Error("Rent Right sent an empty response. Try again.");
   return data;
 }

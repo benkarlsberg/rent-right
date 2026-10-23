@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, type TextInputProps } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { Notice } from "@/session";
 import { colors } from "@/theme";
@@ -34,26 +34,46 @@ export function Kicker({ children }: { children: React.ReactNode }) {
   return <Text style={styles.kicker}>{children}</Text>;
 }
 
-export function Button({ label, onPress, ghost }: { label: string; onPress: () => void; ghost?: boolean }) {
+export function Button({ label, onPress, ghost, disabled }: { label: string; onPress: () => void; ghost?: boolean; disabled?: boolean }) {
   return (
-    <Pressable onPress={onPress} style={[styles.button, ghost && styles.ghost]} accessibilityRole="button">
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={[styles.button, ghost && styles.ghost, disabled && styles.disabled]}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: Boolean(disabled) }}
+    >
       <Text style={[styles.buttonText, ghost && styles.ghostText]}>{label}</Text>
     </Pressable>
   );
 }
 
-export function Field({ label, value, onChange, placeholder, multiline }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; multiline?: boolean }) {
+export function Field({ label, value, onChange, placeholder, multiline, ...input }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; multiline?: boolean } & Pick<TextInputProps, "keyboardType" | "autoComplete" | "autoCapitalize" | "textContentType">) {
   return (
     <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
-      <TextInput value={value} onChangeText={onChange} placeholder={placeholder} multiline={multiline} style={[styles.input, multiline && styles.area]} />
+      <Text style={styles.label} nativeID={`${label}-label`}>{label}</Text>
+      <TextInput
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={colors.mute}
+        multiline={multiline}
+        accessibilityLabel={label}
+        style={[styles.input, multiline && styles.area]}
+        {...input}
+      />
     </View>
   );
 }
 
 export function ErrorLine({ message }: { message: string }) {
   if (!message) return null;
-  return <Text style={styles.error}>{message}</Text>;
+  return (
+    <View style={styles.errorBox} accessibilityRole="alert">
+      <Text style={styles.error}>{message}</Text>
+    </View>
+  );
 }
 
 export function LearnMore({ label, children }: { label?: string; children: React.ReactNode }) {
@@ -95,22 +115,24 @@ export function LegalNote({ notice }: { notice: Notice }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper },
-  page: { padding: 20, paddingBottom: 36 },
-  h1: { fontSize: 34, color: colors.ink, fontWeight: "600" },
-  muted: { color: colors.mute, fontSize: 15, marginTop: 4 },
-  card: { backgroundColor: colors.card, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: colors.line, marginTop: 12 },
-  cardBad: { borderColor: "#efd2c4" },
+  page: { padding: 24, paddingBottom: 40 },
+  h1: { fontSize: 32, color: colors.ink, fontWeight: "600", letterSpacing: -0.4 },
+  muted: { color: colors.mute, fontSize: 16, lineHeight: 22, marginTop: 6 },
+  card: { backgroundColor: colors.card, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: colors.line, marginTop: 16 },
+  cardBad: { borderColor: "#f0d0d6" },
   cardWarn: { borderColor: "#ead7b0" },
   kicker: { color: colors.warn, fontSize: 12, fontWeight: "700", letterSpacing: 0.6, textTransform: "uppercase" },
-  button: { backgroundColor: colors.pine, borderRadius: 999, minHeight: 48, alignItems: "center", justifyContent: "center", paddingHorizontal: 18, marginTop: 12 },
+  button: { backgroundColor: colors.pine, borderRadius: 14, minHeight: 48, alignItems: "center", justifyContent: "center", paddingHorizontal: 18, marginTop: 16 },
   ghost: { backgroundColor: "transparent", borderWidth: 1, borderColor: colors.line },
+  disabled: { opacity: 0.55 },
   buttonText: { color: "white", fontWeight: "700", fontSize: 16 },
   ghostText: { color: colors.ink },
-  field: { marginTop: 12 },
-  label: { fontWeight: "700", marginBottom: 6, color: colors.ink },
-  input: { backgroundColor: "white", borderWidth: 1, borderColor: colors.line, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 12, fontSize: 16, color: colors.ink },
-  area: { minHeight: 88, textAlignVertical: "top" },
-  error: { color: colors.bad, marginTop: 8 },
+  field: { marginTop: 20 },
+  label: { fontWeight: "600", marginBottom: 8, color: colors.ink, fontSize: 15 },
+  input: { backgroundColor: "white", borderWidth: 1, borderColor: colors.line, borderRadius: 14, paddingHorizontal: 14, minHeight: 48, fontSize: 16, color: colors.ink },
+  area: { minHeight: 88, textAlignVertical: "top", paddingVertical: 12 },
+  errorBox: { backgroundColor: "#f8ecec", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, marginTop: 16 },
+  error: { color: colors.bad, fontSize: 15, lineHeight: 21 },
   more: { color: colors.pine, fontWeight: "700", marginTop: 8 },
   moreBody: { marginTop: 6 },
   detail: { color: colors.ink, fontSize: 15, lineHeight: 21 },

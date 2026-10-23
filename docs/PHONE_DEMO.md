@@ -107,7 +107,7 @@ Open a **second** terminal. From the `rent-right` folder:
 
 ```bash
 cd mobile
-npx expo start
+EXPO_PUBLIC_DEMO=1 npx expo start
 ```
 
 A QR code appears. Expo uses your local network (LAN) and port **8081**. The address under the code looks like `exp://192.168.x.x:8081`. Leave this window open too.
@@ -156,11 +156,11 @@ Check from the phone’s browser: open `http://192.168.1.20:3000` (your address)
 - **iPhone:** Open the Camera app, point it at the QR code in the Expo terminal, and tap the banner. It opens in Expo Go.
 - **Android:** Open Expo Go and tap **Scan QR code**. The Android camera often does not hand the code to Expo Go.
 
-The first open can take a minute. The screen should say **Rent Right** and **Free for California renters.**
+The first open can take a minute. The screen should say **Rent Right** and **Keep your rental records and talk to your landlord, all in one place.**
 
 ## 8. Open the sample
 
-Tap **View a sample Los Angeles tenancy**.
+Tap **View a sample Los Angeles tenancy**. That button is on the welcome screen only when Expo was started with `EXPO_PUBLIC_DEMO=1`.
 
 That button calls `POST /api/v1/auth/demo` on your computer and opens a sample home for 1842 N Echo Park Ave, Unit 3. You do not type an email. Tapping it again resets the same sample.
 

@@ -12,8 +12,8 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: colors.pine,
         tabBarInactiveTintColor: colors.mute,
-        tabBarStyle: { backgroundColor: "#fffdf8", borderTopColor: colors.line, height: 64, paddingTop: 8, paddingBottom: 8 },
-        tabBarLabelStyle: { fontSize: 16, fontWeight: "600" },
+        tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.line, height: 64, paddingTop: 6, paddingBottom: 8 },
+        tabBarLabelStyle: { fontSize: 15, fontWeight: "600" },
       }}
     >
       <Tabs.Screen name="chat" options={{ title: spanish ? "Chat" : "Chat" }} />

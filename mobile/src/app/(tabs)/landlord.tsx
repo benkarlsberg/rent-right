@@ -40,6 +40,7 @@ export default function Landlord() {
           data={data?.items || []}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
+          ListEmptyComponent={<Text style={styles.empty}>Messages you send to your landlord show up here. Nothing is sent until you confirm.</Text>}
           renderItem={({ item }) => {
             const mine = item.side === "tenant";
             return (
@@ -55,8 +56,8 @@ export default function Landlord() {
         />
         <ErrorLine message={error} />
         <View style={styles.composer}>
-          <TextInput value={draft} onChangeText={setDraft} placeholder="Message" style={styles.input} />
-          <Pressable onPress={send} style={styles.send}><Text style={styles.sendText}>{sending ? "…" : "Send"}</Text></Pressable>
+          <TextInput value={draft} onChangeText={setDraft} placeholder="Message" placeholderTextColor={colors.mute} accessibilityLabel="Message" style={styles.input} />
+          <Pressable onPress={send} style={styles.send} accessibilityRole="button" accessibilityLabel="Send"><Text style={styles.sendText}>{sending ? "Sending" : "Send"}</Text></Pressable>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -65,8 +66,9 @@ export default function Landlord() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper },
-  title: { fontSize: 34, fontWeight: "600", paddingHorizontal: 24, paddingTop: 12, color: colors.ink },
-  list: { padding: 20, paddingBottom: 28 },
+  title: { fontSize: 32, fontWeight: "600", letterSpacing: -0.4, paddingHorizontal: 24, paddingTop: 16, color: colors.ink },
+  list: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 28, flexGrow: 1 },
+  empty: { fontSize: 16, lineHeight: 24, color: colors.mute, marginTop: 24 },
   row: { maxWidth: "86%", marginBottom: 18 },
   right: { alignSelf: "flex-end", alignItems: "flex-end" },
   left: { alignSelf: "flex-start", alignItems: "flex-start" },
@@ -74,8 +76,8 @@ const styles = StyleSheet.create({
   tenant: { backgroundColor: colors.tenant, borderBottomRightRadius: 6 },
   landlord: { backgroundColor: colors.landlord, borderWidth: 1, borderColor: colors.line, borderBottomLeftRadius: 6 },
   meta: { color: colors.mute, fontSize: 13, marginTop: 6 },
-  composer: { flexDirection: "row", alignItems: "center", gap: 10, padding: 16, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: "#fffdf8" },
-  input: { flex: 1, minHeight: 48, backgroundColor: "white", borderRadius: 24, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 16, fontSize: 17, color: colors.ink },
-  send: { minHeight: 48, justifyContent: "center", paddingHorizontal: 8 },
+  composer: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.card },
+  input: { flex: 1, minHeight: 48, backgroundColor: colors.paper, borderRadius: 14, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 16, fontSize: 16, color: colors.ink },
+  send: { minHeight: 48, minWidth: 48, justifyContent: "center", alignItems: "center", paddingHorizontal: 8 },
   sendText: { color: colors.pine, fontWeight: "700", fontSize: 17 },
 });

@@ -37,7 +37,7 @@ export default function RootLayout() {
   );
   if (Platform.OS !== "web") return app;
   return (
-    <View style={{ flex: 1, backgroundColor: "#e7dfd2", alignItems: "center" }}>
+    <View style={{ flex: 1, backgroundColor: "#eceae6", alignItems: "center" }}>
       <View style={{ width: "100%", maxWidth: 420, flex: 1 }}>{app}</View>
     </View>
   );

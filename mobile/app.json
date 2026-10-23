@@ -7,7 +7,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "backgroundColor": "#f3eee4",
+    "backgroundColor": "#f6f5f2",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "local.rentright.app"

@@ -1,11 +1,15 @@
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
-import { Text } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/api";
 import type { Me } from "@/session";
 import { useSession } from "@/session";
 import { colors } from "@/theme";
-import { Button, ErrorLine, Field, LearnMore, Page } from "@/ui";
+import { Button, ErrorLine, Field } from "@/ui";
+
+const demoEnabled = process.env.EXPO_PUBLIC_DEMO === "1";
+const LINK_MINUTES = 30;
 
 export default function Welcome() {
   const { ready, token, me, signIn } = useSession();
@@ -13,6 +17,7 @@ export default function Welcome() {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!ready || !token || !me) return;
@@ -22,15 +27,19 @@ export default function Welcome() {
   async function demo() {
     try {
       setError("");
+      setBusy(true);
       await signIn(await api<Me>("auth/demo", { body: {} }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not open the sample.");
+    } finally {
+      setBusy(false);
     }
   }
 
   async function magic() {
     try {
       setError("");
+      setBusy(true);
       const result = await api<{ sent?: boolean; devToken?: string }>("auth/magic", { body: { email } });
       if (result.devToken) {
         await signIn(await api<Me>("auth/verify", { body: { token: result.devToken } }));
@@ -39,33 +48,80 @@ export default function Welcome() {
       setSent(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send the link.");
+    } finally {
+      setBusy(false);
     }
   }
 
   async function paste() {
     try {
       setError("");
+      setBusy(true);
       await signIn(await api<Me>("me", { token: code.trim() }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "That code did not work.");
+    } finally {
+      setBusy(false);
     }
   }
 
-  if (!ready) return <Page><Text style={{ color: colors.mute }}>Loading</Text></Page>;
+  if (!ready) {
+    return (
+      <SafeAreaView style={styles.screen}>
+        <Text style={styles.loading}>Loading</Text>
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <Page>
-      <Text style={{ fontSize: 42, color: colors.pine, fontWeight: "600" }}>Rent Right</Text>
-      <Text style={{ fontSize: 18, marginTop: 8, color: colors.ink }}>Free for California renters.</Text>
-      <ErrorLine message={error} />
-      {sent ? <Text style={{ marginTop: 16 }}>Check your email for the sign-in link.</Text> : null}
-      <Field label="Email" value={email} onChange={setEmail} placeholder="you@email.com" />
-      <Button label="Email me a link" onPress={magic} />
-      <Button label="View a sample Los Angeles tenancy" onPress={demo} ghost />
-      <LearnMore label="I have a code">
-        <Field label="Code" value={code} onChange={setCode} />
-        <Button label="Continue" onPress={paste} />
-      </LearnMore>
-    </Page>
+    <SafeAreaView style={styles.screen}>
+      <View style={styles.body}>
+        <Text accessibilityRole="header" style={styles.name}>Rent Right</Text>
+        <Text style={styles.prop}>Keep your rental records and talk to your landlord, all in one place.</Text>
+        {sent ? (
+          <View>
+            <Text style={styles.confirmTitle}>Check your inbox</Text>
+            <Text style={styles.confirm}>The link works for {LINK_MINUTES} minutes. It was sent to {email.trim()}.</Text>
+            <Button label="Resend the link" onPress={magic} disabled={busy} />
+            <Button label="Use a different email" ghost onPress={() => { setSent(false); setError(""); }} disabled={busy} />
+          </View>
+        ) : (
+          <View>
+            <Field
+              label="Email"
+              value={email}
+              onChange={setEmail}
+              placeholder="you@email.com"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoComplete="email"
+              textContentType="emailAddress"
+            />
+            <Button label={busy ? "Sending the link…" : "Email me a sign-in link"} onPress={magic} disabled={busy || !email.trim()} />
+          </View>
+        )}
+        <ErrorLine message={error} />
+        {__DEV__ ? (
+          <View style={styles.dev}>
+            <Field label="Code" value={code} onChange={setCode} autoCapitalize="none" />
+            <Button label="Continue with code" ghost onPress={paste} disabled={busy || !code.trim()} />
+          </View>
+        ) : null}
+        {demoEnabled ? <Button label="View a sample Los Angeles tenancy" ghost onPress={demo} disabled={busy} /> : null}
+      </View>
+      <Text style={styles.footer}>General information for California renters, not legal advice. Rent Right is not a law firm.</Text>
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.paper, paddingHorizontal: 24 },
+  body: { flex: 1, paddingTop: 48 },
+  loading: { color: colors.mute, fontSize: 16, marginTop: 48 },
+  name: { fontSize: 40, lineHeight: 46, color: colors.ink, fontWeight: "600", letterSpacing: -0.6 },
+  prop: { fontSize: 18, lineHeight: 26, color: colors.ink, marginTop: 12 },
+  confirmTitle: { fontSize: 22, lineHeight: 28, color: colors.ink, fontWeight: "600", marginTop: 28 },
+  confirm: { fontSize: 16, lineHeight: 24, color: colors.mute, marginTop: 8 },
+  dev: { marginTop: 8 },
+  footer: { color: colors.mute, fontSize: 14, lineHeight: 20, paddingBottom: 20 },
+});

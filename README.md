@@ -48,7 +48,7 @@ Deadlines, caps, and coverage come from the rules engine. A model may choose an 
 
 1. Start Postgres, migrate, and run the API (`docker compose up -d`, `npm run db:migrate`, `npm run dev`).
 2. In `mobile/`, run `npx expo start` and open Expo web or Expo Go. The phone guide is [docs/PHONE_DEMO.md](docs/PHONE_DEMO.md).
-3. On the welcome screen, tap **View a sample Los Angeles tenancy**. That resets `demo@rentright.local` (Maya Chen, 1842 N Echo Park Ave Unit 3, landlord Elena Vasquez).
+3. Start Expo with `EXPO_PUBLIC_DEMO=1 npx expo start`. On the welcome screen, tap **View a sample Los Angeles tenancy**. That resets `demo@rentright.local` (Maya Chen, 1842 N Echo Park Ave Unit 3, landlord Elena Vasquez). The sample button is hidden unless that flag is set.
 4. The chat shows the repair, the rent increase, and the deposit cards. Open **Learn more** for the full disclaimer and the rule.
 5. Describe a new repair, for example “The kitchen sink is leaking.” The card says **Not sent**. Nothing is emailed.
 6. Tap **Send to landlord**. The card updates to **Saved** when Resend is unset. The message is stored on the Landlord tab. With Resend configured, the same confirmation is what actually sends it.
