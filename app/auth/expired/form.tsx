@@ -2,7 +2,16 @@
 
 import { useState } from "react";
 
-export function ExpiredForm() {
+type ExpiredCopy = {
+  email: string;
+  placeholder: string;
+  send: string;
+  sending: string;
+  sentTitle: string;
+  sentBody: string;
+};
+
+export function ExpiredForm({ text }: { text: ExpiredCopy }) {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
@@ -31,15 +40,15 @@ export function ExpiredForm() {
   if (sent) {
     return (
       <div>
-        <p className="mt-6 text-xl font-semibold">Check your inbox</p>
-        <p className="mt-2 text-mute">The link works for 30 minutes. It was sent to {email.trim()}.</p>
+        <p className="mt-6 text-xl font-semibold text-[#14343C]">{text.sentTitle}</p>
+        <p className="mt-2 text-[15px] leading-6 text-[#3D5A62]">{text.sentBody} {email.trim()}.</p>
       </div>
     );
   }
 
   return (
-    <form onSubmit={onSubmit} className="mt-6">
-      <label htmlFor="email">Email</label>
+    <form onSubmit={onSubmit} className="mt-6 text-left">
+      <label htmlFor="email" className="text-sm font-semibold text-[#14343C]">{text.email}</label>
       <input
         id="email"
         name="email"
@@ -47,11 +56,13 @@ export function ExpiredForm() {
         autoComplete="email"
         required
         value={email}
-        placeholder="you@email.com"
+        placeholder={text.placeholder}
         onChange={(event) => setEmail(event.target.value)}
+        className="mt-2 min-h-12 rounded-xl"
+        style={{ borderColor: "#6B8086", borderRadius: 12, minHeight: 48 }}
       />
-      <button className="btn btn-primary mt-4 w-full" type="submit" disabled={busy || !email.trim()}>
-        {busy ? "Sending the link…" : "Email me a sign-in link"}
+      <button className="mt-4 flex min-h-12 w-full items-center justify-center rounded-xl bg-[#0B5C6E] px-4 text-base font-bold text-white disabled:opacity-55" type="submit" disabled={busy || !email.trim()}>
+        {busy ? text.sending : text.send}
       </button>
       {error ? <p className="note-clay mt-4" role="alert">{error}</p> : null}
     </form>
