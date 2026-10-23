@@ -1,15 +1,15 @@
 import { router } from "expo-router";
 import { useState } from "react";
 import { api } from "@/api";
+import { DeleteAccount } from "@/delete-account";
 import { saveAuthorizedFile } from "@/files";
 import type { Me } from "@/session";
 import { useSession } from "@/session";
 import { LanguageToggle } from "@/language-toggle";
-import { Button, ErrorLine, Field, H1, Muted, Page } from "@/ui";
+import { Button, ErrorLine, H1, Muted, Page } from "@/ui";
 
 export default function Settings() {
   const { me, token, signIn, signOut } = useSession();
-  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [pendingLocale, setPendingLocale] = useState<"en" | "es" | null>(null);
   const spanish = (pendingLocale ?? me?.user.locale) === "es";
@@ -27,17 +27,6 @@ export default function Settings() {
     }
   }
 
-  async function remove() {
-    try {
-      setError("");
-      await api("account/delete", { token, body: { confirm } });
-      await signOut();
-      router.replace("/");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not delete.");
-    }
-  }
-
   return (
     <Page>
       <H1>{spanish ? "Ajustes" : "Settings"}</H1>
@@ -45,9 +34,17 @@ export default function Settings() {
       <Muted>{me?.user.email}</Muted>
       {me?.unit ? <Muted>{me.unit.relay}</Muted> : null}
       <Button label={spanish ? "Descargar mis datos" : "Download my data"} ghost onPress={() => token && saveAuthorizedFile("/api/export", "rent-right.json", token)} />
+      {token ? (
+        <DeleteAccount
+          token={token}
+          spanish={spanish}
+          onDeleted={async () => {
+            await signOut();
+            router.replace("/");
+          }}
+        />
+      ) : null}
       <ErrorLine message={error} />
-      <Field label={spanish ? "Escriba DELETE" : "Type DELETE"} value={confirm} onChange={setConfirm} />
-      <Button label={spanish ? "Eliminar la cuenta" : "Delete account"} onPress={remove} />
       <Button label={spanish ? "Cerrar sesión" : "Sign out"} ghost onPress={async () => { await signOut(); router.replace("/"); }} />
     </Page>
   );

@@ -1,1 +1,7 @@
+/delete-account    /delete-account/index.html   200
+/delete-account/   /delete-account/index.html   200
+/privacy           /privacy/index.html          200
+/privacy/          /privacy/index.html          200
+/terms             /terms/index.html            200
+/terms/            /terms/index.html            200
 /*    /index.html   200

@@ -35,6 +35,7 @@ import {
   threeDayNoticeDeadline,
   type RepairSeverity,
 } from "@/lib/rules/engine";
+import { isSampleAccount } from "@/lib/sample";
 import { appUrl, relayAddress } from "@/lib/text";
 import { randomToken } from "@/lib/crypto";
 import { daysBetween, todayISO } from "@/lib/rules/dates";
@@ -155,6 +156,22 @@ export async function emailLandlord(input: {
   assertWritable(input.unit, input.user.locale);
   if (!input.unit.landlordEmail) {
     throw new Error("Add the landlord's email on your unit before sending.");
+  }
+  if (isSampleAccount(input.user.email)) {
+    await insertMessage({
+      unitId: input.unit.id,
+      userId: input.user.id,
+      logEntryId: input.logEntryId,
+      direction: "outbound",
+      fromEmail: relayAddress(input.unit.relayLocal),
+      toEmail: input.unit.landlordEmail,
+      ccEmail: input.user.email,
+      subject: input.subject,
+      body: input.tenantText,
+      deliveryStatus: "local_only",
+      deliveryDetail: "This sample home does not email a landlord.",
+    });
+    return "local_only";
   }
   if (await isBlocked(input.unit.id)) {
     await insertMessage({

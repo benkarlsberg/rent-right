@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { api } from "@/api";
 import { DateField } from "@/date-field";
+import { DeleteAccount } from "@/delete-account";
 import { saveAuthorizedFile } from "@/files";
 import { NextSteps, type StepItem } from "@/next-steps";
 import type { Me, Notice } from "@/session";
@@ -58,7 +59,6 @@ type Records = {
 export default function Records() {
   const { data, error, reload, token, setError } = useLoad<Records>("records");
   const { me, signIn, signOut } = useSession();
-  const [confirm, setConfirm] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [draftDate, setDraftDate] = useState("");
   const [customLabel, setCustomLabel] = useState("");
@@ -81,17 +81,6 @@ export default function Records() {
       setError(err instanceof Error ? err.message : "Could not save the language.");
     } finally {
       setPendingLocale(null);
-    }
-  }
-
-  async function remove() {
-    try {
-      setError("");
-      await api("account/delete", { token, body: { confirm } });
-      await signOut();
-      router.replace("/");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not delete the account.");
     }
   }
 
@@ -248,13 +237,19 @@ export default function Records() {
           >
             <Text style={styles.textButtonLabel}>Log out</Text>
           </Pressable>
-          <LearnMore label="Account">
+          <LearnMore label={locale === "es" ? "Cuenta" : "Account"}>
             <Muted>{me?.user.email}</Muted>
-            <Pressable onPress={() => saveAuthorizedFile("/api/export", "rent-right.json", token)} style={styles.textButton} accessibilityRole="button" accessibilityLabel="Download my data">
-              <Text style={styles.textButtonLabel}>Download my data</Text>
+            <Pressable onPress={() => saveAuthorizedFile("/api/export", "rent-right.json", token)} style={styles.textButton} accessibilityRole="button" accessibilityLabel={locale === "es" ? "Descargar mis datos" : "Download my data"}>
+              <Text style={styles.textButtonLabel}>{locale === "es" ? "Descargar mis datos" : "Download my data"}</Text>
             </Pressable>
-            <Field label="Type DELETE" value={confirm} onChange={setConfirm} autoCapitalize="characters" />
-            <Button label="Delete account" onPress={remove} />
+            <DeleteAccount
+              token={token}
+              spanish={locale === "es"}
+              onDeleted={async () => {
+                await signOut();
+                router.replace("/");
+              }}
+            />
           </LearnMore>
         </>
       ) : null}

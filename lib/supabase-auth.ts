@@ -78,21 +78,52 @@ function pkceClient(storage: ReturnType<typeof memoryStorage>) {
   });
 }
 
-export async function startGoogleSignIn(): Promise<{ url: string; pkce: string }> {
-  if (!supabaseAuthConfigured()) throw new Error("Google sign-in is not available yet.");
+async function startOAuth(provider: "google" | "apple"): Promise<{ url: string; pkce: string }> {
+  const label = provider === "apple" ? "Apple" : "Google";
+  if (!supabaseAuthConfigured()) throw new Error(`${label} sign-in is not available yet.`);
   const storage = memoryStorage();
   const supabase = pkceClient(storage);
   const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: "google",
+    provider,
     options: { redirectTo: redirectTo(), skipBrowserRedirect: true },
   });
-  if (error || !data.url) throw new Error(error?.message || "Could not start Google sign-in.");
+  if (error || !data.url) throw new Error(error?.message || `Could not start ${label} sign-in.`);
   const flowId = data.flowId ?? null;
   const entries = [...storage.bag.entries()];
   if (!entries.some(([key]) => key.includes("-flow-") && key.endsWith("-code-verifier"))) {
-    throw new Error("Could not start Google sign-in.");
+    throw new Error(`Could not start ${label} sign-in.`);
   }
   return { url: data.url, pkce: JSON.stringify({ flowId, entries }) };
+}
+
+export function startGoogleSignIn(): Promise<{ url: string; pkce: string }> {
+  return startOAuth("google");
+}
+
+export function startAppleSignIn(): Promise<{ url: string; pkce: string }> {
+  return startOAuth("apple");
+}
+
+export async function userFromAppleIdToken(identityToken: string, nonce: string): Promise<{ id: string; email: string } | null> {
+  if (!identityToken || !nonce || !supabaseAuthConfigured()) return null;
+  const supabase = client(process.env.SUPABASE_ANON_KEY!);
+  const { data, error } = await supabase.auth.signInWithIdToken({
+    provider: "apple",
+    token: identityToken,
+    nonce,
+  });
+  const email = data.user?.email || "";
+  if (error || !data.user || !email) return null;
+  return { id: data.user.id, email };
+}
+
+/** Deletes the Auth user with the service role. Returns false when that key is not configured. */
+export async function deleteSupabaseAuthUser(userId: string): Promise<boolean> {
+  if (!userId || !supabaseAdminConfigured()) return false;
+  const admin = client(process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const { error } = await admin.auth.admin.deleteUser(userId);
+  if (error && !/not found/i.test(error.message)) throw new Error(error.message);
+  return true;
 }
 
 export async function userFromGoogleCode(code: string, stored: string): Promise<{ id: string; email: string } | null> {

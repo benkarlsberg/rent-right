@@ -2,7 +2,7 @@ import "server-only";
 import { randomUUID } from "crypto";
 import { decryptString, encryptString, hashToken, randomToken, shortCode } from "@/lib/crypto";
 import { all, hasUserActor, one, run, withActor } from "@/lib/pg";
-import { sendSupabaseMagicLink, supabaseAuthConfigured, userFromSupabaseOtp } from "@/lib/supabase-auth";
+import { deleteSupabaseAuthUser, sendSupabaseMagicLink, supabaseAuthConfigured, userFromSupabaseOtp } from "@/lib/supabase-auth";
 import type { Locale } from "@/lib/disclaimer";
 import type { LeaseReview } from "@/lib/lease/review";
 import type { AssistantAnswer } from "@/lib/rules/assistant";
@@ -199,6 +199,21 @@ export async function createMagicLink(email: string): Promise<{ token: string; s
     [randomUUID(), normalized, hashToken(code), null, null, expires, now],
   );
   return { token: code, supabase: false };
+}
+
+/** Counts tries for the reviewer address only. The inserted row cannot be used as a sign-in link. */
+export async function reviewerAttemptOpen(email: string): Promise<boolean> {
+  if (hasUserActor()) return withActor(null, () => reviewerAttemptOpen(email));
+  const normalized = email.toLowerCase().trim();
+  const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const recent = await one<{ n: number }>("select count(*)::int as n from magic_links where email = ? and created_at > ?", [normalized, since]);
+  if ((recent?.n || 0) >= 8) return false;
+  const now = new Date().toISOString();
+  await run(
+    "insert into magic_links (id, email, token_hash, provider_token, provider_hash, expires_at, used_at, created_at) values (?, ?, ?, null, null, ?, ?, ?)",
+    [randomUUID(), normalized, hashToken(randomToken(24)), now, now, now],
+  );
+  return true;
 }
 
 export async function consumeMagicLink(token: string): Promise<User> {
@@ -1220,6 +1235,9 @@ export async function listPush(userId: string) {
 
 export async function deleteUserAccount(userId: string): Promise<void> {
   if (hasUserActor()) return withActor(null, () => deleteUserAccount(userId));
+  const personal = await all<{ id: string }>("select id from files where user_id = ? and unit_id is null", [userId]);
+  for (const file of personal) await deleteBlob(file.id);
+  await run("delete from files where user_id = ? and unit_id is null", [userId]);
   const memberships = await all<{ unit_id: string }>("select unit_id from unit_members where user_id = ?", [userId]);
   for (const member of memberships) {
     const others = await one<{ n: number }>("select count(*)::int as n from unit_members where unit_id = ? and user_id != ?", [member.unit_id, userId]);
@@ -1240,7 +1258,14 @@ export async function deleteUserAccount(userId: string): Promise<void> {
   const user = await getUser(userId);
   if (user) await run("delete from magic_links where email = ?", [user.email]);
   await run("delete from profiles where id = ?", [userId]);
-  await run("delete from auth.users where id = ?", [userId]);
+  let authDeleteFailed = false;
+  try {
+    await run("delete from auth.users where id = ?", [userId]);
+  } catch {
+    authDeleteFailed = true;
+  }
+  const removedByApi = await deleteSupabaseAuthUser(userId);
+  if (authDeleteFailed && !removedByApi) throw new Error("Could not delete the account.");
 }
 
 async function deleteUnit(unitId: string) {

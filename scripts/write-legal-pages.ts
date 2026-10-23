@@ -1,17 +1,20 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { injectHomeHtml, privacyDocument, termsDocument } from "../lib/legal-html";
+import { deleteAccountDocument, injectHomeHtml, privacyDocument, termsDocument } from "../lib/legal-html";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function writePublic(): void {
   const privacyDir = join(root, "mobile/public/privacy");
   const termsDir = join(root, "mobile/public/terms");
+  const deleteDir = join(root, "mobile/public/delete-account");
   mkdirSync(privacyDir, { recursive: true });
   mkdirSync(termsDir, { recursive: true });
+  mkdirSync(deleteDir, { recursive: true });
   writeFileSync(join(privacyDir, "index.html"), privacyDocument);
   writeFileSync(join(termsDir, "index.html"), termsDocument);
+  writeFileSync(join(deleteDir, "index.html"), deleteAccountDocument);
 }
 
 const iconFiles = [

@@ -11,6 +11,7 @@ import {
   consumeMagicLink,
   createUnit,
   deleteUserAccount,
+  reviewerAttemptOpen,
   getDeposit,
   getLog,
   getUser,
@@ -25,6 +26,7 @@ import {
   listMessages,
   insertCondition,
   primaryUnit,
+  profileForAuthUser,
   saveFile,
   saveRentCheck,
   setDeadlineStatus,
@@ -68,7 +70,9 @@ import {
 import { sendTenantEmail } from "@/lib/email";
 import { signInMessage, signInUrl } from "@/lib/email-template";
 import { currentUser } from "@/lib/session";
+import { reviewerEmail, reviewerMatch } from "@/lib/reviewer";
 import { DEMO_EMAIL, startSampleTenancy } from "@/lib/seed";
+import { userFromAppleIdToken } from "@/lib/supabase-auth";
 import { appUrl, relayAddress, tx } from "@/lib/text";
 import { parseCard } from "@/lib/chat-card";
 import { runChatTurn } from "@/lib/chat-turn";
@@ -278,6 +282,32 @@ async function route(request: Request, path: string[]): Promise<Response> {
     const user = await getUser(id);
     if (!user) throw new Error("Could not open the sample.");
     return json(await sessionPayload(user));
+  }
+
+  if (method === "POST" && key === "auth/reviewer") {
+    const input = await readBody(request);
+    const email = text(input.email).trim().toLowerCase();
+    const code = text(input.code).trim();
+    const expected = reviewerEmail();
+    if (!expected || email !== expected) throw new Error("That code did not work.");
+    if (!(await reviewerAttemptOpen(email))) throw new Error("Too many tries. Wait an hour and try again.");
+    if (!reviewerMatch(email, code)) throw new Error("That code did not work.");
+    const id = await startSampleTenancy();
+    const user = await getUser(id);
+    if (!user) throw new Error("Could not open the sample.");
+    return json(await sessionPayload(user));
+  }
+
+  if (method === "POST" && key === "auth/apple") {
+    const input = await readBody(request);
+    const remote = await userFromAppleIdToken(text(input.identityToken), text(input.nonce));
+    if (!remote) throw new Error("Could not sign in with Apple.");
+    const user = await profileForAuthUser(remote.id, remote.email);
+    const name = text(input.name);
+    if (name && !user.name) await updateUser(user.id, { name });
+    const fresh = await getUser(user.id);
+    if (!fresh) throw new Error("Could not sign in with Apple.");
+    return json(await sessionPayload(fresh));
   }
 
   if (method === "GET" && key === "me") {

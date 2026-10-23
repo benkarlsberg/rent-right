@@ -21,9 +21,10 @@ import { percentLabel } from "@/lib/format";
 import { appUrl, relayAddress } from "@/lib/text";
 import { landlordMessageBody } from "@/lib/email";
 import { hasUserActor, withActor } from "@/lib/pg";
+import { DEMO_EMAIL } from "@/lib/sample";
 import { runLeaseReview, sampleLeaseText, saveDepositAndDeadline } from "@/lib/workflow";
 
-export const DEMO_EMAIL = "demo@rentright.local";
+export { DEMO_EMAIL };
 
 export async function startSampleTenancy(): Promise<string> {
   if (hasUserActor()) return withActor(null, () => startSampleTenancy());

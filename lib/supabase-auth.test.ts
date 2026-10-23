@@ -1,12 +1,15 @@
 import { randomUUID } from "crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { hashToken, SHORT_CODE_PATTERN } from "@/lib/crypto";
-import { consumeMagicLink, createMagicLink, profileForAuthUser } from "@/lib/db";
+import { consumeMagicLink, createMagicLink, deleteUserAccount, profileForAuthUser } from "@/lib/db";
+import { userFromAppleIdToken } from "@/lib/supabase-auth";
 import { getSql } from "@/lib/pg";
 
 const generateLink = vi.hoisted(() => vi.fn());
+const deleteUser = vi.hoisted(() => vi.fn());
 const signInWithOtp = vi.hoisted(() => vi.fn());
 const signInWithOAuth = vi.hoisted(() => vi.fn());
+const signInWithIdToken = vi.hoisted(() => vi.fn());
 const exchangeCodeForSession = vi.hoisted(() => vi.fn());
 const verifyOtp = vi.hoisted(() => vi.fn());
 const getUser = vi.hoisted(() => vi.fn());
@@ -19,10 +22,11 @@ vi.mock("@supabase/supabase-js", () => ({
       auth: {
         signInWithOtp,
         signInWithOAuth,
+        signInWithIdToken,
         exchangeCodeForSession,
         verifyOtp,
         getUser,
-        admin: { generateLink },
+        admin: { generateLink, deleteUser },
       },
     };
   },
@@ -34,8 +38,10 @@ describe("Supabase Auth", () => {
     delete process.env.SUPABASE_ANON_KEY;
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
     generateLink.mockReset();
+    deleteUser.mockReset();
     signInWithOtp.mockReset();
     signInWithOAuth.mockReset();
+    signInWithIdToken.mockReset();
     exchangeCodeForSession.mockReset();
     verifyOtp.mockReset();
     seenKeys.length = 0;
@@ -89,5 +95,27 @@ describe("Supabase Auth", () => {
     expect(again.email).toBe(email);
     const sameId = await profileForAuthUser(id, email);
     expect(sameId.id).toBe(id);
+  });
+
+  it("exchanges an Apple identity token with the anon key", async () => {
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_ANON_KEY = "sb_publishable_test_key";
+    const id = randomUUID();
+    signInWithIdToken.mockResolvedValue({ data: { user: { id, email: "apple@example.com" } }, error: null });
+    const remote = await userFromAppleIdToken("header.payload.sig", "nonce-raw");
+    expect(remote).toEqual({ id, email: "apple@example.com" });
+    expect(signInWithIdToken).toHaveBeenCalledWith({ provider: "apple", token: "header.payload.sig", nonce: "nonce-raw" });
+    expect(seenKeys).toContain("sb_publishable_test_key");
+    expect(seenKeys).not.toContain("sb_secret_test_key");
+  });
+
+  it("deletes the auth user with the service role", async () => {
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "sb_secret_test_key";
+    deleteUser.mockResolvedValue({ error: null });
+    const created = await profileForAuthUser(randomUUID(), `gone-${randomUUID()}@example.com`);
+    await deleteUserAccount(created.id);
+    expect(deleteUser).toHaveBeenCalledWith(created.id);
+    expect(seenKeys).toContain("sb_secret_test_key");
   });
 });

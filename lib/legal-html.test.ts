@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DISCLAIMER_EN } from "@/lib/disclaimer";
-import { HOME_DESCRIPTION, homeIntro, iconLinks, injectHomeHtml, privacyDocument, termsDocument } from "@/lib/legal-html";
+import { deleteAccountDocument, HOME_DESCRIPTION, homeIntro, iconLinks, injectHomeHtml, privacyDocument, termsDocument } from "@/lib/legal-html";
+import { GET as deleteAccount } from "@/app/delete-account/route";
 import { GET as privacy } from "@/app/privacy/route";
 import { GET as terms } from "@/app/terms/route";
 
@@ -38,5 +39,13 @@ describe("public legal pages", () => {
     expect(privacyBody).toContain("<h1>Privacy policy</h1>");
     expect(termsBody).toContain("<h1>Terms of use</h1>");
     expect(privacyBody).not.toContain("id=\"root\"");
+    expect(deleteAccountDocument).toContain("Export your evidence packet first");
+    expect(deleteAccountDocument).toContain("landlord communications");
+    expect(deleteAccountDocument).toContain(DISCLAIMER_EN);
+    expect(deleteAccountDocument).toContain("Ajustes");
+    expect(privacyDocument).toContain('href="/delete-account"');
+    const deleteBody = await (await deleteAccount()).text();
+    expect(deleteBody).toContain("<h1>Delete your account</h1>");
+    expect(deleteBody).not.toContain("id=\"root\"");
   });
 });

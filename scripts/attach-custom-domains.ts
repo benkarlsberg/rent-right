@@ -28,6 +28,7 @@ const appRoutes = [
   `${appHost}/icons/*`,
   `${appHost}/privacy*`,
   `${appHost}/terms*`,
+  `${appHost}/delete-account*`,
   `${appHost}/_next/*`,
 ];
 

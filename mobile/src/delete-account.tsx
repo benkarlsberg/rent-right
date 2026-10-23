@@ -1,0 +1,58 @@
+import { useState } from "react";
+import { api } from "@/api";
+import { saveAuthorizedFile } from "@/files";
+import { Button, ErrorLine, Field, Muted } from "@/ui";
+
+export function DeleteAccount({
+  token,
+  spanish,
+  onDeleted,
+}: {
+  token: string;
+  spanish: boolean;
+  onDeleted: () => Promise<void>;
+}) {
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function download() {
+    try {
+      setError("");
+      await saveAuthorizedFile("/api/packet", "rent-right-evidence.pdf", token);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : spanish ? "No se pudo exportar." : "Could not export the packet.");
+    }
+  }
+
+  async function remove() {
+    if (confirm.trim() !== "DELETE") {
+      setError(spanish ? "Escriba DELETE para confirmar." : "Type DELETE to confirm.");
+      return;
+    }
+    try {
+      setBusy(true);
+      setError("");
+      await api("account/delete", { token, body: { confirm: confirm.trim() } });
+      await onDeleted();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : spanish ? "No se pudo eliminar la cuenta." : "Could not delete the account.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <Muted>
+        {spanish
+          ? "Eliminar la cuenta borra su perfil, sus registros, sus archivos, sus recordatorios, sus chats y sus comunicaciones con el propietario. Una vivienda que comparte con otra persona se queda para esa persona. Exporte su paquete de evidencia primero."
+          : "Deleting your account erases your profile, your records, your files, your reminders, your chats, and your landlord communications. A home you share with someone else stays for them. Export your evidence packet first."}
+      </Muted>
+      <Button label={spanish ? "Exportar paquete de evidencia" : "Export evidence packet"} onPress={() => void download()} />
+      <Field label={spanish ? "Escriba DELETE" : "Type DELETE"} value={confirm} onChange={setConfirm} autoCapitalize="characters" />
+      <Button label={spanish ? "Eliminar la cuenta" : "Delete account"} onPress={() => void remove()} disabled={busy} />
+      <ErrorLine message={error} />
+    </>
+  );
+}

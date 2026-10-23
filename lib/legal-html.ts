@@ -26,7 +26,7 @@ ${iconLinks}
 <h1>${title}</h1>
 ${body}
 <nav>
-<p><a href="/">Rent Right</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>
+<p><a href="/">Rent Right</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/delete-account">Delete account</a></p>
 <p>Contact <a href="mailto:${CONTACT}">${CONTACT}</a></p>
 </nav>
 </main>
@@ -43,7 +43,7 @@ export const privacyDocument = document(
 <p>Sign-in mail is sent to you. A message to your landlord is sent only after you confirm it on the screen. Those messages come from notices@rentrightportal.com. We do not text landlords, and we do not sell personal information.</p>
 <p>If an AI service is configured, a question or a lease excerpt may be sent to it so the app can help sort what you asked. Email addresses, phone numbers, and Social Security-like numbers are removed from that text first. Deadlines and rent-cap math come from the rules library, not from the model. We do not promise that a model provider will never retain a prompt.</p>
 <p>Uploaded files and landlord message bodies are encrypted before they are stored. The site uses HTTPS. We do not ask for a Social Security number or a bank login. If you type one into a note, it is saved with that note.</p>
-<p>From Records you can download a copy of your data or delete the account. California residents can email <a href="mailto:${CONTACT}">${CONTACT}</a> to ask what we have, to correct it, or to delete it.</p>
+<p>From Settings you can download a copy of your data or delete the account. The steps are also on the <a href="/delete-account">delete account</a> page. California residents can email <a href="mailto:${CONTACT}">${CONTACT}</a> to ask what we have, to correct it, or to delete it.</p>
 `,
 );
 
@@ -55,6 +55,22 @@ export const termsDocument = document(
 <p>Answers about rent, repairs, deposits, and leases quote a library entry or say they are unsure. The library is general information. It can be incomplete, and it is not a decision about your home. City rules, including Los Angeles rent control, still depend on the unit.</p>
 <p>There are no landlord ratings, no text messages, and no paid referrals.</p>
 <p>Questions about these terms: <a href="mailto:${CONTACT}">${CONTACT}</a>.</p>
+`,
+);
+
+export const deleteAccountDocument = document(
+  "Delete your account",
+  `
+<p>You can delete your Rent Right account in the app or on the website. Deleting the account erases your profile, your records, your files, your reminders, your chats, and your landlord communications. A home you share with another member stays for that person. Export your evidence packet first if you want a copy.</p>
+<ol>
+<li>Sign in at <a href="https://app.rentrightportal.com">app.rentrightportal.com</a>.</li>
+<li>Open Menu, then Settings.</li>
+<li>Choose Export evidence packet if you want a copy of your records.</li>
+<li>Read the warning, type DELETE, and choose Delete account.</li>
+</ol>
+<p>On iPhone or Android, use the same path: Menu, then Settings, then Delete account.</p>
+<p>Puede eliminar la cuenta en la aplicación o en el sitio. Eliminarla borra su perfil, sus registros, sus archivos, sus recordatorios, sus chats y sus comunicaciones con el propietario. Una vivienda que comparte con otra persona se queda para esa persona. Exporte su paquete de evidencia primero si quiere una copia. Abra Menú, luego Ajustes, escriba DELETE y elija Eliminar la cuenta.</p>
+<p>${DISCLAIMER_EN}</p>
 `,
 );
 

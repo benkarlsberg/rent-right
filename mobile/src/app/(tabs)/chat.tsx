@@ -347,8 +347,9 @@ function CardView({ item, spanish, onAction }: { item: Extract<Item, { role: "ca
           {details ? <Text style={[styles.detail, wrapText]}>{`${item.detail}${item.ruleId ? `\n\n${item.ruleId}` : ""}`}</Text> : null}
         </View>
       ) : null}
-      <Pressable onPress={() => setAdvice((open) => !open)} accessibilityRole="button" accessibilityLabel={spanish ? "No es asesoramiento legal" : "Not legal advice"}>
-        <Text style={styles.note}>{advice ? (spanish ? "Ocultar" : "Hide") : (spanish ? "No es asesoramiento legal" : "Not legal advice")}</Text>
+      <Text style={styles.detail}>{item.notice.short}</Text>
+      <Pressable onPress={() => setAdvice((open) => !open)} accessibilityRole="button" accessibilityLabel={spanish ? "Aviso completo" : "Full disclaimer"}>
+        <Text style={styles.note}>{advice ? (spanish ? "Ocultar" : "Hide") : (spanish ? "Aviso completo" : "Full disclaimer")}</Text>
       </Pressable>
       {advice ? (
         <View>

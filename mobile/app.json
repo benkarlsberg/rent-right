@@ -8,17 +8,34 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "backgroundColor": "#F8FAF9",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#F8FAF9"
-    },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "local.rentright.app"
+      "bundleIdentifier": "com.rentrightportal.app",
+      "buildNumber": "1",
+      "usesAppleSignIn": true,
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Rent Right attaches photos you choose to a condition report or a message.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": ["C617.1"]
+          }
+        ]
+      }
     },
     "android": {
-      "package": "local.rentright.app",
+      "package": "com.rentrightportal.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#F8FAF9",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -39,16 +56,29 @@
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F8FAF9",
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "imageWidth": 200
+        }
+      ],
+      [
+        "expo-secure-store",
+        { "faceIDPermission": false }
+      ],
+      "expo-sharing",
+      "expo-apple-authentication",
       [
         "expo-image-picker",
-        { "photosPermission": "Rent Right attaches photos to your condition report." }
+        {
+          "photosPermission": "Rent Right attaches photos you choose to a condition report or a message.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
       ]
-    ],
-    "plugins": [
-      "expo-router",
-      "expo-secure-store",
-      "expo-sharing"
     ]
   }
 }

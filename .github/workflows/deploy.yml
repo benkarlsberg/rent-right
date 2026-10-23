@@ -134,6 +134,9 @@ jobs:
           EMAIL_WEBHOOK_SECRET: ${{ secrets.EMAIL_WEBHOOK_SECRET }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           RELAY_DOMAIN: ${{ secrets.RELAY_DOMAIN }}
+          REVIEWER_LOGIN: ${{ secrets.REVIEWER_LOGIN }}
+          REVIEWER_EMAIL: ${{ secrets.REVIEWER_EMAIL }}
+          REVIEWER_CODE: ${{ secrets.REVIEWER_CODE }}
           API_URL: ${{ env.API_URL }}
         run: |
           if [ -f .database-url ]; then export DATABASE_URL="$(cat .database-url)"; fi
@@ -146,7 +149,7 @@ jobs:
           fi
           node --input-type=module -e '
             import { writeFileSync } from "fs";
-            const keys = ["DATABASE_URL","SUPABASE_URL","SUPABASE_ANON_KEY","SUPABASE_SERVICE_ROLE_KEY","DATA_ENCRYPTION_KEY","AUTH_SECRET","GEMINI_API_KEY","RESEND_API_KEY","RESEND_FROM","NEXT_PUBLIC_APP_URL","APP_URL","EMAIL_WEBHOOK_SECRET","CRON_SECRET","RELAY_DOMAIN"];
+            const keys = ["DATABASE_URL","SUPABASE_URL","SUPABASE_ANON_KEY","SUPABASE_SERVICE_ROLE_KEY","DATA_ENCRYPTION_KEY","AUTH_SECRET","GEMINI_API_KEY","RESEND_API_KEY","RESEND_FROM","NEXT_PUBLIC_APP_URL","APP_URL","EMAIL_WEBHOOK_SECRET","CRON_SECRET","RELAY_DOMAIN","REVIEWER_LOGIN","REVIEWER_EMAIL","REVIEWER_CODE"];
             const body = {};
             for (const key of keys) if (process.env[key]) body[key] = process.env[key];
             writeFileSync("worker-secrets.json", JSON.stringify(body));
@@ -183,6 +186,7 @@ jobs:
           EXPO_NO_TELEMETRY: "1"
           EXPO_PUBLIC_API_URL: ${{ env.EXPO_PUBLIC_API_URL }}
           EXPO_PUBLIC_GOOGLE_AUTH: ${{ vars.EXPO_PUBLIC_GOOGLE_AUTH || secrets.EXPO_PUBLIC_GOOGLE_AUTH }}
+          EXPO_PUBLIC_APPLE_AUTH: ${{ vars.EXPO_PUBLIC_APPLE_AUTH || secrets.EXPO_PUBLIC_APPLE_AUTH }}
         run: |
           npm ci
           npx tsx ../scripts/write-legal-pages.ts

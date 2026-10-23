@@ -16,3 +16,5 @@ coverage
 .wrangler
 worker-secrets.json
 .database-url
+mobile/ios
+mobile/android

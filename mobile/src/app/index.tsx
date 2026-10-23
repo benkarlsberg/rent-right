@@ -2,6 +2,8 @@ import { router } from "expo-router";
 import { createElement, useEffect, useState } from "react";
 import { Linking, Platform, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as AppleAuthentication from "expo-apple-authentication";
+import * as Crypto from "expo-crypto";
 import { api } from "@/api";
 import type { Me } from "@/session";
 import { useSession } from "@/session";
@@ -12,6 +14,7 @@ import { Button, ErrorLine, Field } from "@/ui";
 
 const demoEnabled = process.env.EXPO_PUBLIC_DEMO === "1";
 const googleEnabled = process.env.EXPO_PUBLIC_GOOGLE_AUTH === "1";
+const appleEnabled = process.env.EXPO_PUBLIC_APPLE_AUTH === "1";
 const LINK_MINUTES = 30;
 
 function webQuery(name: string): string {
@@ -23,6 +26,8 @@ export default function Welcome() {
   const { ready, token, me, signIn } = useSession();
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
+  const [reviewCode, setReviewCode] = useState("");
+  const [showCode, setShowCode] = useState(false);
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -74,6 +79,51 @@ export default function Welcome() {
       await signIn(await api<Me>("auth/demo", { body: {} }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not open the sample.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function apple() {
+    try {
+      setError("");
+      setBusy(true);
+      if (Platform.OS !== "ios") {
+        const start = Platform.OS === "web" ? `${window.location.origin}/auth/apple` : "https://app.rentrightportal.com/auth/apple";
+        if (Platform.OS === "web") window.location.assign(start);
+        else await Linking.openURL(start);
+        return;
+      }
+      const available = await AppleAuthentication.isAvailableAsync();
+      if (!available) {
+        setError("Sign in with Apple is not available on this device.");
+        return;
+      }
+      const bytes = await Crypto.getRandomBytesAsync(16);
+      const raw = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+      const nonce = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, raw);
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [AppleAuthentication.AppleAuthenticationScope.FULL_NAME, AppleAuthentication.AppleAuthenticationScope.EMAIL],
+        nonce,
+      });
+      const name = [credential.fullName?.givenName, credential.fullName?.familyName].filter(Boolean).join(" ");
+      await signIn(await api<Me>("auth/apple", { body: { identityToken: credential.identityToken, nonce: raw, name } }));
+    } catch (err) {
+      const code = err && typeof err === "object" && "code" in err ? String((err as { code?: string }).code) : "";
+      if (code === "ERR_REQUEST_CANCELED") return;
+      setError(err instanceof Error ? err.message : "Could not sign in with Apple.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reviewer() {
+    try {
+      setError("");
+      setBusy(true);
+      await signIn(await api<Me>("auth/reviewer", { body: { email, code: reviewCode } }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "That code did not work.");
     } finally {
       setBusy(false);
     }
@@ -139,6 +189,17 @@ export default function Welcome() {
           </View>
         ) : (
           <View>
+            {appleEnabled && Platform.OS === "ios" ? (
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                cornerRadius={14}
+                style={styles.apple}
+                onPress={() => void apple()}
+              />
+            ) : appleEnabled ? (
+              <Button label="Continue with Apple" ghost disabled={busy} onPress={() => void apple()} />
+            ) : null}
             {googleEnabled ? (
               <Button
                 label="Continue with Google"
@@ -151,7 +212,7 @@ export default function Welcome() {
                 }}
               />
             ) : null}
-            {googleEnabled ? <Text style={styles.or}>or</Text> : null}
+            {appleEnabled || googleEnabled ? <Text style={styles.or}>or</Text> : null}
             <Field
               label="Email"
               value={email}
@@ -163,6 +224,13 @@ export default function Welcome() {
               textContentType="emailAddress"
             />
             <Button label={busy ? "Sending the link…" : "Email me a sign-in link"} onPress={magic} disabled={busy || !email.trim()} />
+            <Button label="I have a sign-in code" ghost onPress={() => setShowCode((open) => !open)} disabled={busy} />
+            {showCode ? (
+              <View>
+                <Field label="Sign-in code" value={reviewCode} onChange={setReviewCode} autoCapitalize="none" />
+                <Button label="Continue with code" onPress={reviewer} disabled={busy || !email.trim() || !reviewCode.trim()} />
+              </View>
+            ) : null}
           </View>
         )}
         <ErrorLine message={error} />
@@ -179,15 +247,17 @@ export default function Welcome() {
           <>
             {createElement("a", { href: "/privacy", style: webLink }, "Privacy")}
             {createElement("a", { href: "/terms", style: webLink }, "Terms")}
+            {createElement("a", { href: "/delete-account", style: webLink }, "Delete account")}
           </>
         ) : (
           <>
             <Text style={styles.legalAnchor} accessibilityRole="link" onPress={() => Linking.openURL("https://app.rentrightportal.com/privacy")}>Privacy</Text>
             <Text style={styles.legalAnchor} accessibilityRole="link" onPress={() => Linking.openURL("https://app.rentrightportal.com/terms")}>Terms</Text>
+            <Text style={styles.legalAnchor} accessibilityRole="link" onPress={() => Linking.openURL("https://app.rentrightportal.com/delete-account")}>Delete account</Text>
           </>
         )}
       </View>
-      <Text style={styles.footer}>General information for California renters, not legal advice. Rent Right is not a law firm.</Text>
+      <Text style={styles.footer}>General information, not legal advice. Rent Right is not a law firm.</Text>
     </SafeAreaView>
   );
 }
@@ -202,6 +272,7 @@ const styles = StyleSheet.create({
   confirmTitle: { fontSize: 22, lineHeight: 28, color: colors.ink, fontWeight: "600", marginTop: 28 },
   confirm: { fontSize: 16, lineHeight: 24, color: colors.mute, marginTop: 8 },
   or: { color: colors.mute, fontSize: 14, textAlign: "center", marginTop: 16 },
+  apple: { width: "100%", height: 48, marginTop: 16 },
   dev: { marginTop: 8 },
   legalRow: { flexDirection: "row", gap: 16, paddingBottom: 8 },
   legalAnchor: { color: colors.pine, fontSize: 16, fontWeight: "700", lineHeight: 24, minHeight: 44 },
