@@ -51,6 +51,7 @@ import {
   rentHeadline,
 } from "@/lib/phone";
 import { sendTenantEmail } from "@/lib/email";
+import { signInMessage, signInUrl } from "@/lib/email-template";
 import { currentUser } from "@/lib/session";
 import { DEMO_EMAIL, startSampleTenancy } from "@/lib/seed";
 import { appUrl, relayAddress, tx } from "@/lib/text";
@@ -222,9 +223,9 @@ async function route(request: Request, path: string[]): Promise<Response> {
     const email = emailValue(text(input.email));
     const { token, supabase } = await createMagicLink(email);
     if (token && process.env.RESEND_API_KEY && process.env.RESEND_FROM) {
-      const link = `${appUrl()}/auth/verify?token=${token}`;
-      await sendTenantEmail(email, "Your Rent Right sign-in link", `Sign in: ${link}\nThis link expires in 30 minutes.`);
-      return json({ sent: true });
+      const mail = signInMessage(signInUrl(token));
+      const sent = await sendTenantEmail(email, mail.subject, mail.text, mail.html);
+      return json({ sent });
     }
     if (supabase && !token) return json({ sent: true });
     return json({ sent: false, devToken: token });

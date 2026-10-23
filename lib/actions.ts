@@ -40,6 +40,7 @@ import { clearSessionCookie, currentUser, setSessionCookie, writeLocale } from "
 import { DEMO_EMAIL, startSampleTenancy } from "@/lib/seed";
 import { appUrl } from "@/lib/text";
 import { sendTenantEmail } from "@/lib/email";
+import { signInMessage, signInUrl } from "@/lib/email-template";
 import { askAssistant, emailLandlord, extractPdfOrText, recordLog, runLeaseReview, sampleLeaseText, saveDepositAndDeadline } from "@/lib/workflow";
 import type { Locale } from "@/lib/disclaimer";
 
@@ -105,9 +106,11 @@ export async function requestMagicLink(form: FormData) {
   try {
     const { token, supabase } = await createMagicLink(email);
     if (supabase && !token) redirect("/login?sent=1");
-    const link = `${appUrl()}/auth/verify?token=${token}`;
+    const link = signInUrl(token);
     if (process.env.RESEND_API_KEY && process.env.RESEND_FROM) {
-      await sendTenantEmail(email, "Your Rent Right sign-in link", `Sign in: ${link}\nThis link expires in 30 minutes.`);
+      const mail = signInMessage(link);
+      const sent = await sendTenantEmail(email, mail.subject, mail.text, mail.html);
+      if (!sent) fail("/login", new Error("Could not send the sign-in email. Try again in a minute."));
       redirect("/login?sent=1");
     }
     redirect(`/login?dev=${encodeURIComponent(link)}`);

@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "crypto";
-import { decryptString, encryptString, hashToken, randomToken } from "@/lib/crypto";
+import { decryptString, encryptString, hashToken, randomToken, shortCode } from "@/lib/crypto";
 import { all, hasUserActor, one, run, withActor } from "@/lib/pg";
 import { sendSupabaseMagicLink, supabaseAuthConfigured, userFromSupabaseOtp } from "@/lib/supabase-auth";
 import type { Locale } from "@/lib/disclaimer";
@@ -173,27 +173,31 @@ export async function createMagicLink(email: string): Promise<{ token: string; s
   const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const recent = await one<{ n: number }>("select count(*)::int as n from magic_links where email = ? and created_at > ?", [normalized, since]);
   if ((recent?.n || 0) >= 5) throw new HttpError("Too many sign-in emails. Wait an hour and try again.");
-  if (supabaseAuthConfigured()) {
-    const token = await sendSupabaseMagicLink(normalized);
-    return { token: token || "", supabase: true };
-  }
-  const token = randomToken();
+  const code = shortCode();
   const now = new Date().toISOString();
-  await run("insert into magic_links (id, email, token_hash, expires_at, created_at) values (?, ?, ?, ?, ?)", [
-    randomUUID(),
-    normalized,
-    hashToken(token),
-    new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-    now,
-  ]);
-  return { token, supabase: false };
+  const expires = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+  if (supabaseAuthConfigured()) {
+    const provider = await sendSupabaseMagicLink(normalized);
+    if (!provider) return { token: "", supabase: true };
+    await run(
+      "insert into magic_links (id, email, token_hash, provider_token, provider_hash, expires_at, created_at) values (?, ?, ?, ?, ?, ?, ?)",
+      [randomUUID(), normalized, hashToken(code), encryptString(provider), hashToken(provider), expires, now],
+    );
+    return { token: code, supabase: true };
+  }
+  await run(
+    "insert into magic_links (id, email, token_hash, provider_token, provider_hash, expires_at, created_at) values (?, ?, ?, ?, ?, ?, ?)",
+    [randomUUID(), normalized, hashToken(code), null, null, expires, now],
+  );
+  return { token: code, supabase: false };
 }
 
 export async function consumeMagicLink(token: string): Promise<User> {
   if (hasUserActor()) return withActor(null, () => consumeMagicLink(token));
-  const row = await one<{ id: string; email: string; expires_at: string; used_at: string | null }>(
-    "select * from magic_links where token_hash = ?",
-    [hashToken(token)],
+  const hashed = hashToken(token);
+  const row = await one<{ id: string; email: string; expires_at: string; used_at: string | null; provider_token: string | null }>(
+    "select * from magic_links where token_hash = ? or provider_hash = ?",
+    [hashed, hashed],
   );
   if (!row) {
     if (supabaseAuthConfigured()) {
@@ -205,7 +209,19 @@ export async function consumeMagicLink(token: string): Promise<User> {
   if (row.used_at || row.expires_at < new Date().toISOString()) {
     throw new HttpError("That sign-in link is invalid or expired.");
   }
-  await run("update magic_links set used_at = ? where id = ?", [new Date().toISOString(), row.id]);
+  const claimed = await run("update magic_links set used_at = ? where id = ? and used_at is null", [new Date().toISOString(), row.id]);
+  if (!claimed.changes) throw new HttpError("That sign-in link is invalid or expired.");
+  if (row.provider_token) {
+    let provider = "";
+    try {
+      provider = decryptString(row.provider_token);
+    } catch {
+      throw new HttpError("That sign-in link is invalid or expired.");
+    }
+    const remote = await userFromSupabaseOtp(provider);
+    if (!remote) throw new HttpError("That sign-in link is invalid or expired.");
+    return await profileForAuthUser(remote.id, remote.email);
+  }
   const existing = await getUserByEmail(row.email);
   if (existing) return existing;
   const id = randomUUID();

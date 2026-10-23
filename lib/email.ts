@@ -22,6 +22,7 @@ export async function sendRelayEmail(input: {
   cc: string;
   subject: string;
   text: string;
+  html?: string;
 }): Promise<SendResult> {
   const fromAddress = relayAddress(input.relayLocal);
   const apiKey = process.env.RESEND_API_KEY;
@@ -47,6 +48,7 @@ export async function sendRelayEmail(input: {
         reply_to: fromAddress,
         subject: input.subject,
         text: input.text,
+        ...(input.html ? { html: input.html } : {}),
       }),
     });
     const json = (await response.json().catch(() => ({}))) as { id?: string; message?: string };
@@ -59,19 +61,25 @@ export async function sendRelayEmail(input: {
   }
 }
 
-export async function sendTenantEmail(to: string, subject: string, text: string): Promise<void> {
-  if (!process.env.RESEND_API_KEY || !process.env.RESEND_FROM) return;
-  await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      from: process.env.RESEND_FROM,
-      to: [to],
-      subject,
-      text,
-    }),
-  }).catch(() => undefined);
+export async function sendTenantEmail(to: string, subject: string, text: string, html?: string): Promise<boolean> {
+  if (!process.env.RESEND_API_KEY || !process.env.RESEND_FROM) return false;
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        from: process.env.RESEND_FROM,
+        to: [to],
+        subject,
+        text,
+        ...(html ? { html } : {}),
+      }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }

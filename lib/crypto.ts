@@ -76,6 +76,23 @@ export function randomToken(bytes = 24): string {
   return randomBytes(bytes).toString("base64url");
 }
 
+export const SHORT_CODE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
+export const SHORT_CODE_PATTERN = /^[abcdefghjkmnpqrstuvwxyz23456789]{8,10}$/;
+
+export function shortCode(length = 9): string {
+  const alphabet = SHORT_CODE_ALPHABET;
+  const limit = Math.floor(256 / alphabet.length) * alphabet.length;
+  const chars: string[] = [];
+  while (chars.length < length) {
+    for (const byte of randomBytes(16)) {
+      if (byte >= limit) continue;
+      chars.push(alphabet[byte % alphabet.length]);
+      if (chars.length === length) break;
+    }
+  }
+  return chars.join("");
+}
+
 export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }

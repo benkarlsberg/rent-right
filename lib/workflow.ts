@@ -20,6 +20,7 @@ import {
   type User,
 } from "@/lib/db";
 import { landlordMessageBody, sendRelayEmail } from "@/lib/email";
+import { renderMail } from "@/lib/email-template";
 import { LIBRARY_VERSION, type Locale } from "@/lib/disclaimer";
 import { LEASE_REVIEW_MONTHLY_CAP, mergeModelFindings, redactPii, reviewLease, type ModelFinding } from "@/lib/lease/review";
 import { answerFromModelIds, answerQuestion, selectRules } from "@/lib/rules/assistant";
@@ -175,12 +176,23 @@ export async function emailLandlord(input: {
   const token = randomToken();
   const responseUrl = `${appUrl()}/r/${token}`;
   const body = landlordMessageBody(input.tenantText, responseUrl);
+  const mail = renderMail({
+    subject: input.subject,
+    heading: "Message from your tenant",
+    paragraphs: [
+      ...input.tenantText.trim().split(/\n+/).map((line) => line.trim()).filter(Boolean),
+      "The tenant wrote this message. Rent Right only provides the mailbox.",
+      "You can acknowledge, give a schedule, mark the issue fixed, dispute it, or block later non-essential mail.",
+    ],
+    button: { label: "Respond", href: responseUrl },
+  });
   const sent = await sendRelayEmail({
     relayLocal: input.unit.relayLocal,
     to: input.unit.landlordEmail,
     cc: input.user.email,
     subject: input.subject,
-    text: body,
+    text: mail.text,
+    html: mail.html,
   });
   await insertMessage({
     unitId: input.unit.id,
@@ -371,19 +383,30 @@ export async function dispatchReminders(today = todayISO()) {
     if (slots.length === 0) continue;
     const users = await unitMemberUserIds(deadline.unit_id);
     for (const slot of slots) {
+      let failed = false;
       for (const userId of users) {
         const user = await getUser(userId);
         if (!user) continue;
         const title = slot === "0d" ? "A tracked date is today" : `A tracked date is ${slot === "7d" ? "7" : "3"} days away`;
         await addNotification(userId, title, deadline.explanation, "/deadlines");
-        await sendTenantEmail(
-          user.email,
-          `Rent Right: ${title}`,
-          `${deadline.explanation}\n\nRule ID: ${deadline.rule_id}\nThis is a reminder of a date computed from what you entered. Confirm with the official source.\n${appUrl()}/deadlines`,
-        );
+        const mail = renderMail({
+          subject: `Rent Right: ${title}`,
+          heading: title,
+          paragraphs: [
+            deadline.explanation,
+            `Rule ID: ${deadline.rule_id}`,
+            "This is a reminder of a date computed from what you entered. Confirm with the official source.",
+          ],
+          button: { label: "Open deadlines", href: `${appUrl()}/deadlines` },
+        });
+        const delivered = await sendTenantEmail(user.email, mail.subject, mail.text, mail.html);
+        if (!delivered && process.env.RESEND_API_KEY && process.env.RESEND_FROM) {
+          failed = true;
+          continue;
+        }
         sent += 1;
       }
-      await markReminder(deadline.id, slot, "in_app_email");
+      if (!failed) await markReminder(deadline.id, slot, "in_app_email");
     }
   }
   return sent;

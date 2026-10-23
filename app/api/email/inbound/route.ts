@@ -1,7 +1,8 @@
 import { getUser, insertMessage, unitByRelay, unitMemberUserIds, addNotification } from "@/lib/db";
 import { sendTenantEmail } from "@/lib/email";
+import { renderMail } from "@/lib/email-template";
 import { withActor } from "@/lib/pg";
-import { relayAddress } from "@/lib/text";
+import { appUrl, relayAddress } from "@/lib/text";
 
 export async function POST(request: Request) {
   const secret = process.env.EMAIL_WEBHOOK_SECRET;
@@ -35,7 +36,16 @@ export async function POST(request: Request) {
   for (const userId of await unitMemberUserIds(unit.id)) {
     const user = await getUser(userId);
     await addNotification(userId, "Landlord reply", body.subject || "New reply in your log", "/messages");
-    if (user) await sendTenantEmail(user.email, "Rent Right: a reply was logged", body.text || "A reply was logged. Open the app to read it.");
+    if (user) {
+      const note = body.text || "A reply was logged. Open the app to read it.";
+      const mail = renderMail({
+        subject: "Rent Right: a reply was logged",
+        heading: "A reply was logged",
+        paragraphs: [note],
+        button: { label: "Open Rent Right", href: appUrl() },
+      });
+      await sendTenantEmail(user.email, mail.subject, mail.text, mail.html);
+    }
   }
   return new Response("ok");
   });
