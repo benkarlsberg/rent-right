@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { createElement, useEffect, useState } from "react";
+import { createElement, useEffect, useRef, useState } from "react";
 import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as AppleAuthentication from "expo-apple-authentication";
@@ -12,6 +12,7 @@ import { Logo } from "@/logo";
 import { skippedSetup } from "@/setup-later";
 import { colors } from "@/theme";
 import { Button, ErrorLine, Field } from "@/ui";
+import { callbackNeedsCleanUrl, finishSessionHandoff, forgetSessionHandoff, readWebCallback, takeWebSession } from "@/web-handoff";
 
 const demoEnabled = process.env.EXPO_PUBLIC_DEMO === "1";
 const googleEnabled = process.env.EXPO_PUBLIC_GOOGLE_AUTH === "1";
@@ -46,6 +47,9 @@ const copy = {
     legalAfter: ".",
     disclaimer: "General information, not legal advice. Rent Right is not a law firm.",
     signingIn: "Signing you in",
+    tryAgain: "Try again",
+    slow: "Sign-in is taking too long. Try again.",
+    failed: "Could not finish sign-in.",
     loading: "Loading",
     sample: "View a sample Los Angeles tenancy",
     devCode: "Code",
@@ -76,6 +80,9 @@ const copy = {
     legalAfter: ".",
     disclaimer: "Información general, no es asesoramiento legal. Rent Right no es un bufete.",
     signingIn: "Entrando",
+    tryAgain: "Intentar de nuevo",
+    slow: "La entrada está tardando demasiado. Inténtelo de nuevo.",
+    failed: "No se pudo completar la entrada.",
     loading: "Cargando",
     sample: "Ver un ejemplo de vivienda en Los Ángeles",
     devCode: "Código",
@@ -145,16 +152,23 @@ function LegalLink({ href, label }: { href: string; label: string }) {
 
 export default function Welcome() {
   const { ready, token, me, signIn } = useSession();
+  const signInRef = useRef(signIn);
+  signInRef.current = signIn;
+  const [sessionToken] = useState(() => (Platform.OS === "web" && typeof window !== "undefined" ? takeWebSession(window.location.search) : ""));
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [reviewCode, setReviewCode] = useState("");
   const [showCode, setShowCode] = useState(() => webQuery("code") === "1");
   const [locale, setLocaleState] = useState<Locale>(initialLocale);
   const text = copy[locale];
+  const textRef = useRef(text);
+  textRef.current = text;
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [signingIn, setSigningIn] = useState(() => Boolean(webQuery("session")));
+  const [signingIn, setSigningIn] = useState(() => Boolean(sessionToken));
+  const [handoffFailed, setHandoffFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [expired, setExpired] = useState(() => webQuery("expired") === "1");
 
   useEffect(() => {
@@ -170,30 +184,50 @@ export default function Welcome() {
   }, [ready, token, me]);
 
   useEffect(() => {
-    if (!ready || Platform.OS !== "web" || typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const session = params.get("session");
-    const oauthError = params.get("error");
-    const linkExpired = params.get("expired") === "1";
-    if (oauthError || session || linkExpired || params.get("code")) window.history.replaceState({}, "", window.location.pathname);
-    if (linkExpired) setExpired(true);
-    if (oauthError) setError(oauthError);
-    if (!session) return;
-    let cancel = false;
-    api<Me>("me", { token: session })
-      .then((data) => {
-        if (cancel) return;
-        return signIn({ ...data, token: session });
+    if (Platform.OS !== "web" || typeof window === "undefined") return;
+    const callback = readWebCallback(window.location.search);
+    if (callbackNeedsCleanUrl(callback)) window.history.replaceState({}, "", window.location.pathname);
+    if (callback.expired) setExpired(true);
+    if (callback.error) setError(callback.error);
+  }, []);
+
+  useEffect(() => {
+    if (!ready || !sessionToken) return;
+    let alive = true;
+    const messages = textRef.current;
+    finishSessionHandoff({
+      token: sessionToken,
+      timeoutMessage: messages.slow,
+      fallbackMessage: messages.failed,
+      log: (reason) => console.error("Sign-in handoff failed:", reason),
+      loadMe: (saved, signal) => api<Me>("me", { token: saved, signal }),
+      persist: async (data) => {
+        await signInRef.current({ ...data, token: sessionToken });
+      },
+    })
+      .then((result) => {
+        if (!alive) return;
+        if (!result.ok) {
+          setHandoffFailed(true);
+          setError(result.error);
+        }
       })
-      .catch((err: unknown) => {
-        if (cancel) return;
-        setSigningIn(false);
-        setError(err instanceof Error ? err.message : "Could not finish sign-in.");
+      .finally(() => {
+        if (alive) setSigningIn(false);
       });
     return () => {
-      cancel = true;
+      alive = false;
     };
-  }, [ready, signIn]);
+  }, [ready, sessionToken, attempt]);
+
+  function retryHandoff() {
+    if (!sessionToken) return;
+    forgetSessionHandoff(sessionToken);
+    setError("");
+    setHandoffFailed(false);
+    setSigningIn(true);
+    setAttempt((value) => value + 1);
+  }
 
   async function demo() {
     try {
@@ -295,12 +329,12 @@ export default function Welcome() {
   installSignInCss();
   const providers = googleEnabled || appleEnabled;
 
-  if (!ready || signingIn) {
+  if (!ready || signingIn || (token && me)) {
     return (
       <SafeAreaView style={styles.screen} {...signInMarker()}>
         <View style={styles.center}>
           <Logo width={220} />
-          <Text style={styles.heading}>{signingIn ? text.signingIn : text.loading}</Text>
+          <Text style={styles.heading}>{signingIn || sessionToken ? text.signingIn : text.loading}</Text>
         </View>
       </SafeAreaView>
     );
@@ -385,6 +419,7 @@ export default function Welcome() {
             </View>
           )}
           <ErrorLine message={error} />
+          {handoffFailed ? <Button label={text.tryAgain} onPress={retryHandoff} disabled={busy} /> : null}
           {__DEV__ ? (
             <View style={styles.dev}>
               <Field label={text.devCode} value={code} onChange={setCode} autoCapitalize="none" />

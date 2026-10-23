@@ -29,7 +29,7 @@ export function plainServerError(serverMessage: string | undefined, status: numb
   return fallback;
 }
 
-export async function api<T = Record<string, unknown>>(path: string, options?: { method?: string; body?: unknown; token?: string | null }): Promise<T> {
+export async function api<T = Record<string, unknown>>(path: string, options?: { method?: string; body?: unknown; token?: string | null; signal?: AbortSignal }): Promise<T> {
   const headers: Record<string, string> = {};
   if (options?.body !== undefined) headers["content-type"] = "application/json";
   if (options?.token) headers.authorization = `Bearer ${options.token}`;
@@ -39,8 +39,10 @@ export async function api<T = Record<string, unknown>>(path: string, options?: {
       method: options?.method || (options?.body !== undefined ? "POST" : "GET"),
       headers,
       body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
+      signal: options?.signal,
     });
   } catch (error) {
+    if (options?.signal?.aborted) throw error;
     throw new Error(reachError(error));
   }
   const data = (await response.json().catch(() => null)) as (T & { error?: string }) | null;

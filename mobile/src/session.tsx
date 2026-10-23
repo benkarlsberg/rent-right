@@ -1,5 +1,5 @@
 import * as SecureStore from "expo-secure-store";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { Platform } from "react-native";
 import { api } from "@/api";
 import { clearTabCache } from "@/tab-cache";
@@ -45,17 +45,24 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [me, setMe] = useState<Me | null>(null);
 
-  async function apply(session: Me) {
+  const apply = useCallback(async (session: Me) => {
     await writeToken(session.token);
     setToken(session.token);
     setMe(session);
-  }
+  }, []);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     if (!token) return;
     const data = await api<Me>("me", { token });
     setMe({ ...data, token });
-  }
+  }, [token]);
+
+  const signOut = useCallback(async () => {
+    clearTabCache();
+    await writeToken(null);
+    setToken(null);
+    setMe(null);
+  }, []);
 
   useEffect(() => {
     readToken()
@@ -76,12 +83,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         token,
         me,
         signIn: apply,
-        signOut: async () => {
-          clearTabCache();
-          await writeToken(null);
-          setToken(null);
-          setMe(null);
-        },
+        signOut,
         refresh,
       }}
     >
