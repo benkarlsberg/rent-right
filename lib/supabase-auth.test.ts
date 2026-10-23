@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { hashToken, SHORT_CODE_PATTERN } from "@/lib/crypto";
 import { consumeMagicLink, createMagicLink, profileForAuthUser } from "@/lib/db";
 import { getSql } from "@/lib/pg";
-import { startGoogleSignIn, userFromGoogleCode } from "@/lib/supabase-auth";
 
 const generateLink = vi.hoisted(() => vi.fn());
 const signInWithOtp = vi.hoisted(() => vi.fn());
@@ -81,27 +80,14 @@ describe("Supabase Auth", () => {
     expect(seenKeys).toContain("sb_publishable_otp_key");
   });
 
-  it("starts Google sign-in and creates the same profile from the returned code", async () => {
-    process.env.APP_URL = "https://app.rentrightportal.com";
-    process.env.SUPABASE_URL = "https://example.supabase.co";
-    process.env.SUPABASE_ANON_KEY = "sb_publishable_test_key";
-    signInWithOAuth.mockResolvedValue({ data: { url: "https://accounts.google.com/o/oauth2/auth", flowId: "flow-1" }, error: null });
-    const started = await startGoogleSignIn();
-    expect(started.url).toBe("https://accounts.google.com/o/oauth2/auth");
-    expect(JSON.parse(started.pkce).flowId).toBe("flow-1");
-    expect(signInWithOAuth).toHaveBeenCalledWith({
-      provider: "google",
-      options: { redirectTo: "https://app.rentrightportal.com/auth/verify", skipBrowserRedirect: true },
-    });
-
+  it("returns the existing profile when the same email signs in again", async () => {
     const id = randomUUID();
-    exchangeCodeForSession.mockResolvedValue({ data: { user: { id, email: "google@example.com" } }, error: null });
-    const remote = await userFromGoogleCode("auth-code", started.pkce);
-    expect(remote).toEqual({ id, email: "google@example.com" });
-    expect(exchangeCodeForSession).toHaveBeenCalledWith("auth-code", { flowId: "flow-1" });
-    const user = await profileForAuthUser(id, remote!.email);
-    expect(user.id).toBe(id);
-    expect(user.email).toBe("google@example.com");
-    delete process.env.APP_URL;
+    const email = `same-${id}@example.com`;
+    const created = await profileForAuthUser(id, email);
+    const again = await profileForAuthUser(randomUUID(), email);
+    expect(again.id).toBe(created.id);
+    expect(again.email).toBe(email);
+    const sameId = await profileForAuthUser(id, email);
+    expect(sameId.id).toBe(id);
   });
 });

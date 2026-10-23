@@ -62,19 +62,37 @@ export async function userFromSupabaseOtp(tokenHash: string): Promise<{ id: stri
   return null;
 }
 
+function pkceClient(storage: ReturnType<typeof memoryStorage>) {
+  // persistSession must stay true. With it false, GoTrueClient drops the storage
+  // adapter and keeps the PKCE verifier in a private map, so the cookie we send
+  // to the browser is empty and the callback cannot exchange the code.
+  return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      flowType: "pkce",
+      storage,
+      skipAutoInitialize: true,
+    },
+  });
+}
+
 export async function startGoogleSignIn(): Promise<{ url: string; pkce: string }> {
   if (!supabaseAuthConfigured()) throw new Error("Google sign-in is not available yet.");
   const storage = memoryStorage();
-  const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, flowType: "pkce", storage },
-  });
+  const supabase = pkceClient(storage);
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: { redirectTo: redirectTo(), skipBrowserRedirect: true },
   });
   if (error || !data.url) throw new Error(error?.message || "Could not start Google sign-in.");
-  const flowId = (data as { flowId?: string | null }).flowId ?? null;
-  return { url: data.url, pkce: JSON.stringify({ flowId, entries: [...storage.bag.entries()] }) };
+  const flowId = data.flowId ?? null;
+  const entries = [...storage.bag.entries()];
+  if (!entries.some(([key]) => key.includes("-flow-") && key.endsWith("-code-verifier"))) {
+    throw new Error("Could not start Google sign-in.");
+  }
+  return { url: data.url, pkce: JSON.stringify({ flowId, entries }) };
 }
 
 export async function userFromGoogleCode(code: string, stored: string): Promise<{ id: string; email: string } | null> {
@@ -86,13 +104,19 @@ export async function userFromGoogleCode(code: string, stored: string): Promise<
     flowId = parsed.flowId || null;
     for (const [key, value] of parsed.entries || []) storage.setItem(key, value);
   } catch {
+    console.error("Google sign-in exchange failed: stored verifier could not be read");
     return null;
   }
-  const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, flowType: "pkce", storage },
-  });
+  if (![...storage.bag.keys()].some((key) => key.includes("-flow-") && key.endsWith("-code-verifier"))) {
+    console.error("Google sign-in exchange failed: stored verifier was missing");
+    return null;
+  }
+  const supabase = pkceClient(storage);
   const { data, error } = await supabase.auth.exchangeCodeForSession(code, flowId ? { flowId } : undefined);
-  if (error || !data.user?.email) return null;
+  if (error || !data.user?.email) {
+    console.error("Google sign-in exchange failed:", error?.name || "Error", error?.message || "no user");
+    return null;
+  }
   return { id: data.user.id, email: data.user.email };
 }
 

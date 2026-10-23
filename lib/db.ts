@@ -235,6 +235,8 @@ export async function consumeMagicLink(token: string): Promise<User> {
 export async function profileForAuthUser(id: string, email: string) {
   const existing = await getUser(id);
   if (existing) return existing;
+  const sameEmail = await getUserByEmail(email);
+  if (sameEmail) return sameEmail;
   const now = new Date().toISOString();
   await run(
     "insert into auth.users (id, email, role, aud, email_confirmed_at) values (?, ?, 'authenticated', 'authenticated', now()) on conflict (id) do nothing",
