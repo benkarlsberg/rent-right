@@ -1,4 +1,5 @@
 import { aiConfigured, completeJson } from "@/lib/ai";
+import { intentPrompt } from "@/lib/chat-text";
 import { isResolvedClaim } from "@/lib/resolution";
 
 export type ChatIntent = "repair" | "lease" | "rent" | "deposit" | "packet" | "deadlines" | "confirm" | "letter" | "rights" | "unclear";
@@ -165,14 +166,11 @@ export function planTurn(text: string, pending: PendingKind): TurnPlan {
   return planFromIntent(intent, trimmed);
 }
 
-export async function resolveIntent(text: string, pending: PendingKind): Promise<ChatIntent> {
+export async function resolveIntent(text: string, pending: PendingKind, history = ""): Promise<ChatIntent> {
   const detected = detectIntent(text, pending);
   if (detected !== "rights" && detected !== "unclear") return detected;
   if (!aiConfigured()) return detected;
-  const completed = await completeJson(
-    "lite",
-    `Choose one intent for this tenant message. Reply JSON {"intent":"repair"} or lease, rent, deposit, packet, deadlines, rights, or unclear. Do not include numbers, dates, or advice.\nMessage: ${text.slice(0, 500)}`,
-  );
+  const completed = await completeJson("lite", intentPrompt(history, text));
   const intent = (completed?.json as { intent?: string } | undefined)?.intent;
   if (intent && (INTENTS as readonly string[]).includes(intent)) return intent as ChatIntent;
   return detected;

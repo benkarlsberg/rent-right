@@ -1,7 +1,9 @@
-import { completeJson, extractImageText } from "@/lib/ai";
+import { aiConfigured, completeJson, extractImageText } from "@/lib/ai";
+import { chatContext, rulesPrompt } from "@/lib/chat-text";
 import { landlordReady } from "@/lib/landlord";
 import {
   addAssistantMessage,
+  recentConversationTurns,
   addNotification,
   countAssistantThisMonth,
   countLeaseReviewsThisMonth,
@@ -373,14 +375,11 @@ export async function askAssistant(user: User, unit: Unit | null, question: stri
     throw new Error("This free account reached 40 questions this month.");
   }
   await addAssistantMessage(user.id, unit?.id || null, "user", { locale, content: trimmed, ruleIds: [], unsure: false });
-  const selected = selectRules(trimmed);
+  const context = aiConfigured() ? chatContext(await recentConversationTurns(user.id)) : { history: "", retrieval: "" };
+  const selected = selectRules(context.retrieval || trimmed);
   let answer = answerQuestion(trimmed, locale);
-  if (selected.rules.length > 0 && (process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY)) {
-    const list = selected.rules.map((rule) => `${rule.id}: ${rule.titleEn}`).join("\n");
-    const completed = await completeJson(
-      "lite",
-      `Pick up to 3 rule IDs from this list that answer the question. If none fit, return {"ruleIds":[]}. JSON only. Do not add advice.\nQuestion: ${trimmed}\n${list}`,
-    );
+  if (selected.rules.length > 0 && aiConfigured()) {
+    const completed = await completeJson("lite", rulesPrompt(context.history, trimmed, selected.rules));
     const ids = (completed?.json as { ruleIds?: string[] } | undefined)?.ruleIds;
     if (completed && Array.isArray(ids)) answer = answerFromModelIds(trimmed, locale, selected.rules, ids);
   }

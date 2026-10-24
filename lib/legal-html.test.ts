@@ -14,6 +14,8 @@ describe("public legal pages", () => {
     expect(privacyDocument).toContain("benelliot16@gmail.com");
     expect(privacyDocument).toContain("not a law firm");
     expect(privacyDocument).toContain("only after you confirm");
+    expect(privacyDocument).toContain("chat messages");
+    expect(privacyDocument).toContain("encrypted before they are stored");
     expect(termsDocument).toContain(DISCLAIMER_EN);
     expect(termsDocument).toContain("not a decision about your home");
     expect(homeIntro).toContain("<h1");

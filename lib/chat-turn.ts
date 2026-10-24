@@ -1,5 +1,7 @@
 import { cardAfterSend, serializeCard, type ChatCard } from "@/lib/chat-card";
+import { aiConfigured, completeJson } from "@/lib/ai";
 import { planFromIntent, planTurn, repairFacts, resolveIntent, type TurnPlan } from "@/lib/chat-intent";
+import { chatContext, rulesPrompt } from "@/lib/chat-text";
 import {
   addAssistantMessage,
   archiveChat,
@@ -14,6 +16,7 @@ import {
   listLeaseReviews,
   openChatDraft,
   openDraftForLog,
+  recentConversationTurns,
   saveFile,
   saveRentCheck,
   setChatDraftPayload,
@@ -23,7 +26,7 @@ import {
 } from "@/lib/db";
 import { demandLetter } from "@/lib/letters";
 import { deliveryLabel, dueLine, findingStatus, rentHeadline } from "@/lib/phone";
-import { answerQuestion } from "@/lib/rules/assistant";
+import { answerFromModelIds, answerQuestion, selectRules } from "@/lib/rules/assistant";
 import { detectPlace } from "@/lib/rules/detect";
 import { todayISO } from "@/lib/rules/dates";
 import { checkRentIncrease, depositReturnDeadline, repairReminder, type AreaKey, type RepairSeverity } from "@/lib/rules/engine";
@@ -95,8 +98,15 @@ export async function runChatTurn(user: User, unit: Unit, input: {
   const pending = await openChatDraft(user.id);
   const pendingKind = pending && pending.unitId === unit.id ? (pending.kind as "repair" | "rent_date" | "deposit_date" | "letter") : null;
   let plan = planTurn(text, pendingKind);
+  let history = "";
+  let retrieval = "";
   if (plan.type === "rights" || plan.type === "unclear") {
-    const intent = await resolveIntent(text, pendingKind);
+    if (aiConfigured()) {
+      const context = chatContext(await recentConversationTurns(user.id));
+      history = context.history;
+      retrieval = context.retrieval;
+    }
+    const intent = await resolveIntent(text, pendingKind, history);
     if (intent !== "rights" && intent !== "unclear") plan = planFromIntent(intent, text);
   }
   if (input.attachment?.mime.startsWith("image/") && (plan.type === "unclear" || plan.type === "repair") && !looksLikeLease(text, input.attachment)) {
@@ -105,7 +115,7 @@ export async function runChatTurn(user: User, unit: Unit, input: {
   if (plan.type !== "confirm_send" && plan.type !== "continue_date" && plan.type !== "letter_text" && pending) {
     await closeChatDraft(user.id, pending.id, "cancelled");
   }
-  await execute(user, unit, plan, pending, input.attachment || null, text);
+  await execute(user, unit, plan, pending, input.attachment || null, text, history, retrieval);
 }
 
 function looksLikeLease(text: string, file: { name: string; mime: string }): boolean {
@@ -163,7 +173,7 @@ async function confirmSend(user: User, unit: Unit, draftId: string) {
   await closeChatDraft(user.id, draft.id, "sent");
 }
 
-async function execute(user: User, unit: Unit, plan: TurnPlan, pending: Awaited<ReturnType<typeof openChatDraft>>, attachment: { name: string; mime: string; base64: string } | null, text: string) {
+async function execute(user: User, unit: Unit, plan: TurnPlan, pending: Awaited<ReturnType<typeof openChatDraft>>, attachment: { name: string; mime: string; base64: string } | null, text: string, history: string, retrieval: string) {
   if (plan.type === "confirm_send") {
     await confirmSend(user, unit, pending?.kind === "repair" ? pending.id : "");
     return;
@@ -286,7 +296,7 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: Awaited<
     return;
   }
   if (plan.type === "rights") {
-    await answerRights(user, unit, text);
+    await answerRights(user, unit, text, history, retrieval);
     return;
   }
   await say(user, unit, suggestionCard(user));
@@ -318,8 +328,14 @@ function suggestionCard(user: User): ChatCard {
   };
 }
 
-async function answerRights(user: User, unit: Unit, question: string) {
-  const answer = answerQuestion(question, user.locale);
+async function answerRights(user: User, unit: Unit, question: string, history: string, retrieval: string) {
+  const retrieved = selectRules(retrieval || question);
+  let answer = answerQuestion(question, user.locale);
+  if (retrieved.rules.length > 0 && aiConfigured()) {
+    const completed = await completeJson("lite", rulesPrompt(history, question, retrieved.rules));
+    const ids = (completed?.json as { ruleIds?: string[] } | undefined)?.ruleIds;
+    if (completed && Array.isArray(ids)) answer = answerFromModelIds(question, user.locale, retrieved.rules, ids);
+  }
   const rule = answer.ruleIds[0] ? getRule(answer.ruleIds[0]) : undefined;
   if (!answer.handoff && (answer.unsure || !rule)) {
     await say(user, unit, suggestionCard(user));

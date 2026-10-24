@@ -1,5 +1,6 @@
 import "server-only";
 import { randomUUID } from "crypto";
+import { encryptChatText, openDraftPayload, readChatText, sealDraftPayload } from "@/lib/chat-text";
 import { decryptString, encryptString, hashToken, randomToken, shortCode } from "@/lib/crypto";
 import { all, dropRequestMemo, hasUserActor, one, requestMemo, run, withActor } from "@/lib/pg";
 import { deleteSupabaseAuthUser, sendSupabaseMagicLink, supabaseAuthConfigured, userFromSupabaseOtp } from "@/lib/supabase-auth";
@@ -1254,24 +1255,40 @@ export async function latestRentCheck(userId: string, unitId: string) {
   return { id: row.id, input: parseJson<unknown>(row.input, {}), result: parseJson<RentIncreaseResult>(row.result, {} as RentIncreaseResult), createdAt: row.created_at };
 }
 
+async function placeInConversation(userId: string, role: string): Promise<{ conversationId: string; replyToId: string | null }> {
+  const recent = await all<{ id: string; role: string; conversation_id: string | null }>(
+    "select id, role, conversation_id from assistant_messages where user_id = ? and archived_at is null order by created_at desc, id desc limit 40",
+    [userId],
+  );
+  const conversationId = recent[0]?.conversation_id || randomUUID();
+  const want = role === "user" ? "assistant" : "user";
+  const reply = recent.find((row) => row.role === want && row.conversation_id === conversationId);
+  return { conversationId, replyToId: reply?.id ?? null };
+}
+
 export async function addAssistantMessage(userId: string, unitId: string | null, role: string, answer: { locale: string; content: string; ruleIds: string[]; unsure: boolean; createdAt?: string }) {
   const id = randomUUID();
+  const placed = await placeInConversation(userId, role);
   await run(
-    "insert into assistant_messages (id, user_id, unit_id, role, locale, content, rule_ids, unsure, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    [id, userId, unitId, role, answer.locale, answer.content, JSON.stringify(answer.ruleIds), answer.unsure, answer.createdAt || new Date().toISOString()],
+    "insert into assistant_messages (id, user_id, unit_id, role, locale, content, rule_ids, unsure, created_at, conversation_id, reply_to_id) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [
+      id, userId, unitId, role, answer.locale, encryptChatText(answer.content), JSON.stringify(answer.ruleIds), answer.unsure,
+      answer.createdAt || new Date().toISOString(), placed.conversationId, placed.replyToId,
+    ],
   );
   return id;
 }
 
 export async function assistantMessageContent(userId: string, id: string) {
   const row = await one<{ content: string }>("select content from assistant_messages where id = ? and user_id = ?", [id, userId]);
-  return row?.content ?? null;
+  if (!row) return null;
+  return readChatText(String(row.content ?? ""));
 }
 
 export async function updateAssistantMessage(userId: string, id: string, answer: { content: string; ruleIds: string[]; unsure: boolean }) {
   const result = await run(
     "update assistant_messages set content = ?, rule_ids = ?, unsure = ? where id = ? and user_id = ? and role = 'assistant'",
-    [answer.content, JSON.stringify(answer.ruleIds), answer.unsure, id, userId],
+    [encryptChatText(answer.content), JSON.stringify(answer.ruleIds), answer.unsure, id, userId],
   );
   return Number(result.changes) > 0;
 }
@@ -1291,15 +1308,15 @@ export async function openChatDraft(userId: string) {
     [userId],
   );
   if (!row) return null;
-  return { id: row.id, userId: row.user_id, unitId: row.unit_id, kind: row.kind, payload: parseJson<Record<string, unknown>>(row.payload, {}), status: row.status };
+  return { id: row.id, userId: row.user_id, unitId: row.unit_id, kind: row.kind, payload: openDraftPayload(row.payload), status: row.status };
 }
 
 export async function createChatDraft(userId: string, unitId: string, kind: string, payload: Record<string, unknown>) {
   await run("update chat_drafts set status = 'cancelled' where user_id = ? and status = 'open'", [userId]);
   const id = randomUUID();
   await run(
-    "insert into chat_drafts (id, user_id, unit_id, kind, payload, status, created_at) values (?, ?, ?, ?, ?, 'open', ?)",
-    [id, userId, unitId, kind, JSON.stringify(payload), new Date().toISOString()],
+    "insert into chat_drafts (id, user_id, unit_id, kind, payload, status, created_at) values (?, ?, ?, ?, ?::jsonb, 'open', ?)",
+    [id, userId, unitId, kind, sealDraftPayload(payload), new Date().toISOString()],
   );
   return { id, userId, unitId, kind, payload, status: "open" };
 }
@@ -1309,15 +1326,29 @@ export async function closeChatDraft(userId: string, id: string, status: "sent" 
 }
 
 export async function setChatDraftPayload(userId: string, id: string, payload: Record<string, unknown>) {
-  await run("update chat_drafts set payload = ? where id = ? and user_id = ? and status = 'open'", [JSON.stringify(payload), id, userId]);
+  await run("update chat_drafts set payload = ?::jsonb where id = ? and user_id = ? and status = 'open'", [sealDraftPayload(payload), id, userId]);
 }
 
 export async function listAssistant(userId: string, scope: "visible" | "all" = "all") {
   const visible = scope === "visible" ? " and archived_at is null" : "";
-  return await all<{ role: string; content: string; rule_ids: string; unsure: number; created_at: string; locale: string }>(
+  const rows = await all<{ id: string; role: string; content: string; rule_ids: string; unsure: number; created_at: string; locale: string; conversation_id: string | null; reply_to_id: string | null }>(
     `select * from assistant_messages where user_id = ?${visible} order by created_at asc`,
     [userId],
   );
+  return rows.map((row) => ({ ...row, content: readChatText(String(row.content ?? "")) }));
+}
+
+export async function recentConversationTurns(userId: string): Promise<{ role: string; content: string }[]> {
+  const latest = await one<{ conversation_id: string | null }>(
+    "select conversation_id from assistant_messages where user_id = ? and archived_at is null order by created_at desc limit 1",
+    [userId],
+  );
+  if (!latest?.conversation_id) return [];
+  const rows = await all<{ role: string; content: string }>(
+    "select role, content from assistant_messages where user_id = ? and archived_at is null and conversation_id = ? order by created_at desc limit 6",
+    [userId, latest.conversation_id],
+  );
+  return rows.reverse().map((row) => ({ role: row.role, content: readChatText(String(row.content ?? "")) }));
 }
 
 export async function archiveChat(userId: string) {

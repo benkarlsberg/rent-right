@@ -71,6 +71,13 @@ jobs:
         run: |
           if [ -f .database-url ]; then export DATABASE_URL="$(cat .database-url)"; fi
           npm run db:migrate
+      - name: Encrypt stored chat text
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATA_ENCRYPTION_KEY: ${{ secrets.DATA_ENCRYPTION_KEY }}
+        run: |
+          if [ -f .database-url ]; then export DATABASE_URL="$(cat .database-url)"; fi
+          npx tsx scripts/backfill-chat.ts
       - name: Build the Worker
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -181,6 +188,24 @@ jobs:
           for attempt in 1 2 3 4 5 6; do
             echo "attempt: $attempt"
             if npx tsx scripts/time-signed-me.ts; then
+              ok=1
+              break
+            fi
+            sleep 5
+          done
+          test "$ok" = 1
+      - name: Check a two-turn chat follow-up
+        if: steps.hyperdrive.outcome == 'success'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          DATA_ENCRYPTION_KEY: ${{ secrets.DATA_ENCRYPTION_KEY }}
+        run: |
+          if [ -f .database-url ]; then export DATABASE_URL="$(cat .database-url)"; fi
+          ok=0
+          for attempt in 1 2 3; do
+            echo "followup_attempt: $attempt"
+            if npx tsx --conditions=react-server scripts/check-chat-followup.ts; then
               ok=1
               break
             fi

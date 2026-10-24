@@ -179,7 +179,7 @@ npx expo start
 
 Without Docker, point `DATABASE_URL` at any Postgres 16 database and run `npm run db:migrate`. On a hosted Supabase project, `supabase db push` applies `supabase/migrations`. The local auth stub in `supabase/local/00_auth.sql` is applied only when `auth.uid()` does not already exist, so it is not loaded on hosted Supabase.
 
-Lease text is not stored in full. Message bodies and uploaded files are encrypted with AES-256-GCM before they are stored. Without `DATA_ENCRYPTION_KEY`, development uses a key derived from `AUTH_SECRET` and prints a warning. Production throws if either secret is missing.
+Lease text is not stored in full. Chat messages, landlord message bodies, and uploaded files are encrypted with AES-256-GCM before they are stored. Without `DATA_ENCRYPTION_KEY`, development uses a key derived from `AUTH_SECRET` and prints a warning. Production throws if either secret is missing.
 
 The private storage bucket is `tenant-files`. Object names are `{user_id}/{file_id}`. Bytes stay encrypted by the app. Row level security is enabled on every tenant table and on that bucket.
 
