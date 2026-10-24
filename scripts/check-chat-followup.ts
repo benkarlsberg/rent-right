@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { auditChat, backfillChat } from "@/lib/chat-backfill";
 import { isCiphertext, readChatText } from "@/lib/chat-text";
 import { signSession } from "@/lib/crypto";
 import { createUnit, deleteUserAccount, getUser, type UnitInput } from "@/lib/db";
@@ -99,6 +100,10 @@ async function main(): Promise<void> {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required.");
   if (!process.env.AUTH_SECRET) throw new Error("AUTH_SECRET is required.");
   if (!process.env.DATA_ENCRYPTION_KEY) throw new Error("DATA_ENCRYPTION_KEY is required.");
+  const filled = await backfillChat();
+  console.log(
+    `chat_backfill messages_encrypted=${filled.messagesEncrypted} messages_already=${filled.messagesAlready} drafts_encrypted=${filled.draftsEncrypted} drafts_already=${filled.draftsAlready} conversations=${filled.conversations} replies_set=${filled.repliesSet}`,
+  );
   const id = randomUUID();
   const email = `chat-check-${Date.now()}@example.com`;
   await insertAuthUser(id, email);
@@ -141,9 +146,16 @@ async function main(): Promise<void> {
     console.log(`followup_same_conversation: ${sameConversation}`);
     console.log(`followup_reply_linked: ${linked}`);
     console.log(`followup_used_prior_context: ${prior}`);
-    if (!encrypted || !textsMatch || !sameConversation || !linked) process.exitCode = 1;
+    if (!encrypted || !textsMatch || !sameConversation || !linked || !prior) process.exitCode = 1;
   } finally {
     await deleteUserAccount(id).catch(() => {});
+    const audit = await auditChat();
+    console.log(
+      `chat_audit messages=${audit.messages} plaintext_messages=${audit.plaintextMessages} missing_conversation=${audit.missingConversation} drafts=${audit.drafts} plaintext_drafts=${audit.plaintextDrafts} migration_011=${audit.migration011}`,
+    );
+    if (audit.plaintextMessages !== 0 || audit.plaintextDrafts !== 0 || audit.missingConversation !== 0 || !audit.migration011) {
+      process.exitCode = 1;
+    }
     await closeSql();
   }
 }

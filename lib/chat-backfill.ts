@@ -43,6 +43,43 @@ function draftPlain(value: unknown): string | null {
   return null;
 }
 
+export async function auditChat(): Promise<{
+  messages: number;
+  plaintextMessages: number;
+  missingConversation: number;
+  drafts: number;
+  plaintextDrafts: number;
+  migration011: boolean;
+}> {
+  const sql = getSql();
+  const messages = await sql<{ content: string; conversation_id: string | null }[]>`
+    select content, conversation_id from assistant_messages
+  `;
+  let plaintextMessages = 0;
+  let missingConversation = 0;
+  for (const row of messages) {
+    if (!isCiphertext(String(row.content ?? ""))) plaintextMessages += 1;
+    if (!row.conversation_id) missingConversation += 1;
+  }
+  const drafts = await sql<{ payload: unknown }[]>`select payload from chat_drafts`;
+  let plaintextDrafts = 0;
+  for (const draft of drafts) {
+    if (typeof draft.payload === "string" && isCiphertext(draft.payload)) continue;
+    plaintextDrafts += 1;
+  }
+  const migration = await sql<{ ok: boolean }[]>`
+    select exists(select 1 from meta.schema_migrations where id = '011_chat_thread.sql') as ok
+  `;
+  return {
+    messages: messages.length,
+    plaintextMessages,
+    missingConversation,
+    drafts: drafts.length,
+    plaintextDrafts,
+    migration011: Boolean(migration[0]?.ok),
+  };
+}
+
 export async function backfillChat(): Promise<ChatBackfillCounts> {
   const sql = getSql();
   const counts: ChatBackfillCounts = {

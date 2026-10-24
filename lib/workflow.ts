@@ -1,5 +1,6 @@
 import { aiConfigured, completeJson, extractImageText } from "@/lib/ai";
-import { chatContext, rulesPrompt } from "@/lib/chat-text";
+import { answerFromConversation } from "@/lib/chat-answer";
+import { chatContext } from "@/lib/chat-text";
 import { landlordReady } from "@/lib/landlord";
 import {
   addAssistantMessage,
@@ -28,7 +29,6 @@ import { landlordMessageBody, sendRelayEmail } from "@/lib/email";
 import { renderMail } from "@/lib/email-template";
 import { LIBRARY_VERSION, type Locale } from "@/lib/disclaimer";
 import { LEASE_REVIEW_MONTHLY_CAP, mergeModelFindings, redactPii, reviewLease, type ModelFinding } from "@/lib/lease/review";
-import { answerFromModelIds, answerQuestion, selectRules } from "@/lib/rules/assistant";
 import { RULES } from "@/lib/rules/library";
 import {
   depositReturnDeadline,
@@ -376,13 +376,7 @@ export async function askAssistant(user: User, unit: Unit | null, question: stri
   }
   await addAssistantMessage(user.id, unit?.id || null, "user", { locale, content: trimmed, ruleIds: [], unsure: false });
   const context = aiConfigured() ? chatContext(await recentConversationTurns(user.id)) : { history: "", retrieval: "" };
-  const selected = selectRules(context.retrieval || trimmed);
-  let answer = answerQuestion(trimmed, locale);
-  if (selected.rules.length > 0 && aiConfigured()) {
-    const completed = await completeJson("lite", rulesPrompt(context.history, trimmed, selected.rules));
-    const ids = (completed?.json as { ruleIds?: string[] } | undefined)?.ruleIds;
-    if (completed && Array.isArray(ids)) answer = answerFromModelIds(trimmed, locale, selected.rules, ids);
-  }
+  const answer = await answerFromConversation(trimmed, locale, context.history, context.retrieval);
   await addAssistantMessage(user.id, unit?.id || null, "assistant", {
     locale,
     content: `${answer.text}\n\n${answer.disclaimer}`,

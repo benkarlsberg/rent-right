@@ -1,7 +1,8 @@
 import { cardAfterSend, serializeCard, type ChatCard } from "@/lib/chat-card";
-import { aiConfigured, completeJson } from "@/lib/ai";
+import { aiConfigured } from "@/lib/ai";
+import { answerFromConversation } from "@/lib/chat-answer";
 import { planFromIntent, planTurn, repairFacts, resolveIntent, type TurnPlan } from "@/lib/chat-intent";
-import { chatContext, rulesPrompt } from "@/lib/chat-text";
+import { chatContext } from "@/lib/chat-text";
 import {
   addAssistantMessage,
   archiveChat,
@@ -26,7 +27,6 @@ import {
 } from "@/lib/db";
 import { demandLetter } from "@/lib/letters";
 import { deliveryLabel, dueLine, findingStatus, rentHeadline } from "@/lib/phone";
-import { answerFromModelIds, answerQuestion, selectRules } from "@/lib/rules/assistant";
 import { detectPlace } from "@/lib/rules/detect";
 import { todayISO } from "@/lib/rules/dates";
 import { checkRentIncrease, depositReturnDeadline, repairReminder, type AreaKey, type RepairSeverity } from "@/lib/rules/engine";
@@ -329,13 +329,7 @@ function suggestionCard(user: User): ChatCard {
 }
 
 async function answerRights(user: User, unit: Unit, question: string, history: string, retrieval: string) {
-  const retrieved = selectRules(retrieval || question);
-  let answer = answerQuestion(question, user.locale);
-  if (retrieved.rules.length > 0 && aiConfigured()) {
-    const completed = await completeJson("lite", rulesPrompt(history, question, retrieved.rules));
-    const ids = (completed?.json as { ruleIds?: string[] } | undefined)?.ruleIds;
-    if (completed && Array.isArray(ids)) answer = answerFromModelIds(question, user.locale, retrieved.rules, ids);
-  }
+  const answer = await answerFromConversation(question, user.locale, history, retrieval);
   const rule = answer.ruleIds[0] ? getRule(answer.ruleIds[0]) : undefined;
   if (!answer.handoff && (answer.unsure || !rule)) {
     await say(user, unit, suggestionCard(user));

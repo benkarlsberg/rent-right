@@ -1,7 +1,8 @@
 import { randomUUID } from "crypto";
 import { describe, expect, it, vi } from "vitest";
+import { citeFromConversation } from "@/lib/chat-answer";
 import { privacyDocument } from "@/lib/legal-html";
-import { backfillChat } from "@/lib/chat-backfill";
+import { auditChat, backfillChat } from "@/lib/chat-backfill";
 import { CHAT_HISTORY_CHARS, formatChatHistory, isCiphertext, readChatText } from "@/lib/chat-text";
 import { runChatTurn } from "@/lib/chat-turn";
 import {
@@ -161,10 +162,28 @@ describe("chat text at rest", () => {
     const still = await getSql()<{ content: string }[]>`select content from assistant_messages where id = ${plainId}`;
     expect(still[0]?.content).toBe(cipher[0]?.content);
     expect(await countAssistantThisMonth(user.id, "2026-10-01")).toBe(3);
+    const audit = await auditChat();
+    expect(audit.migration011).toBe(true);
+    expect(audit.plaintextMessages).toBe(0);
+    expect(audit.plaintextDrafts).toBe(0);
+    expect(audit.missingConversation).toBe(0);
   });
 });
 
 describe("short chat context", () => {
+  it("cites the earlier deposit rule when the model returns no ids", () => {
+    const retrieval = "The first item was a rent note. The second item is my security deposit.";
+    const followUp = "what about the second one?";
+    const abstained = citeFromConversation(followUp, "en", `${retrieval}\n${followUp}`, []);
+    expect(abstained.unsure).toBe(false);
+    expect(abstained.ruleIds).toContain("CA-CC-1950.5");
+    expect(abstained.text).toContain("CA-CC-1950.5");
+    const missed = citeFromConversation(followUp, "en", `${retrieval}\n${followUp}`, ["NOT-A-RULE"]);
+    expect(missed.ruleIds).toContain("CA-CC-1950.5");
+    const narrowed = citeFromConversation(followUp, "en", `${retrieval}\n${followUp}`, ["CA-CC-1950.5", "NOT-A-RULE"]);
+    expect(narrowed.ruleIds).toEqual(["CA-CC-1950.5"]);
+  });
+
   it("keeps the last turns under the cap and removes contact numbers", () => {
     const turns = Array.from({ length: 8 }, (_, index) => ({
       role: index % 2 === 0 ? "user" : "assistant",
