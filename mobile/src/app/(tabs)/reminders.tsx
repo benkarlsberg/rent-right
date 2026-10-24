@@ -42,7 +42,8 @@ export default function Reminders() {
     if (!token || !data) return;
     try {
       setError("");
-      await saveAuthorizedFile("/api/packet", data.packetFile || "rent-right-evidence.pdf", token);
+      const saved = await saveAuthorizedFile("/api/packet", data.packetFile || "rent-right-evidence.pdf", token);
+      if (saved === "needs-landlord") router.push("/landlord");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not download the records.");
     }
@@ -53,7 +54,7 @@ export default function Reminders() {
       setHeld(data?.steps.held || "Nothing was sent.");
       return;
     }
-    if (step.action === "followup" || step.action === "send") {
+    if (step.action === "followup" || step.action === "send" || step.href === "/landlord") {
       router.push((step.href || "/landlord") as "/landlord");
       return;
     }

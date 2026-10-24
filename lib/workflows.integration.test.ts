@@ -761,15 +761,17 @@ describe("renter workflows", () => {
     await getSql()`update units set landlord_email = '' where id = (select unit_id from messages where id = ${restoredId})`;
     const missing = await api("GET", "chat", undefined, token);
     expect(missing.json?.needsEmail).toBe(true);
+    expect(missing.json?.needsLandlord).toBe(true);
     const blocked = await api("POST", "chat/draft/send", { id: restoredId, body: edited }, token);
-    expect(blocked.status).toBe(400);
-    expect(String(blocked.json?.error)).toMatch(/landlord's email/i);
+    expect(blocked.status).toBe(200);
+    expect(blocked.json?.needsLandlord).toBe(true);
     const stillDraft = await getSql()<{ delivery_status: string }[]>`select delivery_status from messages where id = ${restoredId}`;
     expect(stillDraft[0]?.delivery_status).toBe("draft");
 
     const addressed = await api("POST", "chat/landlord-email", { email: "elena@example.com" }, token);
     expect(addressed.status).toBe(200);
     expect(addressed.json?.needsEmail).toBe(false);
+    expect(addressed.json?.needsLandlord).toBe(false);
 
     const sent = await api("POST", "chat/draft/send", { id: restoredId, body: edited }, token);
     expect(sent.status).toBe(200);

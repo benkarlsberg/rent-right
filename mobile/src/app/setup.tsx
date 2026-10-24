@@ -52,8 +52,44 @@ export default function Setup() {
   }
 
   async function later() {
-    await setSkippedSetup(true);
-    router.replace("/chat");
+    const zip = postalCode.trim();
+    const addressReady = Boolean(street.trim() && city.trim() && californiaZip(zip));
+    if (!addressReady || !token) {
+      await setSkippedSetup(true);
+      router.replace("/chat");
+      return;
+    }
+    const name = landlordName.trim();
+    const email = landlordEmail.trim();
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    const keepLandlord = Boolean(name && emailOk);
+    try {
+      setBusy(true);
+      setError("");
+      const session = await api<Me>("unit", {
+        token,
+        body: {
+          street: street.trim(),
+          unitNumber: unitNumber.trim(),
+          city: city.trim(),
+          postalCode: zip,
+          region: "CA",
+          landlordName: keepLandlord ? name : "",
+          landlordEmail: keepLandlord ? email : "",
+          rent: rent.trim(),
+          moveInDate: moveInDate.trim(),
+          jurisdiction: "unsure",
+        },
+      });
+      await setSkippedSetup(false);
+      await signIn(session);
+      void refreshBootstrap(session.token, true);
+      router.replace("/chat");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function next() {
@@ -94,7 +130,9 @@ export default function Setup() {
         return;
       }
       if (step === 2) {
-        if (!landlordName.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(landlordEmail.trim())) {
+        const name = landlordName.trim();
+        const email = landlordEmail.trim();
+        if ((name || email) && (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
           setError(es ? "Agregue el nombre y el correo del propietario." : "Add the landlord's name and email.");
           return;
         }
@@ -144,8 +182,8 @@ export default function Setup() {
     ? ["¿Dónde renta?", "Unidad o apartamento", "Su propietario", "Datos del contrato", "Reglas para esta dirección"]
     : ["Where do you rent?", "Unit or apartment", "Your landlord", "Lease details", "Rules for this address"];
   const hints = es
-    ? ["Una dirección en California.", "Si es una casa, puede dejarlo en blanco.", "Nada se envía hasta que usted lo confirme.", "Los dos son opcionales.", summary]
-    : ["A California address.", "Leave this blank for a house.", "Nothing is sent until you confirm it.", "Both of these are optional.", summary];
+    ? ["Una dirección en California.", "Si es una casa, puede dejarlo en blanco.", "Deje ambos en blanco para agregarlos después. Nada se envía hasta que usted lo confirme.", "Los dos son opcionales.", summary]
+    : ["A California address.", "Leave this blank for a house.", "Leave both blank to add them later. Nothing is sent until you confirm it.", "Both of these are optional.", summary];
   const action = step === 4 ? (es ? "Guardar" : "Save") : step === 0 && accepted && checked ? (es ? "Usar esta dirección" : "Use this address") : (es ? "Continuar" : "Continue");
 
   return (

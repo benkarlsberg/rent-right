@@ -1,4 +1,4 @@
-import { Stack } from "expo-router";
+import { Stack, router } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { api } from "@/api";
@@ -172,6 +172,17 @@ export default function ResidenceScreen() {
     };
   }
 
+  async function exportPacket() {
+    if (!token) return;
+    try {
+      setError("");
+      const saved = await saveAuthorizedFile("/api/packet", "rent-right-evidence.pdf", token);
+      if (saved === "needs-landlord") router.push("/landlord");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not download.");
+    }
+  }
+
   async function previewAddress(nextMode: "typo" | "move") {
     if (!token || !labels) return;
     const zip = postalCode.trim();
@@ -179,7 +190,9 @@ export default function ResidenceScreen() {
       setError(labels.zip === "ZIP" ? "Add a street, city, and California ZIP." : "Agregue calle, ciudad y un código postal de California.");
       return;
     }
-    if (!landlordName.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(landlordEmail.trim())) {
+    const name = landlordName.trim();
+    const email = landlordEmail.trim();
+    if ((name || email) && (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
       setError(labels.landlordEmail === "Landlord email" ? "Add the landlord's name and email." : "Agregue el nombre y el correo del propietario.");
       return;
     }
@@ -281,7 +294,7 @@ export default function ResidenceScreen() {
       ) : null}
       {data?.archivedNote ? <Card tone="warn"><Text style={styles.warn}>{data.archivedNote}</Text></Card> : null}
       {home?.archived && token ? (
-        <Button label={labels?.export || "Export evidence"} onPress={() => void saveAuthorizedFile("/api/packet", "rent-right-evidence.pdf", token)} />
+        <Button label={labels?.export || "Export evidence"} onPress={() => void exportPacket()} />
       ) : null}
       {home && labels ? (
         <View>

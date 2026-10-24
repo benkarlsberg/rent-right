@@ -32,6 +32,7 @@ import { formatMoney, percentLabel } from "@/lib/format";
 import { tx } from "@/lib/text";
 import { findResolutionTarget, resolveRepair } from "@/lib/issues";
 import { issueTitle } from "@/lib/resolution";
+import { addLandlordLabel, landlordPrompt, landlordReady } from "@/lib/landlord";
 import { ensureRepairDeadline, ensureRepairDrafts } from "@/lib/repair-draft";
 import { CHAT_MONTHLY_CAP, emailLandlord, extractPdfOrText, recordLog, runLeaseReview, saveDepositAndDeadline } from "@/lib/workflow";
 
@@ -122,6 +123,16 @@ async function confirmSend(user: User, unit: Unit, draftId: string) {
       status: tx(user.locale, "Not sent", "No enviado"),
       action: null,
       detail: tx(user.locale, "There is no repair email waiting. Nothing was sent.", "No hay un correo de reparación en espera. No se envió nada."),
+      ruleId: null,
+    });
+    return;
+  }
+  if (!landlordReady(unit)) {
+    await say(user, unit, {
+      headline: addLandlordLabel(user.locale),
+      status: tx(user.locale, "Not sent", "No enviado"),
+      action: { id: "add-landlord", label: addLandlordLabel(user.locale) },
+      detail: landlordPrompt(user.locale),
       ruleId: null,
     });
     return;
@@ -416,8 +427,10 @@ async function logRepair(user: User, unit: Unit, summary: string, severity: Repa
   const messageId = await say(user, unit, {
     headline: tx(user.locale, "Repair logged", "Reparación anotada"),
     status: tx(user.locale, "Not sent", "No enviado"),
-    action: { id: `send:${draft.id}`, label: tx(user.locale, "Send to landlord", "Enviar al propietario") },
-    detail: `${user.locale === "es" ? reminder.explanationEs : reminder.explanation}\n\n${reminder.computation}\n\n${tx(user.locale, "Nothing was emailed. Send only if you want the landlord to get this note.", "No se envió ningún correo. Envíe solo si quiere que el propietario reciba esta nota.")}`,
+    action: landlordReady(unit)
+      ? { id: `send:${draft.id}`, label: tx(user.locale, "Send to landlord", "Enviar al propietario") }
+      : { id: "add-landlord", label: addLandlordLabel(user.locale) },
+    detail: `${user.locale === "es" ? reminder.explanationEs : reminder.explanation}\n\n${reminder.computation}\n\n${landlordReady(unit) ? tx(user.locale, "Nothing was emailed. Send only if you want the landlord to get this note.", "No se envió ningún correo. Envíe solo si quiere que el propietario reciba esta nota.") : landlordPrompt(user.locale)}`,
     ruleId: reminder.ruleId,
   });
   await setChatDraftPayload(user.id, draft.id, { ...draft.payload, cardMessageId: messageId });

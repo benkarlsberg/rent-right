@@ -1,4 +1,5 @@
 import { getDeposit, listConditions, listDeadlines, listLeaseReviews, listLedger, listLogHistory, listMessages, primaryUnit } from "@/lib/db";
+import { landlordReady } from "@/lib/landlord";
 import { packetLines } from "@/lib/packet";
 import { renderPdf } from "@/lib/pdf";
 import { withActor } from "@/lib/pg";
@@ -12,6 +13,7 @@ export async function GET() {
   return withActor(user.id, async () => {
   const unit = await primaryUnit(user.id);
   if (!unit) return new Response("Add a unit first.", { status: 400 });
+  if (!landlordReady(unit)) return Response.json({ needsLandlord: true });
   const deposit = await getDeposit(user.id, unit.id);
   const reviews = await listLeaseReviews(user.id, unit.id);
   const lines = packetLines({

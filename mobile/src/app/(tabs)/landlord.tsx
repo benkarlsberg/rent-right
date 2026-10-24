@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -6,7 +6,7 @@ import { api } from "@/api";
 import { useSession } from "@/session";
 import { TabLoading } from "@/typing-dots";
 import { colors } from "@/theme";
-import { ErrorLine, Field, LearnMore, clipX, wrapText } from "@/ui";
+import { Button, ErrorLine, Field, LearnMore, clipX, wrapText } from "@/ui";
 import { useLoad } from "@/use-load";
 
 type DraftLabels = {
@@ -37,6 +37,9 @@ type ChatData = {
   archived?: boolean;
   archivedNote?: string | null;
   needsEmail?: boolean;
+  needsUnit?: boolean;
+  needsLandlord?: boolean;
+  prompt?: string;
   labels?: DraftLabels;
   items: ChatItem[];
 };
@@ -53,7 +56,15 @@ export default function Landlord() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBody, setEditBody] = useState("");
   const [email, setEmail] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
+  const [formEmail, setFormEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const labels = data?.labels;
+  const needsPrompt = Boolean(data && (data.needsLandlord || data.needsUnit));
+  const emptyTitle = spanish ? "Aún no hay propietario" : "No landlord added yet";
+  const prompt = data?.prompt || (spanish ? "Agregue el nombre y el correo del propietario para enviar un mensaje." : "Add your landlord's name and email to send a message.");
+  const addLabel = spanish ? "Agregar propietario" : "Add landlord";
   const reloadRef = useRef(reload);
   reloadRef.current = reload;
 
@@ -82,6 +93,34 @@ export default function Landlord() {
       setDraft("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function openForm() {
+    setName(me?.unit?.landlordName || "");
+    setFormEmail(me?.unit?.landlordEmail || "");
+    setPhone("");
+    setError("");
+    setAdding(true);
+  }
+
+  async function saveLandlord() {
+    const trimmedName = name.trim();
+    const trimmedEmail = formEmail.trim();
+    if (!trimmedName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setError(spanish ? "Agregue el nombre y el correo del propietario." : "Add the landlord's name and email.");
+      return;
+    }
+    if (!token || sending) return;
+    try {
+      setSending(true);
+      setError("");
+      await reload(await api<ChatData>("landlord", { token, body: { name: trimmedName, email: trimmedEmail, phone: phone.trim() } }));
+      setAdding(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save.");
     } finally {
       setSending(false);
     }
@@ -145,8 +184,33 @@ export default function Landlord() {
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
-      <Text style={styles.title}>{data?.landlord || me?.unit?.landlordName || (spanish ? "Propietario" : "Landlord")}</Text>
-      {data?.archivedNote ? <Text style={styles.empty}>{data.archivedNote}</Text> : null}
+      <Text style={styles.title}>{needsPrompt ? emptyTitle : (data?.landlord || me?.unit?.landlordName || (spanish ? "Propietario" : "Landlord"))}</Text>
+      {needsPrompt ? (
+        <View style={styles.promptCard}>
+          {adding && !data?.needsUnit ? (
+            <>
+              <Text style={styles.promptText}>{prompt}</Text>
+              <Field label={spanish ? "Nombre" : "Name"} value={name} onChange={setName} autoComplete="name" textContentType="name" />
+              <Field label={spanish ? "Correo" : "Email"} value={formEmail} onChange={setFormEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" textContentType="emailAddress" />
+              <Field label={spanish ? "Teléfono, opcional" : "Phone, optional"} value={phone} onChange={setPhone} keyboardType="phone-pad" autoComplete="tel" textContentType="telephoneNumber" />
+              <ErrorLine message={error} />
+              <Button label={sending ? (spanish ? "Guardando" : "Saving") : (spanish ? "Guardar" : "Save")} onPress={() => void saveLandlord()} disabled={sending} />
+            </>
+          ) : (
+            <>
+              <Text style={styles.promptText}>{loading && !data ? (spanish ? "Cargando" : "Loading") : prompt}</Text>
+              <ErrorLine message={error} />
+              <Button
+                label={addLabel}
+                onPress={() => {
+                  if (data?.needsUnit) router.push("/setup");
+                  else openForm();
+                }}
+              />
+            </>
+          )}
+        </View>
+      ) : (
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <FlatList
           ref={listRef}
@@ -236,6 +300,7 @@ export default function Landlord() {
           <Pressable onPress={send} disabled={Boolean(data?.archived) || sending} style={styles.send} accessibilityRole="button" accessibilityLabel={spanish ? "Enviar" : "Send"} accessibilityState={{ disabled: Boolean(data?.archived) || sending }}><Text style={styles.sendText}>{sending ? (spanish ? "Enviando" : "Sending") : (spanish ? "Enviar" : "Send")}</Text></Pressable>
         </View>
       </KeyboardAvoidingView>
+      )}
     </SafeAreaView>
   );
 }
@@ -245,6 +310,8 @@ const styles = StyleSheet.create({
   title: { fontSize: 32, fontWeight: "600", letterSpacing: -0.4, paddingHorizontal: 24, paddingTop: 16, color: colors.ink },
   list: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 28, flexGrow: 1, width: "100%", maxWidth: "100%", minWidth: 0 },
   empty: { fontSize: 16, lineHeight: 24, color: colors.mute, marginTop: 24, paddingHorizontal: 8 },
+  promptCard: { paddingHorizontal: 24, paddingTop: 8 },
+  promptText: { fontSize: 16, lineHeight: 24, color: colors.mute, marginTop: 8 },
   block: { width: "100%", maxWidth: "100%", minWidth: 0, marginBottom: 18, alignSelf: "stretch" },
   row: { maxWidth: "86%", minWidth: 0, flexShrink: 1 },
   right: { alignSelf: "flex-end", alignItems: "flex-end" },

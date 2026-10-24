@@ -1,3 +1,4 @@
+import { router } from "expo-router";
 import { useState } from "react";
 import { api } from "@/api";
 import { saveAuthorizedFile } from "@/files";
@@ -19,7 +20,8 @@ export function DeleteAccount({
   async function download() {
     try {
       setError("");
-      await saveAuthorizedFile("/api/packet", "rent-right-evidence.pdf", token);
+      const saved = await saveAuthorizedFile("/api/packet", "rent-right-evidence.pdf", token);
+      if (saved === "needs-landlord") router.push("/landlord");
     } catch (err) {
       setError(err instanceof Error ? err.message : spanish ? "No se pudo exportar." : "Could not export the packet.");
     }

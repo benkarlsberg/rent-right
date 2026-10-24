@@ -27,6 +27,7 @@ import {
   listMessages,
   messageForUser,
   saveDraftBody,
+  setLandlordContact,
   setLandlordEmail,
   insertCondition,
   primaryUnit,
@@ -44,6 +45,7 @@ import {
   type User,
 } from "@/lib/db";
 import { emailValue } from "@/lib/forms";
+import { addLandlordLabel, landlordPrompt, landlordReady } from "@/lib/landlord";
 import { formatDate, formatMoney, formatTimestamp, percentLabel } from "@/lib/format";
 import { getRule } from "@/lib/rules/library";
 import { suggestPlace } from "@/lib/geo";
@@ -152,6 +154,7 @@ async function sessionPayload(user: User) {
     token: signSession(user.id),
     user: publicUser(user),
     needsUnit: !unit,
+    needsLandlord: Boolean(unit && !landlordReady(unit)),
     unit: unit ? publicUnit(unit) : null,
   };
 }
@@ -198,8 +201,9 @@ function unitInput(input: Record<string, unknown>): UnitInput {
   const street = text(input.street);
   const city = text(input.city);
   const landlordName = text(input.landlordName);
-  const landlordEmail = text(input.landlordEmail);
-  if (!street || !city || !landlordName || !landlordEmail) throw new Error("Add the address and landlord.");
+  const landlordEmailRaw = text(input.landlordEmail);
+  if (!street || !city) throw new Error("Add the address.");
+  const landlordEmail = landlordEmailRaw ? emailValue(landlordEmailRaw) : "";
   const requested = text(input.jurisdiction);
   const detected = detectPlace({
     address: street,
@@ -220,7 +224,7 @@ function unitInput(input: Record<string, unknown>): UnitInput {
     rsoStatus: (text(input.rsoStatus) || "unsure") as RsoStatus,
     rstpoTier: (text(input.rstpoTier) || "unsure") as RstpoTier,
     landlordName,
-    landlordEmail: emailValue(landlordEmail),
+    landlordEmail,
     landlordPhone: text(input.landlordPhone),
     rentCents: dollars(input.rent),
     depositCents: dollars(input.deposit),
@@ -383,6 +387,7 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "POST" && key === "chat/draft/send") return json(await sendDraft(await readBody(request)));
   if (method === "POST" && key === "chat/draft/discard") return json(await discardDraft(await readBody(request)));
   if (method === "POST" && key === "chat/landlord-email") return json(await saveLandlordEmail(await readBody(request)));
+  if (method === "POST" && key === "landlord") return json(await saveLandlord(await readBody(request)));
   if (method === "GET" && key === "dates") return json(await datesPayload());
   if (method === "POST" && path[0] === "dates" && path[1]) {
     const user = await actor();
@@ -663,13 +668,16 @@ type ListedAssistant = Awaited<ReturnType<typeof listAssistant>>[number];
 type HomeRows = { deadlines: ListedDeadline[]; logs: ListedLog[]; messages: ListedMessage[]; reviews: ListedReview[] };
 
 function emptyChat(user: User) {
-  return { landlord: "", items: [], needsUnit: true, archived: false, archivedNote: null, needsEmail: true, labels: draftLabels(user.locale) };
+  return { landlord: "", items: [], needsUnit: true, needsLandlord: false, prompt: "", archived: false, archivedNote: null, needsEmail: true, labels: draftLabels(user.locale) };
 }
 
 function presentChat(user: User, unit: Unit, messages: ListedMessage[]) {
   const locale = user.locale;
   return {
-    landlord: unit.landlordName || unit.landlordEmail,
+    landlord: landlordReady(unit) ? unit.landlordName || unit.landlordEmail : "",
+    needsUnit: false,
+    needsLandlord: !landlordReady(unit),
+    prompt: landlordReady(unit) ? "" : landlordPrompt(locale),
     archived: Boolean(unit.archivedAt),
     archivedNote: archivedNote(unit, locale),
     needsEmail: !unit.landlordEmail,
@@ -708,6 +716,7 @@ async function sendChat(input: Record<string, unknown>) {
   const user = await actor();
   const unit = await primaryUnit(user.id);
   if (!unit) throw new Error("Add your place before sending a message.");
+  if (!landlordReady(unit)) return presentChat(user, unit, await visibleMessages(user, unit));
   const message = text(input.text);
   if (message.length < 2) throw new Error("Write a message.");
   await emailLandlord({
@@ -741,7 +750,7 @@ async function sendDraft(input: Record<string, unknown>) {
   if (body.length < 2) throw new Error(tx(user.locale, "Write the message.", "Escriba el mensaje."));
   if (body.length > 8000) throw new Error(tx(user.locale, "Keep the message under 8000 characters.", "El mensaje debe tener menos de 8000 caracteres."));
   if (body !== current.body) await saveDraftBody(user.id, id, body);
-  if (!unit.landlordEmail) throw new Error(tx(user.locale, "Add the landlord's email to send this draft.", "Agregue el correo del propietario para enviar este borrador."));
+  if (!landlordReady(unit)) return presentChat(user, unit, await visibleMessages(user, unit));
   await emailLandlord({
     user,
     unit,
@@ -769,6 +778,17 @@ async function saveLandlordEmail(input: Record<string, unknown>) {
   const { user, unit } = await withUnit();
   const email = emailValue(text(input.email));
   await setLandlordEmail(user.id, unit.id, email);
+  return chatPayload();
+}
+
+async function saveLandlord(input: Record<string, unknown>) {
+  const { user, unit } = await withUnit();
+  const name = text(input.name || input.landlordName);
+  const emailRaw = text(input.email || input.landlordEmail);
+  const phone = text(input.phone || input.landlordPhone);
+  if (!name || !emailRaw) throw new Error(tx(user.locale, "Add the landlord's name and email.", "Agregue el nombre y el correo del propietario."));
+  const email = emailValue(emailRaw);
+  await setLandlordContact(user.id, unit.id, { name, email, phone });
   return chatPayload();
 }
 
@@ -937,6 +957,8 @@ function emptyThread(user: User) {
   return {
     landlord: "",
     needsUnit: true,
+    needsLandlord: false,
+    prompt: "",
     items: [] as { role: "user" | "card" }[],
     chips: chips(locale),
     notice: notice(locale),
@@ -964,8 +986,10 @@ function presentThread(user: User, unit: Unit, rows: ListedAssistant[], steps: {
     return { role: "card" as const, ...card, notice: notice(locale) };
   });
   return {
-    landlord: unit.landlordName,
+    landlord: landlordReady(unit) ? unit.landlordName : "",
     needsUnit: false,
+    needsLandlord: !landlordReady(unit),
+    prompt: landlordReady(unit) ? "" : landlordPrompt(locale),
     items,
     chips: rows.some((row) => row.role === "user") ? [] : chips(locale),
     notice: notice(locale),
@@ -1116,6 +1140,23 @@ function presentRecords(user: User, unit: Unit, loaded: HomeRows) {
         if (draft) sendStep.href = `/landlord?draft=${draft.id}`;
         else planned.items = planned.items.filter((item) => item.action !== "send");
       }
+      if (!landlordReady(unit)) {
+        planned.items = planned.items.map((item) => {
+          if (item.action !== "send" && item.action !== "followup" && item.action !== "export") return item;
+          return {
+            ...item,
+            button: addLandlordLabel(locale),
+            href: "/landlord",
+            detail: item.action === "export"
+              ? landlordPrompt(locale)
+              : tx(
+                locale,
+                "The note is saved. Add your landlord's name and email to send a message.",
+                "La nota está guardada. Agregue el nombre y el correo del propietario para enviar un mensaje.",
+              ),
+          };
+        });
+      }
       if (!unit.archivedAt) return planned;
       return { ...planned, items: planned.items.filter((item) => item.action === "export" || item.action === "small_claims") };
     })(),
@@ -1143,6 +1184,7 @@ function emptyRecords(user: User) {
     steps: { title: tx(locale, "Your next steps", "Sus próximos pasos"), held: tx(locale, "Nothing was sent.", "No se envió nada."), items: [] },
     lease: null,
     needsUnit: true,
+    needsLandlord: false,
     labels: recordsLabels(locale),
     reminderNote: reminderNote(false, locale),
     reminderMail: false,
@@ -1182,6 +1224,7 @@ function presentRecordsPayload(user: User, unit: Unit, bundle: ReturnType<typeof
     today: bundle.today,
     archived: Boolean(unit.archivedAt),
     archivedNote: archivedNote(unit, locale),
+    needsLandlord: !landlordReady(unit),
   };
 }
 

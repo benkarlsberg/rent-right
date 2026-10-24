@@ -125,9 +125,9 @@ function mapUnit(row: UnitRow, role: "owner" | "roommate"): Unit {
     jurisdictionConfirmed: isOn(row.jurisdiction_confirmed),
     rsoStatus: (row.rso_status as RsoStatus) || "unsure",
     rstpoTier: (row.rstpo_tier as RstpoTier) || "unsure",
-    landlordName: row.landlord_name,
-    landlordEmail: row.landlord_email,
-    landlordPhone: row.landlord_phone,
+    landlordName: row.landlord_name || "",
+    landlordEmail: row.landlord_email || "",
+    landlordPhone: row.landlord_phone || "",
     relayLocal: row.relay_local,
     rentCents: row.rent_cents,
     depositCents: row.deposit_cents,
@@ -758,6 +758,19 @@ export async function setLandlordEmail(userId: string, unitId: string, email: st
   const unit = await requireWritable(userId, unitId);
   if (unit.role !== "owner") throw new HttpError("Only the person who added the home can edit the landlord email.");
   await run("update units set landlord_email = ? where id = ?", [email, unitId]);
+  dropRequestMemo(`unit:${userId}:${unitId}`);
+  return await requireUnit(userId, unitId);
+}
+
+export async function setLandlordContact(userId: string, unitId: string, input: { name: string; email: string; phone: string }) {
+  const unit = await requireWritable(userId, unitId);
+  if (unit.role !== "owner") throw new HttpError("Only the person who added the home can edit the landlord.");
+  await run("update units set landlord_name = ?, landlord_email = ?, landlord_phone = ? where id = ?", [
+    input.name,
+    input.email,
+    input.phone,
+    unitId,
+  ]);
   dropRequestMemo(`unit:${userId}:${unitId}`);
   return await requireUnit(userId, unitId);
 }

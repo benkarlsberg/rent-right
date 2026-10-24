@@ -165,9 +165,9 @@ function readFields(unit: Unit, body: Record<string, unknown>, locale: User["loc
   const city = text(body.city);
   const postalCode = text(body.postalCode);
   const landlordName = text(body.landlordName);
-  const landlordEmail = text(body.landlordEmail);
+  const landlordEmailRaw = text(body.landlordEmail);
   if (!street || !city || !postalCode) throw new Error(tx(locale, "Add the street, city, and ZIP.", "Agregue calle, ciudad y código postal."));
-  if (!landlordName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(landlordEmail)) {
+  if ((landlordName || landlordEmailRaw) && (!landlordName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(landlordEmailRaw))) {
     throw new Error(tx(locale, "Add the landlord's name and email.", "Agregue el nombre y el correo del propietario."));
   }
   return {
@@ -177,7 +177,7 @@ function readFields(unit: Unit, body: Record<string, unknown>, locale: User["loc
     postalCode,
     region: text(body.region) || unit.region || "CA",
     landlordName,
-    landlordEmail: emailValue(landlordEmail),
+    landlordEmail: landlordEmailRaw ? emailValue(landlordEmailRaw) : "",
     rentCents: dollars(body.rent, locale),
     moveInDate: dateOrNull(body.moveInDate, locale),
     leaseEndDate: dateOrNull(body.leaseEndDate, locale),

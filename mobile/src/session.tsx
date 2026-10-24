@@ -11,6 +11,7 @@ export type Notice = { short: string; full: string; clinicShort: string; clinicF
 export type Me = {
   token: string;
   needsUnit: boolean;
+  needsLandlord?: boolean;
   user: { name: string; email: string; locale: "en" | "es"; lowBandwidth: boolean; sample: boolean };
   unit: { id?: string; address: string; landlordName: string; landlordEmail: string; relay: string; jurisdiction: string; archived?: boolean } | null;
 };

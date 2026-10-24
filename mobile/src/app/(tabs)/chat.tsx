@@ -113,13 +113,17 @@ export default function AssistantChat() {
   }
 
   async function onAction(action: Action) {
-    if (action.id === "open-landlord") {
+    if (action.id === "open-landlord" || action.id === "add-landlord") {
       router.push("/landlord");
       return;
     }
     if (action.id === "download-packet") {
       if (!token) return;
-      try { setError(""); await saveAuthorizedFile("/api/packet", data?.packetFile || "rent-right-evidence.pdf", token); }
+      try {
+        setError("");
+        const saved = await saveAuthorizedFile("/api/packet", data?.packetFile || "rent-right-evidence.pdf", token);
+        if (saved === "needs-landlord") router.push("/landlord");
+      }
       catch (err) { setError(err instanceof Error ? err.message : "Could not download."); }
       return;
     }
@@ -262,7 +266,7 @@ export default function AssistantChat() {
                   setHeld(data.steps?.held || "Nothing was sent.");
                   return;
                 }
-                if (step.action === "followup" || step.action === "send") {
+                if (step.action === "followup" || step.action === "send" || step.href === "/landlord") {
                   router.push((step.href || "/landlord") as "/landlord");
                   return;
                 }

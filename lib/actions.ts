@@ -84,6 +84,8 @@ function unitInput(form: FormData): UnitInput {
   const detected = detectPlace({ address: street, city, postalCode, region });
   const jurisdiction = requested && requested !== "unsure" && isAllowedJurisdiction(requested) ? requested : detected.jurisdiction;
   if (!isAllowedJurisdiction(jurisdiction)) throw new Error("Choose a jurisdiction.");
+  const landlordName = field(form, "landlordName");
+  const landlordEmailRaw = field(form, "landlordEmail");
   return {
     street,
     unitNumber: field(form, "unitNumber"),
@@ -94,8 +96,8 @@ function unitInput(form: FormData): UnitInput {
     jurisdictionConfirmed: form.get("jurisdictionConfirmed") === "on",
     rsoStatus: (field(form, "rsoStatus") || "unsure") as RsoStatus,
     rstpoTier: (field(form, "rstpoTier") || "unsure") as RstpoTier,
-    landlordName: must(form, "landlordName", "Landlord name"),
-    landlordEmail: emailValue(must(form, "landlordEmail", "Landlord email")),
+    landlordName,
+    landlordEmail: landlordEmailRaw ? emailValue(landlordEmailRaw) : "",
     landlordPhone: field(form, "landlordPhone"),
     rentCents: centsField(form, "rent"),
     depositCents: centsField(form, "deposit"),

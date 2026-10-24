@@ -1,4 +1,5 @@
 import { completeJson, extractImageText } from "@/lib/ai";
+import { landlordReady } from "@/lib/landlord";
 import {
   addAssistantMessage,
   addNotification,
@@ -135,7 +136,7 @@ export async function recordLog(input: {
     });
   }
 
-  if (input.sendEmail) {
+  if (input.sendEmail && landlordReady(input.unit)) {
     await emailLandlord({
       user: input.user,
       unit: input.unit,

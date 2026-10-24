@@ -1,3 +1,4 @@
+import { router } from "expo-router";
 import { Text } from "react-native";
 import { saveAuthorizedFile } from "@/files";
 import type { Notice } from "@/session";
@@ -16,7 +17,11 @@ export default function Packet() {
       <ErrorLine message={error} />
       <Button label="Download PDF" onPress={async () => {
         if (!token) return;
-        try { setError(""); await saveAuthorizedFile("/api/packet", "evidence-packet.pdf", token); }
+        try {
+          setError("");
+          const saved = await saveAuthorizedFile("/api/packet", "evidence-packet.pdf", token);
+          if (saved === "needs-landlord") router.push("/landlord");
+        }
         catch (err) { setError(err instanceof Error ? err.message : "Could not download."); }
       }} />
     </Page>

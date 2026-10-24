@@ -164,7 +164,8 @@ export default function Records() {
     if (!token || !data) return;
     try {
       setError("");
-      await saveAuthorizedFile("/api/packet", data.packetFile || "rent-right-evidence.pdf", token);
+      const saved = await saveAuthorizedFile("/api/packet", data.packetFile || "rent-right-evidence.pdf", token);
+      if (saved === "needs-landlord") router.push("/landlord");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not download the records.");
     }
