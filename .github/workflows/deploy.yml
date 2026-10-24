@@ -171,8 +171,10 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
           ME_PHASE: after
-          ME_MAX_MS: "3000"
-          ME_BOOTSTRAP_MAX_MS: "8000"
+          ME_MAX_MS: "1000"
+          ME_SERVER_MAX_MS: "300"
+          ME_BOOTSTRAP_MAX_MS: "2000"
+          ME_BOOTSTRAP_SERVER_MAX_MS: "800"
         run: |
           if [ -f .database-url ]; then export DATABASE_URL="$(cat .database-url)"; fi
           ok=0

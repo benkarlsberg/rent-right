@@ -51,7 +51,12 @@ async function lookup(): Promise<{ id: string; hasUnit: boolean } | null> {
   }
 }
 
-async function timeOrigin(origin: string, token: string): Promise<{ status: number | "timeout"; ms: number; hasUser: boolean }> {
+function serverDur(header: string | null): number | null {
+  const match = /app;dur=(\d+)/.exec(header ?? "");
+  return match ? Number(match[1]) : null;
+}
+
+async function timeOrigin(origin: string, token: string): Promise<{ status: number | "timeout"; ms: number; hasUser: boolean; serverMs: number | null }> {
   const label = origin.includes("api.") ? "api" : "app";
   const started = Date.now();
   try {
@@ -66,20 +71,22 @@ async function timeOrigin(origin: string, token: string): Promise<{ status: numb
     const ms = Date.now() - started;
     const body = (await response.json().catch(() => null)) as { needsUnit?: boolean; user?: unknown; error?: string } | null;
     const hasUser = Boolean(body?.user);
+    const timing = response.headers.get("server-timing");
     console.log(`${label}_status: ${response.status}`);
     console.log(`${label}_ms: ${ms}`);
     console.log(`${label}_needs_unit: ${body?.needsUnit === true}`);
     console.log(`${label}_has_user: ${hasUser}`);
     console.log(`${label}_error: ${body?.error ?? ""}`);
-    console.log(`${label}_server_timing: ${response.headers.get("server-timing") ?? ""}`);
-    return { status: response.status, ms, hasUser };
+    console.log(`${label}_server_timing: ${timing ?? ""}`);
+    console.log(`${label}_placement: ${response.headers.get("cf-placement") ?? ""}`);
+    return { status: response.status, ms, hasUser, serverMs: serverDur(timing) };
   } catch (error) {
     const ms = Date.now() - started;
     const message = error instanceof Error ? error.message : "request failed";
     console.log(`${label}_status: timeout`);
     console.log(`${label}_ms: ${ms}`);
     console.log(`${label}_error: ${redact(message)}`);
-    return { status: "timeout", ms, hasUser: false };
+    return { status: "timeout", ms, hasUser: false, serverMs: null };
   }
 }
 
@@ -92,23 +99,34 @@ async function main(): Promise<void> {
   if (!account) throw new Error("No real account was found.");
   console.log(`has_unit: ${account.hasUnit}`);
   const token = signSession(account.id);
-  let api: { status: number | "timeout"; ms: number; hasUser: boolean } | null = null;
-  for (const origin of origins) {
-    const result = await timeOrigin(origin, token);
-    if (origin.includes("api.")) api = result;
+  const repeats = 5;
+  const apiSamples: { status: number | "timeout"; ms: number; hasUser: boolean; serverMs: number | null }[] = [];
+  const bootstrapSamples: { status: number | "timeout"; ms: number; ok: boolean; serverMs: number | null }[] = [];
+  for (let sample = 1; sample <= repeats; sample += 1) {
+    console.log(`sample: ${sample}`);
+    for (const origin of origins) {
+      const result = await timeOrigin(origin, token);
+      if (origin.includes("api.")) apiSamples.push(result);
+    }
+    bootstrapSamples.push(await timeBootstrap(token));
   }
+  const warmApi = apiSamples.slice(1);
+  const warmBootstrap = bootstrapSamples.slice(1);
   const limit = Number(process.env.ME_MAX_MS || "0");
-  if (limit > 0 && (!api || api.status !== 200 || !api.hasUser || api.ms > limit)) {
-    throw new Error(`Signed /me was not ready (status ${api?.status ?? "missing"}, ${api?.ms ?? "n/a"} ms).`);
+  const serverLimit = Number(process.env.ME_SERVER_MAX_MS || "0");
+  const slowApi = warmApi.find((api) => api.status !== 200 || !api.hasUser || api.ms > limit || (serverLimit > 0 && (api.serverMs == null || api.serverMs > serverLimit)));
+  if (limit > 0 && (!warmApi.length || slowApi)) {
+    throw new Error(`Signed /me was not ready (status ${slowApi?.status ?? "missing"}, ${slowApi?.ms ?? "n/a"} ms, server ${slowApi?.serverMs ?? "n/a"} ms).`);
   }
-  const bootstrap = await timeBootstrap(token);
   const bootstrapLimit = Number(process.env.ME_BOOTSTRAP_MAX_MS || "0");
-  if (bootstrapLimit > 0 && (bootstrap.status !== 200 || !bootstrap.ok || bootstrap.ms > bootstrapLimit)) {
-    throw new Error(`Bootstrap was not ready (status ${bootstrap.status}, ${bootstrap.ms} ms).`);
+  const bootstrapServerLimit = Number(process.env.ME_BOOTSTRAP_SERVER_MAX_MS || "0");
+  const slowBootstrap = warmBootstrap.find((item) => item.status !== 200 || !item.ok || item.ms > bootstrapLimit || (bootstrapServerLimit > 0 && (item.serverMs == null || item.serverMs > bootstrapServerLimit)));
+  if (bootstrapLimit > 0 && (!warmBootstrap.length || slowBootstrap)) {
+    throw new Error(`Bootstrap was not ready (status ${slowBootstrap?.status ?? "missing"}, ${slowBootstrap?.ms ?? "n/a"} ms, server ${slowBootstrap?.serverMs ?? "n/a"} ms).`);
   }
 }
 
-async function timeBootstrap(token: string): Promise<{ status: number | "timeout"; ms: number; ok: boolean }> {
+async function timeBootstrap(token: string): Promise<{ status: number | "timeout"; ms: number; ok: boolean; serverMs: number | null }> {
   const started = Date.now();
   try {
     const response = await fetch("https://api.rentrightportal.com/api/v1/bootstrap", {
@@ -120,14 +138,16 @@ async function timeBootstrap(token: string): Promise<{ status: number | "timeout
       signal: AbortSignal.timeout(12_000),
     });
     const ms = Date.now() - started;
+    const timing = response.headers.get("server-timing");
     const body = (await response.json().catch(() => null)) as { thread?: unknown; chat?: unknown; records?: unknown; error?: string } | null;
     const ok = Boolean(body?.thread && body?.chat && body?.records);
     console.log(`bootstrap_status: ${response.status}`);
     console.log(`bootstrap_ms: ${ms}`);
     console.log(`bootstrap_slices: ${ok}`);
     console.log(`bootstrap_error: ${body?.error ?? ""}`);
-    console.log(`bootstrap_server_timing: ${response.headers.get("server-timing") ?? ""}`);
-    return { status: response.status, ms, ok };
+    console.log(`bootstrap_server_timing: ${timing ?? ""}`);
+    console.log(`bootstrap_placement: ${response.headers.get("cf-placement") ?? ""}`);
+    return { status: response.status, ms, ok, serverMs: serverDur(timing) };
   } catch (error) {
     const ms = Date.now() - started;
     const message = error instanceof Error ? error.message : "request failed";
@@ -135,7 +155,7 @@ async function timeBootstrap(token: string): Promise<{ status: number | "timeout
     console.log(`bootstrap_ms: ${ms}`);
     console.log(`bootstrap_slices: false`);
     console.log(`bootstrap_error: ${redact(message)}`);
-    return { status: "timeout", ms, ok: false };
+    return { status: "timeout", ms, ok: false, serverMs: null };
   }
 }
 
