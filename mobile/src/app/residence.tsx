@@ -11,7 +11,8 @@ import { Button, Card, ErrorLine, Field, H1, Muted, Page, wrapText } from "@/ui"
 import { refreshBootstrap } from "@/tab-cache";
 import { useLoad } from "@/use-load";
 
-type Suggestion = { label: string; street: string; city: string; region: string; postalCode: string };
+type Suggestion = { label: string; street: string; city: string; region: string; postalCode: string; unit?: string };
+type Kept = { street: string; unit: string; city: string; region: string; postalCode: string };
 type Labels = {
   title: string;
   intro: string;
@@ -30,6 +31,9 @@ type Labels = {
   leaseEnd: string;
   check: string;
   useAddress: string;
+  useTyped: string;
+  useSuggestion: string;
+  suggestion: string;
   checked: string;
   typo: string;
   move: string;
@@ -83,6 +87,8 @@ type Preview = {
   inCalifornia: boolean;
   summary: string;
   suggestion: Suggestion | null;
+  differs?: boolean;
+  kept?: Kept;
   jurisdiction: string;
   lawsChange: boolean;
   addressChanged: boolean;
@@ -115,8 +121,7 @@ export default function ResidenceScreen() {
   const [leaseEndDate, setLeaseEnd] = useState("");
   const [mode, setMode] = useState<"typo" | "move" | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [checked, setChecked] = useState("");
-  const [accepted, setAccepted] = useState(false);
+  const [offer, setOffer] = useState<Suggestion | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -134,15 +139,14 @@ export default function ResidenceScreen() {
     setLeaseEnd(home.leaseEndDate);
     setMode(null);
     setPreview(null);
-    setChecked("");
-    setAccepted(false);
+    setOffer(null);
     setAcknowledged(false);
   }, [home]);
 
   function touchAddress(setter: (value: string) => void) {
     return (value: string) => {
       setter(value);
-      setAccepted(false);
+      setOffer(null);
       setPreview(null);
       setMode(null);
       setAcknowledged(false);
@@ -201,22 +205,20 @@ export default function ResidenceScreen() {
       setError("");
       setNote("");
       const found = await api<Preview>("residence/preview", { token, body: body() });
-      const suggestion = found.suggestion;
-      const differs = suggestion
-        && (suggestion.street.toLowerCase() !== street.trim().toLowerCase()
-          || suggestion.city.toLowerCase() !== city.trim().toLowerCase()
-          || suggestion.postalCode !== zip);
-      if (suggestion && differs && !accepted) {
-        setStreet(suggestion.street);
-        setCity(suggestion.city);
-        setPostal(suggestion.postalCode);
-        setChecked(suggestion.label);
-        setAccepted(true);
-        setPreview(null);
+      if (found.differs && found.suggestion) {
+        setOffer(found.suggestion);
+        setPreview(found);
         setMode(nextMode);
+        setAcknowledged(false);
         return;
       }
-      if (suggestion) setChecked(suggestion.label);
+      if (found.kept) {
+        setStreet(found.kept.street);
+        setCity(found.kept.city);
+        setPostal(found.kept.postalCode);
+        setUnit(found.kept.unit);
+      }
+      setOffer(null);
       setPreview(found);
       setMode(nextMode);
       setAcknowledged(false);
@@ -225,6 +227,28 @@ export default function ResidenceScreen() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function useTyped() {
+    const next = preview?.kept;
+    if (next) {
+      setStreet(next.street);
+      setCity(next.city);
+      setPostal(next.postalCode);
+      setUnit(next.unit);
+    }
+    setOffer(null);
+    setAcknowledged(false);
+  }
+
+  function useSuggestionChoice() {
+    if (!offer) return;
+    setStreet(offer.street);
+    setCity(offer.city);
+    setPostal(offer.postalCode);
+    if (offer.unit) setUnit(offer.unit);
+    setOffer(null);
+    setAcknowledged(false);
   }
 
   async function save(nextMode: "typo" | "move" | "details") {
@@ -310,13 +334,18 @@ export default function ResidenceScreen() {
           <Field label={labels.unit} value={unitNumber} onChange={touchAddress(setUnit)} />
           <Field label={labels.city} value={city} onChange={touchAddress(setCity)} autoComplete="postal-address-locality" textContentType="addressCity" />
           <Field label={labels.zip} value={postalCode} onChange={touchAddress(setPostal)} keyboardType="number-pad" autoComplete="postal-code" textContentType="postalCode" />
-          {checked ? <Text style={styles.checked}>{`${labels.checked}: ${checked}`}</Text> : null}
+          {offer ? <Text style={styles.checked}>{`${labels.suggestion}: ${offer.label}`}</Text> : null}
           <Field label={labels.landlordName} value={landlordName} onChange={setLandlord} autoComplete="name" textContentType="name" />
           <Field label={labels.landlordEmail} value={landlordEmail} onChange={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" textContentType="emailAddress" />
           <Field label={labels.rent} value={rent} onChange={setRent} keyboardType="decimal-pad" />
           <DateField label={labels.leaseStart} value={moveInDate} onChange={setMoveIn} />
           <DateField label={labels.leaseEnd} value={leaseEndDate} onChange={setLeaseEnd} />
-          {addressChanged ? (
+          {offer ? (
+            <View>
+              <Button label={labels.useTyped} onPress={useTyped} disabled={busy} />
+              <Button label={labels.useSuggestion} ghost onPress={useSuggestionChoice} disabled={busy} />
+            </View>
+          ) : addressChanged ? (
             <View>
               <Button label={busy ? "…" : labels.typo} ghost onPress={() => void previewAddress("typo")} disabled={busy} />
               <Button label={busy ? "…" : labels.move} ghost onPress={() => void previewAddress("move")} disabled={busy} />
@@ -324,7 +353,7 @@ export default function ResidenceScreen() {
           ) : (
             <Button label={busy ? "…" : labels.saveDetails} onPress={() => void save("details")} disabled={busy} />
           )}
-          {preview && mode ? (
+          {preview && mode && !offer ? (
             <Card tone={preview.lawsChange ? "warn" : undefined}>
               {preview.warning ? <Text style={preview.lawsChange ? styles.warn : styles.body}>{preview.warning}</Text> : null}
               <Text style={styles.body}>{preview.summary}</Text>

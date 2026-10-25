@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
-import { lookupJurisdiction } from "@/lib/geo";
+import { isCaliforniaPostal, lookupJurisdiction, tidyAddress } from "@/lib/geo";
 import { isAllowedJurisdiction } from "@/lib/rules/cities";
 import { detectPlace } from "@/lib/rules/detect";
 import {
@@ -77,21 +77,25 @@ async function withHome<T>(fn: (ctx: { user: User; unit: NonNullable<Awaited<Ret
 
 function unitInput(form: FormData): UnitInput {
   const requested = field(form, "jurisdiction");
-  const street = must(form, "street", "Street address");
-  const city = must(form, "city", "City");
-  const postalCode = field(form, "postalCode");
-  const region = field(form, "region");
-  const detected = detectPlace({ address: street, city, postalCode, region });
+  const tidy = tidyAddress({
+    street: must(form, "street", "Street address"),
+    unit: field(form, "unitNumber"),
+    city: must(form, "city", "City"),
+    postalCode: field(form, "postalCode"),
+    region: field(form, "region"),
+  });
+  if (tidy.postalCode && !isCaliforniaPostal(tidy.postalCode)) throw new Error("That address does not look like California.");
+  const detected = detectPlace({ address: tidy.street, city: tidy.city, postalCode: tidy.postalCode, region: tidy.region });
   const jurisdiction = requested && requested !== "unsure" && isAllowedJurisdiction(requested) ? requested : detected.jurisdiction;
   if (!isAllowedJurisdiction(jurisdiction)) throw new Error("Choose a jurisdiction.");
   const landlordName = field(form, "landlordName");
   const landlordEmailRaw = field(form, "landlordEmail");
   return {
-    street,
-    unitNumber: field(form, "unitNumber"),
-    city,
-    postalCode,
-    region,
+    street: tidy.street,
+    unitNumber: tidy.unit,
+    city: tidy.city,
+    postalCode: tidy.postalCode,
+    region: tidy.region,
     jurisdiction,
     jurisdictionConfirmed: form.get("jurisdictionConfirmed") === "on",
     rsoStatus: (field(form, "rsoStatus") || "unsure") as RsoStatus,

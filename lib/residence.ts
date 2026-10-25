@@ -20,7 +20,7 @@ import {
   type User,
 } from "@/lib/db";
 import { emailValue } from "@/lib/forms";
-import { suggestPlace } from "@/lib/geo";
+import { isCaliforniaPostal, suggestPlace, tidyAddress } from "@/lib/geo";
 import { parseISODate } from "@/lib/rules/dates";
 import { detectPlace, placeSummary, type PlaceDetection } from "@/lib/rules/detect";
 import {
@@ -58,6 +58,9 @@ export type ResidenceLabels = {
   leaseEnd: string;
   check: string;
   useAddress: string;
+  useTyped: string;
+  useSuggestion: string;
+  suggestion: string;
   checked: string;
   typo: string;
   move: string;
@@ -98,6 +101,9 @@ export function residenceLabels(locale: User["locale"]): ResidenceLabels {
     leaseEnd: tx(locale, "Lease end", "Fin del contrato"),
     check: tx(locale, "Check this address", "Revisar esta dirección"),
     useAddress: tx(locale, "Use this address", "Usar esta dirección"),
+    useTyped: tx(locale, "Use what I typed", "Usar lo que escribí"),
+    useSuggestion: tx(locale, "Use suggestion", "Usar la sugerencia"),
+    suggestion: tx(locale, "Suggestion", "Sugerencia"),
     checked: tx(locale, "Checked", "Revisada"),
     typo: tx(locale, "Fix a typo in this address", "Corregir un error en esta dirección"),
     move: tx(locale, "I moved to a new home", "Me mudé a una vivienda nueva"),
@@ -167,15 +173,23 @@ function readFields(unit: Unit, body: Record<string, unknown>, locale: User["loc
   const landlordName = text(body.landlordName);
   const landlordEmailRaw = text(body.landlordEmail);
   if (!street || !city || !postalCode) throw new Error(tx(locale, "Add the street, city, and ZIP.", "Agregue calle, ciudad y código postal."));
+  if (!isCaliforniaPostal(postalCode)) throw new Error(tx(locale, "That address does not look like California.", "Esa dirección no parece de California."));
   if ((landlordName || landlordEmailRaw) && (!landlordName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(landlordEmailRaw))) {
     throw new Error(tx(locale, "Add the landlord's name and email.", "Agregue el nombre y el correo del propietario."));
   }
-  return {
+  const tidy = tidyAddress({
     street,
-    unitNumber: text(body.unitNumber),
+    unit: text(body.unitNumber),
     city,
     postalCode,
     region: text(body.region) || unit.region || "CA",
+  });
+  return {
+    street: tidy.street,
+    unitNumber: tidy.unit,
+    city: tidy.city,
+    postalCode: tidy.postalCode,
+    region: tidy.region,
     landlordName,
     landlordEmail: landlordEmailRaw ? emailValue(landlordEmailRaw) : "",
     rentCents: dollars(body.rent, locale),
@@ -239,18 +253,23 @@ export async function previewResidence(user: User, body: Record<string, unknown>
   const unit = await primaryUnit(user.id);
   if (!unit) throw new Error(tx(locale, "Add your unit first.", "Agregue su vivienda primero."));
   const fields = readFields(unit, body, locale);
-  const found = await suggestPlace([fields.street, fields.city, fields.region, fields.postalCode].join(", "));
-  const place = found.place.inCalifornia ? found.place : placeFor(fields);
-  if (!place.inCalifornia) {
-    throw new Error(placeSummary(place, locale));
-  }
+  const found = await suggestPlace({
+    street: fields.street,
+    unit: fields.unitNumber,
+    city: fields.city,
+    region: fields.region,
+    postalCode: fields.postalCode,
+  });
+  if (!found.place.inCalifornia) throw new Error(placeSummary(found.place, locale));
   const changed = !sameAddress(unit, fields);
-  const lawsChange = changed && place.jurisdiction !== unit.jurisdiction;
+  const lawsChange = changed && found.place.jurisdiction !== unit.jurisdiction;
   return {
     inCalifornia: true,
-    summary: placeSummary(place, locale),
+    summary: placeSummary(found.place, locale),
     suggestion: found.suggestion,
-    jurisdiction: place.jurisdiction,
+    differs: found.differs,
+    kept: found.kept,
+    jurisdiction: found.place.jurisdiction,
     lawsChange,
     addressChanged: changed,
     warning: !changed ? "" : lawsChange ? labels.lawsChange : labels.lawsSame,
@@ -367,8 +386,18 @@ export async function saveResidence(user: User, body: Record<string, unknown>) {
   if (mode !== "move" && unit.archivedAt) {
     throw new Error(labels.archivedNote);
   }
-  const place = placeFor(fields);
-  if ((mode === "typo" || mode === "move") && changed && !place.inCalifornia) throw new Error(placeSummary(place, locale));
+  let place = placeFor(fields);
+  if ((mode === "typo" || mode === "move") && changed) {
+    const found = await suggestPlace({
+      street: fields.street,
+      unit: fields.unitNumber,
+      city: fields.city,
+      region: fields.region,
+      postalCode: fields.postalCode,
+    });
+    if (!found.place.inCalifornia) throw new Error(placeSummary(found.place, locale));
+    place = found.place;
+  }
   const lawsChange = changed && place.jurisdiction !== unit.jurisdiction;
   if (lawsChange && body.acknowledged !== true) {
     throw new Error(`${labels.lawsChange} ${placeSummary(place, locale)}`);

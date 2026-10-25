@@ -9,8 +9,16 @@ import { refreshBootstrap } from "@/tab-cache";
 import { colors } from "@/theme";
 import { Button, ErrorLine, Field, H1, Muted, Page } from "@/ui";
 
-type Suggestion = { label: string; street: string; city: string; region: string; postalCode: string };
-type PlaceResult = { summary: string; inCalifornia: boolean; suggestion: Suggestion | null };
+type Suggestion = { label: string; street: string; city: string; region: string; postalCode: string; unit?: string };
+type Kept = { street: string; unit: string; city: string; region: string; postalCode: string };
+type PlaceResult = {
+  summary: string;
+  inCalifornia: boolean;
+  suggestion: Suggestion | null;
+  differs?: boolean;
+  jurisdiction?: string;
+  kept?: Kept;
+};
 
 const STEPS = 5;
 
@@ -33,22 +41,48 @@ export default function Setup() {
   const [moveInDate, setMoveIn] = useState("");
   const [rent, setRent] = useState("");
   const [summary, setSummary] = useState("");
-  const [checked, setChecked] = useState("");
-  const [accepted, setAccepted] = useState(false);
+  const [offer, setOffer] = useState<Suggestion | null>(null);
+  const [kept, setKept] = useState<Kept | null>(null);
+  const [jurisdiction, setJurisdiction] = useState("unsure");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
+  function clearCheck() {
+    setOffer(null);
+    setKept(null);
+    setJurisdiction("unsure");
+  }
   function editStreet(value: string) {
     setStreet(value);
-    setAccepted(false);
+    clearCheck();
   }
   function editCity(value: string) {
     setCity(value);
-    setAccepted(false);
+    clearCheck();
   }
   function editPostal(value: string) {
     setPostal(value);
-    setAccepted(false);
+    clearCheck();
+  }
+
+  function applyKept() {
+    if (kept) {
+      setStreet(kept.street);
+      setCity(kept.city);
+      setPostal(kept.postalCode);
+    }
+    setOffer(null);
+    setStep(1);
+  }
+
+  function applySuggestion() {
+    if (!offer) return;
+    setStreet(offer.street);
+    setCity(offer.city);
+    setPostal(offer.postalCode);
+    if (offer.unit) setUnit(offer.unit);
+    setOffer(null);
+    setStep(1);
   }
 
   async function later() {
@@ -78,7 +112,7 @@ export default function Setup() {
           landlordEmail: keepLandlord ? email : "",
           rent: rent.trim(),
           moveInDate: moveInDate.trim(),
-          jurisdiction: "unsure",
+          jurisdiction,
         },
       });
       await setSkippedSetup(false);
@@ -108,20 +142,18 @@ export default function Setup() {
           return;
         }
         setSummary(found.summary);
-        const suggestion = found.suggestion;
-        const differs = suggestion
-          && (suggestion.street.toLowerCase() !== street.trim().toLowerCase()
-            || suggestion.city.toLowerCase() !== city.trim().toLowerCase()
-            || suggestion.postalCode !== zip);
-        if (suggestion && differs && !accepted) {
-          setStreet(suggestion.street);
-          setCity(suggestion.city);
-          setPostal(suggestion.postalCode);
-          setChecked(suggestion.label);
-          setAccepted(true);
+        if (found.jurisdiction) setJurisdiction(found.jurisdiction);
+        setKept(found.kept || null);
+        if (found.differs && found.suggestion) {
+          setOffer(found.suggestion);
           return;
         }
-        if (suggestion) setChecked(suggestion.label);
+        if (found.kept) {
+          setStreet(found.kept.street);
+          setCity(found.kept.city);
+          setPostal(found.kept.postalCode);
+        }
+        setOffer(null);
         setStep(1);
         return;
       }
@@ -164,7 +196,7 @@ export default function Setup() {
           landlordEmail: landlordEmail.trim(),
           rent: rent.trim(),
           moveInDate: moveInDate.trim(),
-          jurisdiction: "unsure",
+          jurisdiction,
         },
       });
       await setSkippedSetup(false);
@@ -184,14 +216,13 @@ export default function Setup() {
   const hints = es
     ? ["Una dirección en California.", "Si es una casa, puede dejarlo en blanco.", "Deje ambos en blanco para agregarlos después. Nada se envía hasta que usted lo confirme.", "Los dos son opcionales.", summary]
     : ["A California address.", "Leave this blank for a house.", "Leave both blank to add them later. Nothing is sent until you confirm it.", "Both of these are optional.", summary];
-  const action = step === 4 ? (es ? "Guardar" : "Save") : step === 0 && accepted && checked ? (es ? "Usar esta dirección" : "Use this address") : (es ? "Continuar" : "Continue");
+  const action = step === 4 ? (es ? "Guardar" : "Save") : (es ? "Continuar" : "Continue");
 
   return (
     <Page>
       <Muted>{es ? `Paso ${step + 1} de ${STEPS}` : `Step ${step + 1} of ${STEPS}`}</Muted>
       <H1>{titles[step]}</H1>
       <Muted>{hints[step]}</Muted>
-      {step === 0 && checked ? <Text style={styles.checked}>{es ? `Revisada: ${checked}` : `Checked: ${checked}`}</Text> : null}
       <ErrorLine message={error} />
       {step === 0 ? (
         <>
@@ -216,7 +247,15 @@ export default function Setup() {
       {step === 4 ? (
         <Text style={styles.recap}>{[street, unitNumber, city, "CA", postalCode].filter(Boolean).join(", ")}</Text>
       ) : null}
-      <Button label={busy ? (es ? "Un momento…" : "One moment…") : action} onPress={() => void next()} disabled={busy} />
+      {step === 0 && offer ? (
+        <>
+          <Text style={styles.checked}>{es ? `Sugerencia: ${offer.label}` : `Suggestion: ${offer.label}`}</Text>
+          <Button label={es ? "Usar lo que escribí" : "Use what I typed"} onPress={applyKept} disabled={busy} />
+          <Button label={es ? "Usar la sugerencia" : "Use suggestion"} ghost onPress={applySuggestion} disabled={busy} />
+        </>
+      ) : (
+        <Button label={busy ? (es ? "Un momento…" : "One moment…") : action} onPress={() => void next()} disabled={busy} />
+      )}
       <Pressable onPress={() => void later()} accessibilityRole="button" accessibilityLabel={es ? "Hacer esto después" : "Do this later"} style={styles.later}>
         <Text style={styles.laterText}>{es ? "Hacer esto después" : "Do this later"}</Text>
       </Pressable>

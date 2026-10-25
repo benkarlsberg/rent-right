@@ -48,7 +48,7 @@ import { emailValue } from "@/lib/forms";
 import { addLandlordLabel, landlordPrompt, landlordReady } from "@/lib/landlord";
 import { formatDate, formatMoney, formatTimestamp, percentLabel } from "@/lib/format";
 import { getRule } from "@/lib/rules/library";
-import { suggestPlace } from "@/lib/geo";
+import { isCaliforniaPostal, suggestPlace, tidyAddress } from "@/lib/geo";
 import { detectPlace, localProtectionNote, placeSummary } from "@/lib/rules/detect";
 import { isAllowedJurisdiction } from "@/lib/rules/cities";
 import { parseLocalFacts } from "@/lib/rules/cities/verify";
@@ -198,27 +198,33 @@ async function withUnit(): Promise<{ user: User; unit: Unit }> {
 }
 
 function unitInput(input: Record<string, unknown>): UnitInput {
-  const street = text(input.street);
-  const city = text(input.city);
+  const tidy = tidyAddress({
+    street: text(input.street),
+    unit: text(input.unitNumber),
+    city: text(input.city),
+    postalCode: text(input.postalCode),
+    region: text(input.region),
+  });
   const landlordName = text(input.landlordName);
   const landlordEmailRaw = text(input.landlordEmail);
-  if (!street || !city) throw new Error("Add the address.");
+  if (!tidy.street || !tidy.city) throw new Error("Add the address.");
+  if (tidy.postalCode && !isCaliforniaPostal(tidy.postalCode)) throw new Error("That address does not look like California.");
   const landlordEmail = landlordEmailRaw ? emailValue(landlordEmailRaw) : "";
   const requested = text(input.jurisdiction);
   const detected = detectPlace({
-    address: street,
-    city,
-    postalCode: text(input.postalCode),
-    region: text(input.region),
+    address: tidy.street,
+    city: tidy.city,
+    postalCode: tidy.postalCode,
+    region: tidy.region,
   });
   const jurisdiction = requested && requested !== "unsure" && isAllowedJurisdiction(requested) ? requested : detected.jurisdiction;
   if (!isAllowedJurisdiction(jurisdiction)) throw new Error("Choose a jurisdiction.");
   return {
-    street,
-    unitNumber: text(input.unitNumber),
-    city,
-    postalCode: text(input.postalCode),
-    region: text(input.region),
+    street: tidy.street,
+    unitNumber: tidy.unit,
+    city: tidy.city,
+    postalCode: tidy.postalCode,
+    region: tidy.region,
     jurisdiction,
     jurisdictionConfirmed: input.jurisdictionConfirmed === true,
     rsoStatus: (text(input.rsoStatus) || "unsure") as RsoStatus,
@@ -347,11 +353,14 @@ async function route(request: Request, path: string[]): Promise<Response> {
     const postalCode = text(body.postalCode);
     const region = text(body.region) || "CA";
     if (!street || !city || !postalCode) throw new Error("Add the street, city, and ZIP.");
-    const found = await suggestPlace([street, city, region, postalCode].join(", "));
+    const found = await suggestPlace({ street, unit: text(body.unitNumber), city, region, postalCode });
     return json({
       summary: placeSummary(found.place, user.locale),
       inCalifornia: found.place.inCalifornia,
       suggestion: found.suggestion,
+      differs: found.differs,
+      jurisdiction: found.place.jurisdiction,
+      kept: found.kept,
     });
   }
 

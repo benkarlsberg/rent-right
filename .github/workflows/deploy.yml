@@ -212,6 +212,23 @@ jobs:
             sleep 5
           done
           test "$ok" = 1
+      - name: Check a typed address is kept
+        if: steps.hyperdrive.outcome == 'success'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+        run: |
+          if [ -f .database-url ]; then export DATABASE_URL="$(cat .database-url)"; fi
+          ok=0
+          for attempt in 1 2 3; do
+            echo "address_attempt: $attempt"
+            if npx tsx --conditions=react-server scripts/check-typed-address.ts; then
+              ok=1
+              break
+            fi
+            sleep 5
+          done
+          test "$ok" = 1
       - name: Attach custom domains
         continue-on-error: true
         env:

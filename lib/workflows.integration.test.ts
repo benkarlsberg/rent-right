@@ -211,6 +211,7 @@ describe("renter workflows", () => {
     expect(place.status).toBe(200);
     expect(place.json?.inCalifornia).toBe(true);
     expect(place.json?.summary).toBe("California rules apply; Los Angeles rent control may also apply.");
+    expect(place.json?.kept).toMatchObject({ street: "1842 N Echo Park Ave", city: "Los Angeles", postalCode: "90026" });
     const elsewhere = await api("POST", "place", {
       street: "1 Main",
       city: "Austin",
@@ -219,6 +220,18 @@ describe("renter workflows", () => {
     }, token);
     expect(elsewhere.json?.inCalifornia).toBe(false);
     expect(elsewhere.json?.summary).toBe("That address does not look like California.");
+    const saved = await api("POST", "unit", {
+      street: "1604 dover ave",
+      unitNumber: "apt 4",
+      city: "thousand oaks",
+      postalCode: "91360",
+      region: "CA",
+    }, token);
+    expect(saved.status).toBe(200);
+    const address = String((saved.json?.unit as { address?: string } | undefined)?.address || "");
+    expect(address).toContain("1604 Dover Ave");
+    expect(address.toLowerCase()).toContain("apt 4");
+    expect(address).not.toContain("1600");
   });
 
   it("saves a tenant reminder without changing the computed date", async () => {
