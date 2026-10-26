@@ -16,12 +16,15 @@ import {
   getLog,
   listDeadlines,
   listLeaseReviews,
+  listLogs,
   openChatDraft,
   openDraftForLog,
   recentConversationTurns,
+  saveDraftBody,
   saveFile,
   saveRentCheck,
   setChatDraftPayload,
+  updateLogResolution,
   updateAssistantMessage,
   type Unit,
   type User,
@@ -234,6 +237,10 @@ export async function runChatTurn(user: User, unit: Unit | null, input: {
     await confirmResolve(user, unit, action.slice("resolve:".length));
     return;
   }
+  if (action.startsWith("merge:") || action === "repair-new") {
+    await applyRepairChoice(user, unit, action);
+    return;
+  }
   if (action === "letter") {
     await asked(user, unit, text || tx(user.locale, "Draft a letter", "Redactar una carta"));
     await askForLetter(user, unit);
@@ -247,7 +254,9 @@ export async function runChatTurn(user: User, unit: Unit | null, input: {
   }
 
   const pending = await openChatDraft(user.id);
-  const pendingKind = pending && pending.unitId === unit.id ? (pending.kind as "repair" | "rent_date" | "deposit_date" | "letter") : null;
+  const pendingKind = pending && pending.unitId === unit.id && (pending.kind === "repair" || pending.kind === "rent_date" || pending.kind === "deposit_date" || pending.kind === "letter")
+    ? pending.kind
+    : null;
   let plan = planTurn(text, pendingKind);
   let history = "";
   let retrieval = "";
@@ -556,7 +565,96 @@ async function confirmResolve(user: User, unit: Unit, issueId: string) {
   }
 }
 
-async function logRepair(user: User, unit: Unit, summary: string, severity: RepairSeverity, room: string | null, attachment: { name: string; mime: string; base64: string } | null) {
+async function openRepairOfKind(user: User, unit: Unit, severity: RepairSeverity) {
+  const logs = await listLogs(user.id, unit.id);
+  return logs.find((log) =>
+    log.type === "repair"
+    && log.status !== "resolved"
+    && log.flags?.removed !== true
+    && (log.severity || "other") === severity
+  ) || null;
+}
+
+async function offerRepairMerge(user: User, unit: Unit, existing: { id: string; description: string }, summary: string, severity: RepairSeverity, room: string | null) {
+  const title = issueTitle(existing.description, tx(user.locale, "request", "solicitud"));
+  await createChatDraft(user.id, unit.id, "repair_add", { summary, severity, room, targetId: existing.id });
+  const addLabel = tx(user.locale, `Add to ${title}`, `Agregar a ${title}`);
+  await say(user, unit, {
+    headline: tx(user.locale, `Add this to ${title}?`, `¿Agregar esto a ${title}?`),
+    status: tx(user.locale, "Already open", "Ya está abierta"),
+    action: { id: `merge:${existing.id}`, label: addLabel },
+    actions: [
+      { id: `merge:${existing.id}`, label: addLabel },
+      { id: "repair-new", label: tx(user.locale, "Save as a new request", "Guardar como una solicitud nueva") },
+    ],
+    detail: tx(
+      user.locale,
+      `You already have an open request for this: ${title}. Add this note to that request, or save it as a new one. Nothing was saved yet.`,
+      `Ya tiene una solicitud abierta para esto: ${title}. Agregue esta nota a esa solicitud, o guárdela como una solicitud nueva. Aún no se guardó nada.`,
+    ),
+    ruleId: null,
+  });
+}
+
+async function applyRepairChoice(user: User, unit: Unit, action: string) {
+  const draft = await openChatDraft(user.id);
+  const summary = typeof draft?.payload.summary === "string" ? draft.payload.summary : "";
+  const severity = (typeof draft?.payload.severity === "string" ? draft.payload.severity : "other") as RepairSeverity;
+  const room = typeof draft?.payload.room === "string" ? draft.payload.room : null;
+  const targetId = typeof draft?.payload.targetId === "string" ? draft.payload.targetId : "";
+  if (!draft || draft.kind !== "repair_add" || draft.unitId !== unit.id || !summary) {
+    await say(user, unit, {
+      headline: tx(user.locale, "Nothing to add", "Nada para agregar"),
+      status: tx(user.locale, "Nothing changed", "Nada cambió"),
+      action: null,
+      detail: tx(user.locale, "There is no open request waiting for this note. Nothing was saved.", "No hay una solicitud abierta esperando esta nota. No se guardó nada."),
+      ruleId: null,
+    });
+    return;
+  }
+  await closeChatDraft(user.id, draft.id, "done");
+  if (action === "repair-new") {
+    await logRepair(user, unit, summary, severity, room, null, true);
+    return;
+  }
+  const existing = action.startsWith("merge:") && action.slice("merge:".length) === targetId ? await getLog(user.id, targetId) : null;
+  if (!existing || existing.type !== "repair" || existing.status === "resolved" || existing.flags?.removed === true) {
+    await logRepair(user, unit, summary, severity, room, null, true);
+    return;
+  }
+  const prior = typeof existing.flags.notes === "string" ? existing.flags.notes.trim() : "";
+  const notes = [prior, summary].filter(Boolean).join("\n");
+  await updateLogResolution(user.id, existing.id, {
+    status: existing.status === "pending_confirm" ? "pending_confirm" : "open",
+    resolvedAt: existing.resolvedAt,
+    resolvedBy: existing.resolvedBy,
+    resolutionNote: existing.resolutionNote,
+    flags: { ...existing.flags, notes },
+  });
+  const waiting = await openDraftForLog(user.id, unit.id, existing.id);
+  if (waiting && !waiting.body.includes(summary)) {
+    const extra = tx(user.locale, `Also: ${summary}`, `También: ${summary}`);
+    await saveDraftBody(user.id, waiting.id, `${waiting.body.trim()}\n\n${extra}`);
+  }
+  const title = issueTitle(existing.description, tx(user.locale, "request", "solicitud"));
+  await say(user, unit, {
+    headline: tx(user.locale, `Added to ${title}`, `Agregado a ${title}`),
+    status: tx(user.locale, "Saved on the open request", "Guardado en la solicitud abierta"),
+    action: null,
+    detail: tx(user.locale, "The note was added to the open request. Nothing new was emailed.", "La nota se agregó a la solicitud abierta. No se envió ningún correo nuevo."),
+    ruleId: null,
+  });
+}
+
+async function logRepair(user: User, unit: Unit, summary: string, severity: RepairSeverity, room: string | null, attachment: { name: string; mime: string; base64: string } | null, forceNew = false) {
+  const kind = severity || repairFacts(summary).severity;
+  if (!forceNew) {
+    const existing = await openRepairOfKind(user, unit, kind);
+    if (existing) {
+      await offerRepairMerge(user, unit, existing, summary, kind, room);
+      return;
+    }
+  }
   let photoFileId: string | null = null;
   if (attachment?.mime.startsWith("image/")) {
     photoFileId = await saveFile(user.id, unit.id, attachment.name || "repair.jpg", attachment.mime, Buffer.from(attachment.base64, "base64"));

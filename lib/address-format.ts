@@ -34,10 +34,28 @@ function stateCode(region?: string | null): string {
   return "CA";
 }
 
+function unitKey(value: string): string {
+  return clean(value)
+    .toLowerCase()
+    .replace(/^(?:(?:unit|apt|apartment)\s+|#\s*)+/, "")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+/** Drop a unit that is already the last piece of the street, including "Unit 25, Unit 25". */
+function streetWithoutDuplicateUnit(street: string, unit: string): string {
+  const parts = street.split(",").map((part) => part.trim()).filter(Boolean);
+  const key = unitKey(unit);
+  while (parts.length >= 2 && unitKey(parts[parts.length - 1]) && unitKey(parts[parts.length - 1]) === unitKey(parts[parts.length - 2])) {
+    parts.pop();
+  }
+  if (key && parts.length && unitKey(parts[parts.length - 1]) === key) parts.pop();
+  return parts.join(", ");
+}
+
 /** Line 1 is the street and unit. Line 2 is city, state, and ZIP. */
 export function formatAddressLines(input: AddressParts): [string, string] {
-  const street = titleCase(clean(input.street || ""));
   const unit = displayUnit(input.unit || "");
+  const street = streetWithoutDuplicateUnit(titleCase(clean(input.street || "")), unit);
   const city = titleCase(clean(input.city || ""));
   const zip = clean(input.postalCode || "");
   if (!street && !unit && !city && !zip) return ["", ""];

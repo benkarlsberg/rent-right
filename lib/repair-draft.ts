@@ -38,13 +38,12 @@ export function repairDraftLetter(input: {
   const issue = input.description.replace(/\s+/g, " ").trim();
   const short = issue.length > 80 ? `${issue.slice(0, 77).trim()}…` : issue;
   const subject = tx(locale, `Repair request: ${short}`, `Solicitud de reparación: ${short}`);
-  const name = input.tenantName.trim() || tx(locale, "The tenant", "El inquilino");
   const date = formatDate(day, locale);
   const rule = locale === "es" ? reminder.explanationEs : reminder.explanation;
   const body = tx(
     locale,
     [
-      `${name} is writing about a repair.`,
+      "I'm writing about a repair.",
       "",
       input.address.trim(),
       "",
@@ -59,7 +58,7 @@ export function repairDraftLetter(input: {
       `Rule ${reminder.ruleId}`,
     ].join("\n"),
     [
-      `${name} escribe sobre una reparación.`,
+      "Escribo sobre una reparación.",
       "",
       input.address.trim(),
       "",
@@ -85,9 +84,9 @@ export async function ensureRepairDrafts(user: User, unit: Unit, logs: LogEntry[
   const created: Message[] = [];
   const seen = [...messages];
   for (const log of logs) {
-    if (log.type !== "repair" || log.status === "resolved") continue;
+    if (log.type !== "repair" || log.status === "resolved" || log.flags?.removed === true) continue;
     const related = seen.filter((message) => message.logEntryId === log.id && message.direction === "outbound");
-    if (related.some((message) => confirmedOutbound(message.deliveryStatus) || message.deliveryStatus === "draft")) continue;
+    if (related.some((message) => confirmedOutbound(message.deliveryStatus) || message.deliveryStatus === "draft" || message.deliveryStatus === "discarded")) continue;
     const letter = repairDraftLetter({
       locale: user.locale,
       tenantName: user.name,

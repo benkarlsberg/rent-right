@@ -1,5 +1,6 @@
 import type { Locale } from "@/lib/disclaimer";
 import {
+  discardDraftMessage,
   getLog,
   insertLog,
   listDeadlines,
@@ -25,6 +26,7 @@ import {
   timelineSummary,
   type ResolutionSource,
 } from "@/lib/resolution";
+import { confirmedOutbound } from "@/lib/repair-draft";
 import { tx } from "@/lib/text";
 
 function fail(locale: Locale, en: string, es: string): never {
@@ -86,6 +88,44 @@ export async function resolveRepair(user: User, issueId: string, input: { note?:
     when,
   );
   return await getLog(user.id, entry.id);
+}
+
+function keptStatus(status: string): "open" | "pending_confirm" | "resolved" {
+  if (status === "pending_confirm" || status === "resolved") return status;
+  return "open";
+}
+
+/** Hide a request from the list without deleting the hash-chained log or any sent message. */
+export async function hideIssue(user: User, issueId: string): Promise<{ sentKept: boolean }> {
+  const entry = await getLog(user.id, issueId);
+  if (entry.type !== "repair") fail(user.locale, "Only a repair request can be deleted.", "Solo una solicitud de reparación se puede eliminar.");
+  if (entry.flags?.removed === true) return { sentKept: false };
+  const messages = await listMessages(user.id, entry.unitId);
+  const related = messages.filter((message) => message.logEntryId === entry.id && message.direction === "outbound");
+  const sentKept = related.some((message) => confirmedOutbound(message.deliveryStatus));
+  for (const draft of related) {
+    if (draft.deliveryStatus === "draft") await discardDraftMessage(user.id, draft.id);
+  }
+  await updateLogResolution(user.id, entry.id, {
+    status: keptStatus(entry.status),
+    resolvedAt: entry.resolvedAt,
+    resolvedBy: entry.resolvedBy,
+    resolutionNote: entry.resolutionNote,
+    flags: { ...entry.flags, removed: true },
+  });
+  await setLinkedDeadlines(user.id, entry.unitId, entry.id, "open", "deleted");
+  const today = new Date().toISOString().slice(0, 10);
+  await writeEvent(
+    user,
+    entry.unitId,
+    entry.id,
+    "removed",
+    sentKept
+      ? tx(user.locale, "Tenant removed this request from the list. Sent messages stay in the landlord history.", "El inquilino quitó esta solicitud de la lista. Los mensajes enviados se quedan en el historial del propietario.")
+      : tx(user.locale, "Tenant removed this request from the list. Nothing had been sent.", "El inquilino quitó esta solicitud de la lista. No se había enviado nada."),
+    today,
+  );
+  return { sentKept };
 }
 
 export async function reopenRepair(user: User, issueId: string) {

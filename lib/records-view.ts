@@ -25,6 +25,7 @@ export type LogInput = {
   eventDate: string;
   createdAt: string;
   status?: string;
+  removed?: boolean;
 };
 
 export type MessageInput = {
@@ -274,6 +275,16 @@ export function logCards(logs: LogInput[], messages: MessageInput[], locale: Loc
   });
 }
 
+function sentMail(logId: string, messages: MessageInput[]): boolean {
+  return messages.some((message) => message.logEntryId === logId && message.direction === "outbound" && confirmedOutbound(message.deliveryStatus));
+}
+
+function issueText(log: { description: string; flags?: Record<string, unknown> }): string {
+  const notes = typeof log.flags?.notes === "string" ? log.flags.notes.trim() : "";
+  if (!notes || notes === log.description.trim()) return log.description;
+  return `${log.description}\n\n${notes}`;
+}
+
 function confirmedOutbound(status: string): boolean {
   return status === "sent" || status === "delivered" || status === "local_only" || status === "blocked";
 }
@@ -281,7 +292,7 @@ function confirmedOutbound(status: string): boolean {
 function sentRepairIds(logs: LogInput[], messages: MessageInput[]): Set<string> {
   const ids = new Set<string>();
   for (const log of logs) {
-    if (log.type !== "repair" || log.status === "resolved") continue;
+    if (log.type !== "repair" || log.status === "resolved" || log.removed) continue;
     const sent = messages.some((message) =>
       message.logEntryId === log.id
       && message.direction === "outbound"
@@ -315,7 +326,7 @@ export function nextSteps(input: {
   const futureDeposit = open
     .filter((item) => item.kind === "deposit" && item.dueDate && daysBetween(input.today, item.dueDate) > 0)
     .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)));
-  const unsent = input.logs.find((log) => log.type === "repair" && log.status !== "resolved" && !sent.has(log.id));
+  const unsent = input.logs.find((log) => log.type === "repair" && log.status !== "resolved" && !log.removed && !sent.has(log.id));
   const items: StepItem[] = [];
   if (unsent) {
     items.push({
@@ -442,6 +453,7 @@ export type OpenIssueCard = {
   pendingTitle: string | null;
   pendingNote: string | null;
   earliest: string;
+  sent: boolean;
 };
 
 export type ArchiveIssueCard = {
@@ -472,6 +484,7 @@ export function issueBoard(input: {
   const open: OpenIssueCard[] = [];
   const archive: ArchiveIssueCard[] = [];
   for (const log of repairs) {
+    if (log.flags?.removed === true) continue;
     const card = cards.get(log.id);
     const title = issueTitle(log.description, tx(locale, "request", "solicitud"));
     if (log.status === "resolved" && log.resolvedAt) {
@@ -510,12 +523,13 @@ export function issueBoard(input: {
         `Reported ${formatDate(log.eventDate || log.createdAt.slice(0, 10), locale)}`,
         `Reportado el ${formatDate(log.eventDate || log.createdAt.slice(0, 10), locale)}`,
       ),
-      issue: log.description,
+      issue: issueText(log),
       message: card?.message || null,
       pending,
       pendingTitle: pending ? tx(locale, "Landlord says fixed, confirm?", "El propietario dice que está arreglado. ¿Confirmar?") : null,
       pendingNote: landlordFixedNote(log.flags),
       earliest: log.eventDate || log.createdAt.slice(0, 10),
+      sent: sentMail(log.id, input.messages),
     });
   }
   return { open, archive };
@@ -569,6 +583,9 @@ export function recordsLabels(locale: Locale) {
     later: tx(locale, "Later", "Más adelante"),
     markDone: tx(locale, "Mark done", "Marcar como hecho"),
     nextStepsLink: tx(locale, "Your next steps are on Reminders", "Sus próximos pasos están en Recordatorios"),
+    deleteIssue: tx(locale, "Delete", "Eliminar"),
+    deleteIssueConfirm: tx(locale, "Delete this request?", "¿Eliminar esta solicitud?"),
+    deleteIssueSent: tx(locale, "Sent messages stay in the Landlord history.", "Los mensajes enviados se quedan en el historial del propietario."),
     deleteReminder: tx(locale, "Delete", "Eliminar"),
     deleteConfirm: tx(locale, "Delete this reminder?", "¿Eliminar este recordatorio?"),
     dismissReminder: tx(locale, "Dismiss", "Descartar"),

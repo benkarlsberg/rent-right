@@ -86,7 +86,7 @@ import { parseCard } from "@/lib/chat-card";
 import { runChatTurn } from "@/lib/chat-turn";
 import { drainRoundTrips, withActor } from "@/lib/pg";
 import { archivedNote, previewResidence, residencePayload, saveResidence, selectResidence } from "@/lib/residence";
-import { issueHistory, issueSummary, reopenRepair, resolveRepair } from "@/lib/issues";
+import { hideIssue, issueHistory, issueSummary, reopenRepair, resolveRepair } from "@/lib/issues";
 import { deleteReminder, dismissReminder, restoreReminder } from "@/lib/reminders";
 import { confirmedOutbound, ensureRepairDeadline, ensureRepairDrafts } from "@/lib/repair-draft";
 import { askAssistant, emailLandlord, extractPdfOrText, recordLog, runLeaseReview, sampleLeaseText, saveDepositAndDeadline } from "@/lib/workflow";
@@ -436,6 +436,7 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "POST" && key === "records/reminder/restore") return json(await restorePostedReminder(await readBody(request)));
   if (method === "POST" && key === "records/resolve") return json(await resolvePosted(await readBody(request)));
   if (method === "POST" && key === "records/reopen") return json(await reopenPosted(await readBody(request)));
+  if (method === "POST" && key === "records/issue/delete") return json(await deletePostedIssue(await readBody(request)));
   if (method === "POST" && key === "thread") return json(await postThread(await readBody(request)));
   if (method === "GET" && key === "records") return json(await recordsPayload());
   if (method === "GET" && key === "ledger") return json(await ledgerPayload());
@@ -1110,6 +1111,7 @@ function presentRecords(user: User, unit: Unit, loaded: HomeRows) {
     eventDate: item.eventDate,
     createdAt: item.createdAt,
     status: item.status,
+    removed: item.flags?.removed === true,
   }));
   const board = issueBoard({
     locale,
@@ -1163,7 +1165,7 @@ function presentRecords(user: User, unit: Unit, loaded: HomeRows) {
       });
       const sendStep = planned.items.find((item) => item.action === "send");
       if (sendStep) {
-        const unsent = logs.find((log) => log.type === "repair" && log.status !== "resolved" && !messages.some((message) =>
+        const unsent = logs.find((log) => log.type === "repair" && log.status !== "resolved" && log.flags?.removed !== true && !messages.some((message) =>
           message.logEntryId === log.id && message.direction === "outbound" && confirmedOutbound(message.deliveryStatus)));
         const draft = unsent ? messages.find((message) => message.logEntryId === unsent.id && message.deliveryStatus === "draft") : null;
         if (draft) sendStep.href = `/landlord?draft=${draft.id}`;
@@ -1277,7 +1279,7 @@ async function recordsPayload() {
 async function bootstrapPayload() {
   const user = await actor();
   const unit = await primaryUnit(user.id);
-  if (!unit) return { thread: emptyThread(user), chat: emptyChat(user), records: emptyRecords(user) };
+  if (!unit) return { thread: emptyThread(user, await listAssistant(user.id, "visible")), chat: emptyChat(user), records: emptyRecords(user) };
   const loaded = await loadHomeRows(user, unit);
   const recordsBundleView = presentRecords(user, unit, loaded);
   const threadBundle = presentRecords(user, unit, { ...loaded, reviews: [] });
@@ -1302,6 +1304,20 @@ async function reopenPosted(input: Record<string, unknown>) {
   if (!id) throw new Error(tx(user.locale, "Choose a request.", "Elija una solicitud."));
   await reopenRepair(user, id);
   return recordsPayload();
+}
+
+async function deletePostedIssue(input: Record<string, unknown>) {
+  const { user } = await withUnit();
+  const id = text(input.id);
+  if (!id) throw new Error(tx(user.locale, "Choose a request.", "Elija una solicitud."));
+  const result = await hideIssue(user, id);
+  const payload = await recordsPayload();
+  return {
+    ...payload,
+    removedNote: result.sentKept
+      ? tx(user.locale, "Sent messages stay in the Landlord history.", "Los mensajes enviados se quedan en el historial del propietario.")
+      : null,
+  };
 }
 
 async function markReminderDone(input: Record<string, unknown>) {

@@ -159,7 +159,7 @@ export default function AssistantChat() {
       await send("", { action: "send", draftId: action.id.slice(5) });
       return;
     }
-    if (action.id.startsWith("resolve:")) {
+    if (action.id.startsWith("resolve:") || action.id.startsWith("merge:") || action.id === "repair-new") {
       await send("", { action: action.id });
     }
   }
@@ -231,11 +231,11 @@ export default function AssistantChat() {
           data={items}
           keyExtractor={(_, index) => String(index)}
           contentContainerStyle={styles.list}
-          ListHeaderComponent={data?.archivedNote || me?.needsUnit ? (
+          ListHeaderComponent={data?.archivedNote || (me?.needsUnit && items.length === 0) ? (
             <View style={styles.place}>
               {data?.archivedNote ? <Text style={styles.support}>{data.archivedNote}</Text> : null}
-              {me?.needsUnit ? <Text style={styles.support}>{spanish ? "Agregue su dirección para guardar registros y escribirle al propietario." : "Add your address to keep records and write to your landlord."}</Text> : null}
-              {me?.needsUnit ? (
+              {me?.needsUnit && items.length === 0 ? <Text style={styles.support}>{spanish ? "Agregue su dirección para guardar registros y escribirle al propietario." : "Add your address to keep records and write to your landlord."}</Text> : null}
+              {me?.needsUnit && items.length === 0 ? (
                 <Pressable style={styles.chip} onPress={() => router.push("/setup")} accessibilityRole="button" accessibilityLabel={spanish ? "Agregar su vivienda" : "Add your place"}>
                   <Text style={styles.chipText}>{spanish ? "Agregar su vivienda" : "Add your place"}</Text>
                 </Pressable>

@@ -53,6 +53,7 @@ export default function Landlord() {
   const listRef = useRef<FlatList<ChatItem>>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBody, setEditBody] = useState("");
   const [email, setEmail] = useState("");
@@ -85,7 +86,7 @@ export default function Landlord() {
 
   async function send() {
     const text = draft.trim();
-    if (!text || !token || sending || data?.archived) return;
+    if (!text || !token || sending || discarding || data?.archived) return;
     try {
       setSending(true);
       setError("");
@@ -141,7 +142,7 @@ export default function Landlord() {
   }
 
   async function sendDraftMessage(id: string, body: string) {
-    if (!token || sending) return;
+    if (!token || sending || discarding) return;
     try {
       setSending(true);
       setError("");
@@ -155,16 +156,16 @@ export default function Landlord() {
   }
 
   async function discard(id: string) {
-    if (!token || sending) return;
+    if (!token || sending || discarding) return;
     try {
-      setSending(true);
+      setDiscarding(true);
       setError("");
       await reload(await api<ChatData>("chat/draft/discard", { token, body: { id } }));
       if (editingId === id) setEditingId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not discard the draft.");
     } finally {
-      setSending(false);
+      setDiscarding(false);
     }
   }
 
@@ -253,7 +254,7 @@ export default function Landlord() {
                     </View>
                   ) : null}
                   <View style={styles.actions}>
-                    <Pressable style={styles.primary} accessibilityRole="button" accessibilityLabel={labels?.send || "Send"} accessibilityState={{ disabled: Boolean(sending || data?.archived || data?.needsEmail) }} disabled={sending || data?.archived || data?.needsEmail} onPress={() => void sendDraftMessage(item.id, body)}>
+                    <Pressable style={styles.primary} accessibilityRole="button" accessibilityLabel={labels?.send || "Send"} accessibilityState={{ disabled: Boolean(sending || discarding || data?.archived || data?.needsEmail) }} disabled={sending || discarding || data?.archived || data?.needsEmail} onPress={() => void sendDraftMessage(item.id, body)}>
                       <Text style={styles.primaryText}>{labels?.send || "Send"}</Text>
                     </Pressable>
                     {editing ? (
@@ -274,7 +275,7 @@ export default function Landlord() {
                         <Text style={styles.ghostText}>{labels?.edit || "Edit"}</Text>
                       </Pressable>
                     )}
-                    <Pressable style={styles.ghost} accessibilityRole="button" accessibilityLabel={labels?.discard || "Discard"} disabled={sending || data?.archived} onPress={() => void discard(item.id)}>
+                    <Pressable style={styles.ghost} accessibilityRole="button" accessibilityLabel={labels?.discard || "Discard"} disabled={sending || discarding || data?.archived} onPress={() => void discard(item.id)}>
                       <Text style={styles.dangerText}>{labels?.discard || "Discard"}</Text>
                     </Pressable>
                   </View>

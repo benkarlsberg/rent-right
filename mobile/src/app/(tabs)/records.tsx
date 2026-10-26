@@ -60,6 +60,7 @@ export type Records = {
     pendingTitle: string | null;
     pendingNote: string | null;
     earliest: string;
+    sent?: boolean;
   }[];
   archive?: {
     id: string;
@@ -116,6 +117,9 @@ export type Records = {
     later?: string;
     markDone?: string;
     nextStepsLink?: string;
+    deleteIssue?: string;
+    deleteIssueConfirm?: string;
+    deleteIssueSent?: string;
     deleteReminder?: string;
     deleteConfirm?: string;
     dismissReminder?: string;
@@ -128,6 +132,7 @@ export type Records = {
   packetFile: string;
   archived?: boolean;
   archivedNote?: string | null;
+  removedNote?: string | null;
 };
 
 const gearXml = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.2" stroke="#0B5C6E" stroke-width="1.8"/><path d="M12 2.6v2.2M12 19.2v2.2M4.2 6.2l1.9 1.1M17.9 16.7l1.9 1.1M4.2 17.8l1.9-1.1M17.9 7.3l1.9-1.1M2.6 12h2.2M19.2 12h2.2" stroke="#0B5C6E" stroke-width="1.8" stroke-linecap="round"/></svg>`;
@@ -142,6 +147,8 @@ export default function Records() {
   const [busy, setBusy] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [openIssue, setOpenIssue] = useState<string | null>(null);
+  const [confirmIssue, setConfirmIssue] = useState<string | null>(null);
+  const [removedNote, setRemovedNote] = useState("");
   const [openNote, setOpenNote] = useState<string | null>(null);
   const [openArchive, setOpenArchive] = useState<string | null>(null);
   const [section, setSection] = useState<Segment>("issues");
@@ -190,6 +197,23 @@ export default function Records() {
       setOpenIssue(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not resolve the request.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteIssue(id: string) {
+    if (!token || busy) return;
+    try {
+      setBusy(true);
+      setError("");
+      const next = await api<Records>("records/issue/delete", { token, body: { id } });
+      await reload(next);
+      setConfirmIssue(null);
+      setOpenIssue(null);
+      setRemovedNote(next.removedNote || "");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete the request.");
     } finally {
       setBusy(false);
     }
@@ -292,6 +316,7 @@ export default function Records() {
         ) : null}
         {section === "issues" ? (
           <View>
+            {removedNote ? <Text style={styles.note}>{removedNote}</Text> : null}
             {data && !issues.length && !archive.length ? <Text style={styles.empty}>{labels?.emptyIssues || (es ? "No hay solicitudes abiertas." : "No open requests.")}</Text> : null}
             {issues.map((issue) => {
               const open = openIssue === issue.id;
@@ -302,7 +327,10 @@ export default function Records() {
                     accessibilityRole="button"
                     accessibilityState={{ expanded: open }}
                     accessibilityLabel={issue.title}
-                    onPress={() => setOpenIssue(open ? null : issue.id)}
+                    onPress={() => {
+                      setConfirmIssue(null);
+                      setOpenIssue(open ? null : issue.id);
+                    }}
                   >
                     <View style={styles.rowText}>
                       <Text style={styles.cardTitle}>{issue.title}</Text>
@@ -334,6 +362,34 @@ export default function Records() {
                           quiet
                           onSubmit={(input) => resolveIssue(issue.id, input, issue.pending ? "landlord" : null)}
                         />
+                      ) : null}
+                      {!data?.archived ? (
+                        confirmIssue === issue.id ? (
+                          <View accessibilityRole="alert">
+                            <Text style={styles.confirm}>{labels?.deleteIssueConfirm || (es ? "¿Eliminar esta solicitud?" : "Delete this request?")}</Text>
+                            {issue.sent ? <Text style={styles.body}>{labels?.deleteIssueSent || (es ? "Los mensajes enviados se quedan en el historial del propietario." : "Sent messages stay in the Landlord history.")}</Text> : null}
+                            <Pressable
+                              style={styles.danger}
+                              accessibilityRole="button"
+                              accessibilityLabel={labels?.deleteIssue || (es ? "Eliminar" : "Delete")}
+                              disabled={busy}
+                              onPress={() => void deleteIssue(issue.id)}
+                            >
+                              <Text style={styles.dangerText}>{labels?.deleteIssue || (es ? "Eliminar" : "Delete")}</Text>
+                            </Pressable>
+                            <Button label={labels?.cancelAction || (es ? "Cancelar" : "Cancel")} ghost onPress={() => setConfirmIssue(null)} disabled={busy} />
+                          </View>
+                        ) : (
+                          <Pressable
+                            style={styles.linkHit}
+                            accessibilityRole="button"
+                            accessibilityLabel={labels?.deleteIssue || (es ? "Eliminar" : "Delete")}
+                            disabled={busy}
+                            onPress={() => setConfirmIssue(issue.id)}
+                          >
+                            <Text style={styles.deleteText}>{labels?.deleteIssue || (es ? "Eliminar" : "Delete")}</Text>
+                          </Pressable>
+                        )
                       ) : null}
                     </View>
                   ) : null}
@@ -502,6 +558,10 @@ const styles = StyleSheet.create({
   chipText: { ...wrapText, fontSize: 12, lineHeight: 16, color: colors.pine, fontWeight: "700", textAlign: "center" },
   chipTextPending: { color: colors.warn },
   expand: { paddingBottom: 4 },
+  confirm: { ...wrapText, fontSize: 16, lineHeight: 22, color: colors.ink, fontWeight: "700", marginTop: 12 },
+  deleteText: { color: colors.bad, fontSize: 14, fontWeight: "700" },
+  danger: { backgroundColor: colors.bad, borderRadius: 14, minHeight: 48, alignItems: "center", justifyContent: "center", paddingHorizontal: 18, marginTop: 8 },
+  dangerText: { color: "white", fontWeight: "700", fontSize: 16 },
   archiveBlock: { marginTop: 8 },
   archiveHeader: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   section: { marginTop: 14, fontSize: 13, lineHeight: 18, color: colors.mute, fontWeight: "700" },
