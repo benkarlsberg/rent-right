@@ -18,6 +18,8 @@
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
+        "CFBundleDisplayName": "Rent Right",
+        "CFBundleName": "Rent Right",
         "NSPhotoLibraryUsageDescription": "Rent Right attaches photos you choose to a condition report or a message.",
         "ITSAppUsesNonExemptEncryption": false
       },

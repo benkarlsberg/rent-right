@@ -20,7 +20,7 @@ Follow [docs/apple-sign-in.md](../apple-sign-in.md). In the Apple Developer port
 2. Identifiers → Services ID `com.rentrightportal.app.signin`, Sign in with Apple enabled, domain `ijpkxcsnkqgmxkvykzrs.supabase.co`, return URL `https://ijpkxcsnkqgmxkvykzrs.supabase.co/auth/v1/callback`.
 3. Keys → a Sign in with Apple key. Download the `.p8` once and keep the Key ID.
 
-Then in Supabase → Authentication → Providers → Apple, enter Team ID `B5RNR69S8U`, that Key ID, Client IDs `com.rentrightportal.app.signin,com.rentrightportal.app` (Services ID first), and the secret generated from the `.p8`. Set the GitHub variable or secret `EXPO_PUBLIC_APPLE_AUTH` to `1` and let Deploy run so the website shows the button.
+Then in Supabase → Authentication → Providers → Apple, enter Team ID `B5RNR69S8U`, that Key ID, Client IDs `com.rentrightportal.app.signin,com.rentrightportal.app` (Services ID first), and the secret generated from the `.p8`. Preview and production builds, and the website deploy, read `EXPO_PUBLIC_APPLE_AUTH` from `mobile/eas.json`.
 
 ## 3. Reviewer login
 

@@ -262,6 +262,11 @@ jobs:
           EXPO_PUBLIC_APPLE_AUTH: ${{ vars.EXPO_PUBLIC_APPLE_AUTH || secrets.EXPO_PUBLIC_APPLE_AUTH }}
         run: |
           npm ci
+          if [ -z "${EXPO_PUBLIC_APPLE_AUTH}" ]; then
+            EXPO_PUBLIC_APPLE_AUTH="$(node -p "require('./eas.json').build.production.env.EXPO_PUBLIC_APPLE_AUTH || ''")"
+          fi
+          export EXPO_PUBLIC_APPLE_AUTH
+          echo "Apple sign-in on the website: $([ -n "$EXPO_PUBLIC_APPLE_AUTH" ] && echo yes || echo no)"
           npx tsx ../scripts/write-legal-pages.ts
           npx expo export --platform web
           npx tsx ../scripts/write-legal-pages.ts --inject

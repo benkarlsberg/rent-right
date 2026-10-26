@@ -3,9 +3,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { DISCLAIMER_EN } from "@/lib/disclaimer";
-import { deleteAccountDocument, HOME_DESCRIPTION, homeIntro, iconLinks, injectHomeHtml, privacyDocument, termsDocument } from "@/lib/legal-html";
+import { deleteAccountDocument, HOME_DESCRIPTION, homeIntro, iconLinks, injectHomeHtml, privacyDocument, supportDocument, termsDocument } from "@/lib/legal-html";
 import { SHARE_DESCRIPTION, SHARE_IMAGE, SHARE_IMAGE_ALT, SHARE_TITLE, SHARE_URL, shareMeta } from "@/lib/share-meta";
 import { GET as deleteAccount } from "@/app/delete-account/route";
+import { GET as support } from "@/app/support/route";
 import { GET as privacy } from "@/app/privacy/route";
 import { GET as terms } from "@/app/terms/route";
 
@@ -71,6 +72,15 @@ describe("public legal pages", () => {
     expect(deleteAccountDocument).toContain(DISCLAIMER_EN);
     expect(deleteAccountDocument).toContain("Ajustes");
     expect(privacyDocument).toContain('href="/delete-account"');
+    expect(supportDocument).toContain("benelliot16@gmail.com");
+    expect(supportDocument).toContain("https://app.rentrightportal.com/privacy");
+    expect(supportDocument).toContain('href="/terms"');
+    expect(supportDocument).toContain("<h1>Support</h1>");
+    expect(homeIntro).toContain('href="/support"');
+    const supportBody = await (await support()).text();
+    expect(supportBody).toContain("<h1>Support</h1>");
+    expect(supportBody).toContain("benelliot16@gmail.com");
+    expect(supportBody).not.toContain("id=\"root\"");
     const deleteBody = await (await deleteAccount()).text();
     expect(deleteBody).toContain("<h1>Delete your account</h1>");
     expect(deleteBody).not.toContain("id=\"root\"");

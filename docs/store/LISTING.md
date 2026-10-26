@@ -11,7 +11,7 @@ Copy these answers into App Store Connect and Google Play Console. The support c
 | Category | Productivity |
 | Secondary category, if asked | Lifestyle |
 | Price | Free |
-| Support URL | https://app.rentrightportal.com/privacy |
+| Support URL | https://app.rentrightportal.com/support |
 | Privacy URL | https://app.rentrightportal.com/privacy |
 | Account deletion URL | https://app.rentrightportal.com/delete-account |
 | Marketing URL | https://app.rentrightportal.com |

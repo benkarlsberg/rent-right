@@ -2,7 +2,7 @@
 
 The app shows **Continue with Apple** only when the build flag `EXPO_PUBLIC_APPLE_AUTH` is `1`. On iPhone it uses the system Apple button and `expo-apple-authentication`. The identity token is sent to `POST /api/v1/auth/apple`, and the API exchanges it with Supabase `signInWithIdToken`. On the web, the button opens `/auth/apple`, which starts Supabase’s Apple OAuth redirect and returns to `/auth/verify`.
 
-Leave the flag unset until the Apple Developer and Supabase steps below are done. Then set `EXPO_PUBLIC_APPLE_AUTH` to `1` as a GitHub Actions variable or secret of that name and run Deploy.
+The preview and production profiles in `mobile/eas.json` set `EXPO_PUBLIC_APPLE_AUTH` to `1`. Deploy reads that file when no GitHub variable is set.
 
 The bundle id in `mobile/app.json` is `com.rentrightportal.app`. The Apple Developer account is approved. Team ID: `B5RNR69S8U`. That id is set as `appleTeamId` on `submit.production.ios` in `mobile/eas.json`, and as `ios.appleTeamId` in `mobile/app.json` so EAS Build uses the same team.
 
@@ -51,6 +51,6 @@ Also confirm these existing Worker secrets are still set. The native exchange us
 
 ## After it works
 
-Set `EXPO_PUBLIC_APPLE_AUTH` to `1` and deploy. The iPhone build also needs the App ID capability, which `usesAppleSignIn` already requests in `mobile/app.json`. EAS Build signs that entitlement with your Apple team.
+`EXPO_PUBLIC_APPLE_AUTH` is `1` on the preview and production profiles in `mobile/eas.json`. The deploy workflow reads that value when the GitHub variable is empty, then exports the website. The iPhone build also needs the App ID capability, which `usesAppleSignIn` already requests in `mobile/app.json`. EAS Build signs that entitlement with your Apple team. The on-device name is `Rent Right` (`CFBundleDisplayName`). App Store Connect can keep the record name Rent Right Portal.
 
 Official references: [Supabase Apple](https://supabase.com/docs/guides/auth/social-login/auth-apple) and [Expo Apple Authentication](https://docs.expo.dev/versions/v57.0.0/sdk/apple-authentication/).

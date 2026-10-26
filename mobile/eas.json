@@ -15,14 +15,16 @@
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.rentrightportal.com"
+        "EXPO_PUBLIC_API_URL": "https://api.rentrightportal.com",
+        "EXPO_PUBLIC_APPLE_AUTH": "1"
       }
     },
     "production": {
       "autoIncrement": true,
       "channel": "production",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.rentrightportal.com"
+        "EXPO_PUBLIC_API_URL": "https://api.rentrightportal.com",
+        "EXPO_PUBLIC_APPLE_AUTH": "1"
       }
     }
   },

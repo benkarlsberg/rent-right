@@ -28,7 +28,7 @@ ${iconLinks}
 <h1>${title}</h1>
 ${body}
 <nav>
-<p><a href="/">Rent Right</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/delete-account">Delete account</a></p>
+<p><a href="/">Rent Right</a> · <a href="/support">Support</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/delete-account">Delete account</a></p>
 <p>Contact <a href="mailto:${CONTACT}">${CONTACT}</a></p>
 </nav>
 </main>
@@ -62,6 +62,16 @@ export const termsDocument = document(
 `,
 );
 
+export const supportDocument = document(
+  "Support",
+  "How to get help with Rent Right.",
+  `
+<p>For help with the app, email <a href="mailto:${CONTACT}">${CONTACT}</a>. Include the email address you use to sign in.</p>
+<p>The privacy policy is at <a href="/privacy">https://app.rentrightportal.com/privacy</a>. The terms of use are at <a href="/terms">https://app.rentrightportal.com/terms</a>. To remove an account, use the <a href="/delete-account">delete account</a> page.</p>
+<p>Para ayuda con la aplicación, escriba a <a href="mailto:${CONTACT}">${CONTACT}</a>.</p>
+`,
+);
+
 export const deleteAccountDocument = document(
   "Delete your account",
   "How to delete a Rent Right account from the app or the website.",
@@ -86,6 +96,7 @@ export const homeIntro = `<main id="rr-home" style="box-sizing:border-box;max-wi
 <p style="margin:0 0 16px">${HOME_DESCRIPTION}</p>
 <p style="margin:0 0 16px"><a href="/" style="color:#0B5C6E;font-weight:700">Sign in</a></p>
 <nav>
+<a href="/support" style="color:#0B5C6E;font-weight:700;margin-right:16px">Support</a>
 <a href="/privacy" style="color:#0B5C6E;font-weight:700;margin-right:16px">Privacy</a>
 <a href="/terms" style="color:#0B5C6E;font-weight:700">Terms</a>
 </nav>
