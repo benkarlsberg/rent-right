@@ -258,6 +258,19 @@ function unitLocal(unit: Unit, locale: Locale) {
   return localProtectionNote(place.localOrdinance, locale);
 }
 
+function publicFailure(error: unknown): { message: string; status: number } {
+  const raw = error instanceof Error ? error.message : "";
+  if (raw === "Sign in required.") return { message: raw, status: 401 };
+  if (/generativelanguage\.googleapis|api\.openai\.com|GEMINI_API|OPENAI_API/i.test(raw)) {
+    return { message: "The answer service is temporarily unavailable. Try again in a moment.", status: 503 };
+  }
+  if (raw && !/violates foreign key|violates check|syntax error at|ECONNREFUSED|password authentication failed|relation "|column "|duplicate key value|null value in column/i.test(raw)) {
+    return { message: raw, status: 400 };
+  }
+  console.error("phone api failed");
+  return { message: "Rent Right could not finish that just now. Wait a moment and try again.", status: 500 };
+}
+
 function stamp(response: Response, started: number): Response {
   const headers = new Headers(response.headers);
   const trips = drainRoundTrips();
@@ -274,9 +287,8 @@ export async function handlePhone(request: Request, path: string[]): Promise<Res
     const response = await withActor(id, () => route(request, path));
     return stamp(response, started);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Something went wrong.";
-    const status = message === "Sign in required." ? 401 : 400;
-    return stamp(json({ error: message }, status), started);
+    const failure = publicFailure(error);
+    return stamp(json({ error: failure.message }, failure.status), started);
   }
 }
 
@@ -729,7 +741,7 @@ async function chatPayload() {
 async function sendChat(input: Record<string, unknown>) {
   const user = await actor();
   const unit = await primaryUnit(user.id);
-  if (!unit) throw new Error("Add your place before sending a message.");
+  if (!unit) throw new Error("Add your place before writing to your landlord.");
   if (!landlordReady(unit)) return presentChat(user, unit, await visibleMessages(user, unit));
   const message = text(input.text);
   if (message.length < 2) throw new Error("Write a message.");
@@ -966,24 +978,8 @@ function chips(locale: Locale) {
       ];
 }
 
-function emptyThread(user: User) {
-  const locale = user.locale;
-  return {
-    landlord: "",
-    needsUnit: true,
-    needsLandlord: false,
-    prompt: "",
-    items: [] as { role: "user" | "card" }[],
-    chips: chips(locale),
-    notice: notice(locale),
-    steps: { title: tx(locale, "Your next steps", "Sus próximos pasos"), held: tx(locale, "Nothing was sent.", "No se envió nada."), items: [] },
-    packetFile: evidenceFilename(todayISO()),
-  };
-}
-
-function presentThread(user: User, unit: Unit, rows: ListedAssistant[], steps: { title: string; held: string; items: unknown[] }) {
-  const locale = user.locale;
-  const items = rows.map((row) => {
+function threadItems(locale: Locale, rows: ListedAssistant[]) {
+  return rows.map((row) => {
     if (row.role === "user") return { role: "user" as const, text: row.content };
     const card = parseCard(row.content);
     if (!card) {
@@ -999,6 +995,28 @@ function presentThread(user: User, unit: Unit, rows: ListedAssistant[], steps: {
     }
     return { role: "card" as const, ...card, notice: notice(locale) };
   });
+}
+
+function emptyThread(user: User, rows: ListedAssistant[] = []) {
+  const locale = user.locale;
+  return {
+    landlord: "",
+    needsUnit: true,
+    needsLandlord: false,
+    prompt: "",
+    items: threadItems(locale, rows),
+    chips: rows.some((row) => row.role === "user") ? [] : chips(locale),
+    notice: notice(locale),
+    steps: { title: tx(locale, "Your next steps", "Sus próximos pasos"), held: tx(locale, "Nothing was sent.", "No se envió nada."), items: [] },
+    packetFile: evidenceFilename(todayISO()),
+    archived: false,
+    archivedNote: null as string | null,
+  };
+}
+
+function presentThread(user: User, unit: Unit, rows: ListedAssistant[], steps: { title: string; held: string; items: unknown[] }) {
+  const locale = user.locale;
+  const items = threadItems(locale, rows);
   return {
     landlord: landlordReady(unit) ? unit.landlordName : "",
     needsUnit: false,
@@ -1017,7 +1035,7 @@ function presentThread(user: User, unit: Unit, rows: ListedAssistant[], steps: {
 async function threadPayload() {
   const user = await actor();
   const unit = await primaryUnit(user.id);
-  if (!unit) return emptyThread(user);
+  if (!unit) return emptyThread(user, await listAssistant(user.id, "visible"));
   const [rows, bundle] = await Promise.all([
     listAssistant(user.id, "visible"),
     recordsBundle(user, unit, { reviews: false }),
@@ -1028,12 +1046,9 @@ async function threadPayload() {
 async function postThread(input: Record<string, unknown>) {
   const user = await actor();
   const unit = await primaryUnit(user.id);
-  if (!unit) {
-    if (text(input.action) === "clear") {
-      await archiveChat(user.id);
-      return emptyThread(user);
-    }
-    throw new Error("Add your place before sending a message.");
+  if (!unit && text(input.action) === "clear") {
+    await archiveChat(user.id);
+    return emptyThread(user);
   }
   const file = input.attachment;
   const attachment = file && typeof file === "object" && !Array.isArray(file)

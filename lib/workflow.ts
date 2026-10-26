@@ -40,7 +40,7 @@ import {
   type RepairSeverity,
 } from "@/lib/rules/engine";
 import { isSampleAccount } from "@/lib/sample";
-import { appUrl, relayAddress } from "@/lib/text";
+import { appUrl, relayAddress, tx } from "@/lib/text";
 import { randomToken } from "@/lib/crypto";
 import { daysBetween, todayISO } from "@/lib/rules/dates";
 
@@ -372,7 +372,11 @@ export async function askAssistant(user: User, unit: Unit | null, question: stri
   const trimmed = question.trim();
   if (trimmed.length < 8) throw new Error("Ask a full question.");
   if (await countAssistantThisMonth(user.id, monthPrefix()) >= CHAT_MONTHLY_CAP) {
-    throw new Error("This free account reached 40 questions this month.");
+    throw new Error(tx(
+      locale,
+      `This free account has used its ${CHAT_MONTHLY_CAP} questions for this month. Try again next month.`,
+      `Esta cuenta gratuita usó sus ${CHAT_MONTHLY_CAP} preguntas de este mes. Intente de nuevo el próximo mes.`,
+    ));
   }
   await addAssistantMessage(user.id, unit?.id || null, "user", { locale, content: trimmed, ruleIds: [], unsure: false });
   const context = aiConfigured() ? chatContext(await recentConversationTurns(user.id)) : { history: "", retrieval: "" };

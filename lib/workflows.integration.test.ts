@@ -1,4 +1,7 @@
+import { randomUUID } from "crypto";
 import { describe, expect, it, vi } from "vitest";
+import { signSession } from "@/lib/crypto";
+import { profileForAuthUser } from "@/lib/db";
 import { handlePhone } from "@/lib/phone-api";
 import { sampleLeaseText } from "@/lib/workflow";
 import { dispatchReminders } from "@/lib/workflow";
@@ -199,9 +202,12 @@ describe("renter workflows", () => {
     expect(thread.json?.needsUnit).toBe(true);
     expect(thread.json?.items).toEqual([]);
     expect((thread.json?.chips as unknown[]).length).toBeGreaterThan(0);
-    const blocked = await api("POST", "thread", { text: "The sink is leaking" }, token);
-    expect(blocked.status).toBe(400);
-    expect(blocked.json?.error).toBe("Add your place before sending a message.");
+    const asked = await api("POST", "thread", { text: "The sink is leaking" }, token);
+    expect(asked.status).toBe(200);
+    expect(asked.json?.needsUnit).toBe(true);
+    const askedItems = asked.json?.items as { role: string; text?: string; action?: { id: string; label: string } | null }[];
+    expect(askedItems[0]).toMatchObject({ role: "user", text: "The sink is leaking" });
+    expect(askedItems.at(-1)?.action).toEqual({ id: "add-unit", label: "Add your place" });
     const place = await api("POST", "place", {
       street: "1842 N Echo Park Ave",
       city: "Los Angeles",
@@ -232,6 +238,42 @@ describe("renter workflows", () => {
     expect(address).toContain("1604 Dover Ave");
     expect(address.toLowerCase()).toContain("apt 4");
     expect(address).not.toContain("1600");
+  });
+
+  it("answers statewide questions for an Apple-shaped account with no place or landlord", async () => {
+    const email = `apple-${Date.now()}@privaterelay.appleid.com`;
+    const user = await profileForAuthUser(randomUUID(), email);
+    expect(user.name).toBe("");
+    expect(user.email).toBe(email);
+    const token = signSession(user.id);
+
+    const rights = await api("POST", "thread", { text: "Can my landlord enter without 24 hours notice?" }, token);
+    expect(rights.status).toBe(200);
+    const rightsItems = rights.json?.items as { role: string; ruleId?: string | null; headline?: string; action?: { id: string } | null }[];
+    expect(rightsItems.some((item) => item.role === "user")).toBe(true);
+    expect(rightsItems.some((item) => item.ruleId === "CA-CC-1954")).toBe(true);
+    expect(rightsItems.some((item) => item.action?.id === "add-unit")).toBe(false);
+
+    const deposit = await api("POST", "thread", { text: "How long does my landlord have to return my security deposit?" }, token);
+    expect(deposit.status).toBe(200);
+    const depositItems = deposit.json?.items as { ruleId?: string | null }[];
+    expect(depositItems.some((item) => item.ruleId === "CA-CC-1950.5")).toBe(true);
+
+    const local = await api("POST", "thread", { text: "What is the Los Angeles rent control cap?" }, token);
+    expect(local.status).toBe(200);
+    const localCard = (local.json?.items as { headline?: string; action?: { id: string; label: string } | null; actions?: unknown[] }[]).at(-1);
+    expect(localCard?.headline).toBe("Add your place");
+    expect(localCard?.action).toEqual({ id: "add-unit", label: "Add your place" });
+    expect(localCard?.actions ?? []).toEqual([]);
+
+    const increase = await api("POST", "thread", { text: "My landlord raised rent to $2,100" }, token);
+    expect(increase.status).toBe(200);
+    expect((increase.json?.items as { action?: { id: string } | null }[]).at(-1)?.action?.id).toBe("add-unit");
+
+    const reloaded = await api("GET", "thread", undefined, token);
+    expect(reloaded.status).toBe(200);
+    expect(reloaded.json?.needsUnit).toBe(true);
+    expect((reloaded.json?.items as unknown[]).length).toBeGreaterThan(2);
   });
 
   it("saves a tenant reminder without changing the computed date", async () => {

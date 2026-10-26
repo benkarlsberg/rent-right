@@ -2,7 +2,7 @@ import { formatAddressPlain, type AddressParts } from "@/lib/address-format";
 import { cardAfterSend, serializeCard, type ChatCard } from "@/lib/chat-card";
 import { aiConfigured } from "@/lib/ai";
 import { answerFromConversation } from "@/lib/chat-answer";
-import { planFromIntent, planTurn, repairFacts, resolveIntent, type TurnPlan } from "@/lib/chat-intent";
+import { fold, planFromIntent, planTurn, repairFacts, resolveIntent, type TurnPlan } from "@/lib/chat-intent";
 import { chatContext } from "@/lib/chat-text";
 import {
   addAssistantMessage,
@@ -28,9 +28,11 @@ import {
 } from "@/lib/db";
 import { demandLetter } from "@/lib/letters";
 import { deliveryLabel, dueLine, findingStatus, rentHeadline } from "@/lib/phone";
+import { ORDINANCES } from "@/lib/rules/cities/catalog";
 import { detectPlace } from "@/lib/rules/detect";
 import { todayISO } from "@/lib/rules/dates";
 import { checkRentIncrease, depositReturnDeadline, repairReminder, type AreaKey, type RepairSeverity } from "@/lib/rules/engine";
+import { renderAnswer, selectRules } from "@/lib/rules/assistant";
 import { getRule } from "@/lib/rules/library";
 import { formatMoney, percentLabel } from "@/lib/format";
 import { tx } from "@/lib/text";
@@ -47,8 +49,8 @@ function monthPrefix(now = new Date()): string {
   return `${parts}-01`;
 }
 
-async function remember(user: User, unit: Unit, role: "user" | "assistant", content: string, ruleId: string | null, unsure: boolean): Promise<string> {
-  return await addAssistantMessage(user.id, unit.id, role, { locale: user.locale, content, ruleIds: ruleId ? [ruleId] : [], unsure });
+async function remember(user: User, unitId: string | null, role: "user" | "assistant", content: string, ruleId: string | null, unsure: boolean): Promise<string> {
+  return await addAssistantMessage(user.id, unitId, role, { locale: user.locale, content, ruleIds: ruleId ? [ruleId] : [], unsure });
 }
 
 function cardAddress(unit: Unit): AddressParts {
@@ -62,17 +64,151 @@ function cardAddress(unit: Unit): AddressParts {
 }
 
 async function say(user: User, unit: Unit, card: ChatCard): Promise<string> {
-  return await remember(user, unit, "assistant", serializeCard(card), card.ruleId, card.status.toLowerCase().includes("unsure") || card.headline.toLowerCase().includes("not sure"));
+  return await sayTo(user, unit.id, card);
 }
 
-async function asked(user: User, unit: Unit, text: string) {
+async function sayTo(user: User, unitId: string | null, card: ChatCard): Promise<string> {
+  return await remember(user, unitId, "assistant", serializeCard(card), card.ruleId, card.status.toLowerCase().includes("unsure") || card.headline.toLowerCase().includes("not sure"));
+}
+
+async function asked(user: User, unit: Unit | null, text: string) {
   if (await countAssistantThisMonth(user.id, monthPrefix()) >= CHAT_MONTHLY_CAP) {
-    throw new Error("This free account reached 40 questions this month.");
+    throw new Error(tx(
+      user.locale,
+      `This free account has used its ${CHAT_MONTHLY_CAP} questions for this month. Try again next month.`,
+      `Esta cuenta gratuita usó sus ${CHAT_MONTHLY_CAP} preguntas de este mes. Intente de nuevo el próximo mes.`,
+    ));
   }
-  await addAssistantMessage(user.id, unit.id, "user", { locale: user.locale, content: text, ruleIds: [], unsure: false });
+  await addAssistantMessage(user.id, unit?.id ?? null, "user", { locale: user.locale, content: text, ruleIds: [], unsure: false });
 }
 
-export async function runChatTurn(user: User, unit: Unit, input: {
+const PLACE_NAMES = placeNames();
+
+function placeNames(): string[] {
+  const names = new Set<string>(["los angeles", "san diego", "unincorporated los angeles county"]);
+  for (const record of ORDINANCES) {
+    names.add(fold(record.name));
+    for (const place of record.places) names.add(fold(place));
+  }
+  return [...names].filter((name) => name.length >= 4);
+}
+
+function mentionsPlace(text: string): boolean {
+  const padded = ` ${fold(text)} `;
+  return PLACE_NAMES.some((name) => padded.includes(` ${name} `));
+}
+
+/** A local cap or a named city needs the address. A statewide California question does not. */
+function asksForLocalRule(text: string): boolean {
+  const value = fold(text);
+  if (mentionsPlace(value)) return true;
+  if (/\b(rso|rstpo|rent stabilization)\b/.test(value)) return true;
+  if (/\brent control\b/.test(value) && !/\b(statewide|ab 1482|california)\b/.test(value)) return true;
+  return false;
+}
+
+function isQuestion(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.endsWith("?")) return true;
+  return /^(how|what|when|why|who|can|does|do|is|are|am|cuanto|cuando|como|que|puede|pueden|debe|deben)\b/.test(fold(trimmed));
+}
+
+function placeCard(user: User, kind: "place" | "local" | "send"): ChatCard {
+  const locale = user.locale;
+  if (kind === "local") {
+    return {
+      headline: tx(locale, "Add your place", "Agregue su vivienda"),
+      status: tx(locale, "Local rules need the address", "Las reglas locales necesitan la dirección"),
+      action: { id: "add-unit", label: tx(locale, "Add your place", "Agregue su vivienda") },
+      detail: tx(
+        locale,
+        "Local rent rules depend on the address. Add your place and Rent Right can use the city ordinance. Nothing was checked.",
+        "Las reglas locales de renta dependen de la dirección. Agregue su vivienda y Rent Right puede usar la ordenanza de la ciudad. No se revisó nada.",
+      ),
+      ruleId: null,
+    };
+  }
+  if (kind === "send") {
+    return {
+      headline: tx(locale, "Add your place", "Agregue su vivienda"),
+      status: tx(locale, "A landlord email needs an address", "Un correo al propietario necesita una dirección"),
+      action: { id: "add-unit", label: tx(locale, "Add your place", "Agregue su vivienda") },
+      detail: tx(
+        locale,
+        "Writing to a landlord needs the address and the landlord's name and email. Add your place first. Nothing was sent.",
+        "Escribirle al propietario necesita la dirección y el nombre y correo del propietario. Agregue su vivienda primero. No se envió nada.",
+      ),
+      ruleId: null,
+    };
+  }
+  return {
+    headline: tx(locale, "Add your place", "Agregue su vivienda"),
+    status: tx(locale, "Saving this needs the address", "Guardar esto necesita la dirección"),
+    action: { id: "add-unit", label: tx(locale, "Add your place", "Agregue su vivienda") },
+    detail: tx(
+      locale,
+      "Saving a repair, a lease, or a letter needs the address. Add your place first. Nothing was saved or sent.",
+      "Guardar una reparación, un contrato o una carta necesita la dirección. Agregue su vivienda primero. No se guardó ni se envió nada.",
+    ),
+    ruleId: null,
+  };
+}
+
+function canAnswerWithoutPlace(plan: TurnPlan, text: string): boolean {
+  if (asksForLocalRule(text)) return false;
+  if (plan.type === "rights" || plan.type === "unclear") return true;
+  return (plan.type === "deposit" || plan.type === "rent") && isQuestion(text);
+}
+
+async function answerStatewide(user: User, question: string) {
+  const selected = selectRules(question);
+  const rules = selected.rules.filter((item) => item.jurisdiction === "CA");
+  if (rules.length === 0) {
+    await sayTo(user, null, selected.rules.length > 0 ? placeCard(user, "local") : suggestionCard(user));
+    return;
+  }
+  const answer = renderAnswer(question, user.locale, rules, selected.handoff);
+  const rule = answer.ruleIds[0] ? getRule(answer.ruleIds[0]) : undefined;
+  const headline = answer.handoff
+    ? tx(user.locale, "Contact legal aid", "Contacte asistencia legal")
+    : user.locale === "es" ? rule!.titleEs : rule!.titleEn;
+  await sayTo(user, null, {
+    headline,
+    status: answer.ruleIds[0] || tx(user.locale, "Unsure", "No se puede precisar"),
+    action: null,
+    detail: answer.text,
+    ruleId: answer.ruleIds[0] || null,
+  });
+}
+
+async function runWithoutPlace(user: User, text: string, action: string, attachment: { name: string; mime: string; base64: string } | null) {
+  const sending = action === "send" || action === "letter" || action.startsWith("resolve:");
+  if (!text && !attachment && !sending) throw new Error(tx(user.locale, "Say what you need.", "Diga qué necesita."));
+  const label = text || attachment?.name || (
+    action === "letter"
+      ? tx(user.locale, "Draft a letter", "Redactar una carta")
+      : action === "send"
+        ? tx(user.locale, "Send to landlord", "Enviar al propietario")
+        : tx(user.locale, "Attachment", "Archivo")
+  );
+  await asked(user, null, label);
+  if (sending) {
+    await sayTo(user, null, placeCard(user, "send"));
+    return;
+  }
+  if (attachment || asksForLocalRule(text)) {
+    await sayTo(user, null, placeCard(user, asksForLocalRule(text) ? "local" : "place"));
+    return;
+  }
+  const plan = planTurn(text, null);
+  if (canAnswerWithoutPlace(plan, text)) {
+    await answerStatewide(user, text);
+    return;
+  }
+  await sayTo(user, null, placeCard(user, plan.type === "rent" ? "local" : "place"));
+}
+
+export async function runChatTurn(user: User, unit: Unit | null, input: {
   text?: string;
   action?: string;
   draftId?: string;
@@ -84,8 +220,12 @@ export async function runChatTurn(user: User, unit: Unit, input: {
     await archiveChat(user.id);
     return;
   }
-  assertWritable(unit, user.locale);
   if (action.startsWith("prompt:")) text = action.slice("prompt:".length).trim();
+  if (!unit) {
+    await runWithoutPlace(user, text, action, input.attachment || null);
+    return;
+  }
+  assertWritable(unit, user.locale);
   if (action === "send") {
     await confirmSend(user, unit, input.draftId || "");
     return;

@@ -32,6 +32,12 @@ type Thread = {
 };
 type Attachment = { name: string; mime: string; base64: string };
 
+function offlineReply(error: unknown): boolean {
+  if (!(error instanceof Error)) return true;
+  if (error.name === "AbortError" || error.name === "TimeoutError") return true;
+  return /could not reach rent right|failed to fetch|network request failed|load failed|network error|timeout|timed out|the operation was aborted/i.test(error.message);
+}
+
 export default function AssistantChat() {
   const { data, error, loading, reload, setError, token } = useLoad<Thread>("thread");
   const { me, signOut } = useSession();
@@ -73,10 +79,15 @@ export default function AssistantChat() {
       setFile(null);
       setMenu(false);
       setPending(null);
-    } catch {
+    } catch (err) {
       setPending(null);
-      setRetryNote(retryCopy);
-      setError(retryCopy);
+      if (offlineReply(err)) {
+        setRetryNote(retryCopy);
+        setError("");
+      } else {
+        setRetryNote("");
+        setError(err instanceof Error && err.message ? err.message : retryCopy);
+      }
     } finally {
       lock.current = false;
       setBusy(false);
@@ -114,6 +125,10 @@ export default function AssistantChat() {
   }
 
   async function onAction(action: Action) {
+    if (action.id === "add-unit") {
+      router.push("/setup");
+      return;
+    }
     if (action.id === "open-landlord" || action.id === "add-landlord") {
       router.push("/landlord");
       return;
