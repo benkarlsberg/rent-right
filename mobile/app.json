@@ -82,6 +82,13 @@
           "microphonePermission": false
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "c5fc1877-2f83-482a-a8cf-146506723a60"
+      }
+    },
+    "owner": "bkarlsberg-team"
   }
 }
