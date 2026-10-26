@@ -49,7 +49,11 @@ jobs:
       - run: npm ci
       - name: Install Cloudflare deploy tools
         run: |
-          npm install --no-save @opennextjs/cloudflare wrangler
+          for attempt in 1 2 3; do
+            npm install --no-save @opennextjs/cloudflare wrangler && break
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            sleep $((attempt * 15))
+          done
           npx tsx scripts/patch-opennext-externals.ts
       - name: Resolve the database URL
         env:
