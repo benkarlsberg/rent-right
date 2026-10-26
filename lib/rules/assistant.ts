@@ -46,6 +46,8 @@ function score(rule: Rule, queryTokens: string[], raw: string): number {
   if (/\b(deposit|deposito|depósito)\b/i.test(raw) && rule.topic === "deposit") total += 3;
   if (/\b21\b/.test(raw) && rule.id === "CA-CC-1950.5") total += 2;
   if (/1482|rent cap|tope/.test(lower) && rule.id === "CA-CC-1947.12") total += 3;
+  if (/\b(notice|aviso)\b/.test(lower) && /\b(rent increase|aumento de renta)\b/.test(lower) && rule.id === "CA-CC-827") total += 6;
+  if (rule.id === "CA-GUIDE-ORDINARY-RENT" && !/\b(clause|lease|monthly)\b/.test(lower)) total -= 8;
   if (/just cause|causa justa/.test(lower) && rule.topic === "just-cause") total += 2;
   return total;
 }

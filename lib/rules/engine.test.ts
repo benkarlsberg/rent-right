@@ -360,6 +360,15 @@ describe("lease review grounding", () => {
 });
 
 describe("rights assistant", () => {
+  it("answers how much notice a California rent increase needs", () => {
+    const selected = selectRules("how much notice for a rent increase in California?");
+    expect(selected.rules[0]?.id).toBe("CA-CC-827");
+    const answer = answerQuestion("how much notice for a rent increase in California?", "en");
+    expect(answer.ruleIds[0]).toBe("CA-CC-827");
+    expect(answer.text).toContain("90 days");
+    expect(answer.ruleIds).not.toContain("CA-GUIDE-ORDINARY-RENT");
+  });
+
   it("answers a deposit question from the library", () => {
     const answer = answerQuestion("How long does my landlord have to return my security deposit?", "en");
     expect(answer.unsure).toBe(false);
