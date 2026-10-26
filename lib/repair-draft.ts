@@ -44,7 +44,9 @@ export function repairDraftLetter(input: {
   const body = tx(
     locale,
     [
-      `${name} is writing about a repair at ${input.address}.`,
+      `${name} is writing about a repair.`,
+      "",
+      input.address.trim(),
       "",
       `Issue: ${issue}`,
       `Date: ${date}`,
@@ -57,7 +59,9 @@ export function repairDraftLetter(input: {
       `Rule ${reminder.ruleId}`,
     ].join("\n"),
     [
-      `${name} escribe sobre una reparación en ${input.address}.`,
+      `${name} escribe sobre una reparación.`,
+      "",
+      input.address.trim(),
       "",
       `Problema: ${issue}`,
       `Fecha: ${date}`,

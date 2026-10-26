@@ -23,27 +23,35 @@ export async function renderPdf(title: string, blocks: string[]): Promise<Uint8A
   const drawParagraph = (text: string, size: number, isBold: boolean) => {
     const face = isBold ? bold : font;
     const max = width - margin * 2;
-    const words = pdfSafe(text).split(/\s+/).filter(Boolean);
-    let line = "";
-    const flush = (value: string) => {
-      if (y < margin + 20) newPage();
-      page.drawText(value, { x: margin, y, size, font: face, color: rgb(0.11, 0.14, 0.18) });
-      y -= size + 4;
+    const chunks = pdfSafe(text).split("\n");
+    const drawWords = (value: string) => {
+      const words = value.split(/\s+/).filter(Boolean);
+      if (words.length === 0) {
+        y -= 8;
+        return;
+      }
+      let line = "";
+      const flush = (drawn: string) => {
+        if (y < margin + 20) newPage();
+        page.drawText(drawn, { x: margin, y, size, font: face, color: rgb(0.11, 0.14, 0.18) });
+        y -= size + 4;
+      };
+      for (const word of words) {
+        const next = line ? `${line} ${word}` : word;
+        if (face.widthOfTextAtSize(next, size) > max && line) {
+          flush(line);
+          line = word;
+        } else {
+          line = next;
+        }
+      }
+      if (line) flush(line);
     };
-    if (words.length === 0) {
+    if (chunks.every((chunk) => !chunk.trim())) {
       y -= 8;
       return;
     }
-    for (const word of words) {
-      const next = line ? `${line} ${word}` : word;
-      if (face.widthOfTextAtSize(next, size) > max && line) {
-        flush(line);
-        line = word;
-      } else {
-        line = next;
-      }
-    }
-    if (line) flush(line);
+    for (const chunk of chunks) drawWords(chunk);
   };
 
   drawParagraph(title, 16, true);

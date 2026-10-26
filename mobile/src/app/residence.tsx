@@ -2,6 +2,7 @@ import { Stack, router } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { api } from "@/api";
+import { Address, LabeledAddress } from "@/address";
 import { DateField } from "@/date-field";
 import { saveAuthorizedFile } from "@/files";
 import type { Me } from "@/session";
@@ -69,19 +70,10 @@ type Home = {
 };
 type Residence = {
   home: Home | null;
-  homes: { id: string; address: string; archived: boolean; selected: boolean; status: string }[];
+  homes: { id: string; address: string; street: string; unitNumber: string; city: string; region: string; postalCode: string; archived: boolean; selected: boolean; status: string }[];
   labels: Labels;
   archivedNote: string | null;
 };
-function placeLine(home: Pick<Home, "street" | "unitNumber" | "city" | "postalCode">): string {
-  const raw = home.unitNumber.trim().replace(/\s+/g, " ");
-  let unit = raw;
-  if (raw && !/^(apt|apartment|#)\b/i.test(raw)) {
-    const stripped = raw.replace(/^(unit\s+)+/i, "").trim();
-    unit = stripped ? `Unit ${stripped}` : "";
-  }
-  return [home.street, unit, home.city, "CA", home.postalCode].filter(Boolean).join(", ").replace(", CA,", " CA");
-}
 
 type Preview = {
   inCalifornia: boolean;
@@ -305,7 +297,7 @@ export default function ResidenceScreen() {
           <Text style={styles.section}>{labels.homes}</Text>
           {data.homes.map((item) => (
             <View key={item.id} style={styles.home}>
-              <Text style={styles.homeAddress}>{item.address}</Text>
+              <Address street={item.street} unit={item.unitNumber} city={item.city} region={item.region} postalCode={item.postalCode} style={styles.homeAddress} />
               <Text style={styles.homeStatus}>{item.status}</Text>
               {item.selected ? null : (
                 <Pressable onPress={() => void select(item.id)} accessibilityRole="button" accessibilityLabel={`${labels.show}. ${item.address}`} style={styles.linkHit}>
@@ -334,7 +326,12 @@ export default function ResidenceScreen() {
           <Field label={labels.unit} value={unitNumber} onChange={touchAddress(setUnit)} />
           <Field label={labels.city} value={city} onChange={touchAddress(setCity)} autoComplete="postal-address-locality" textContentType="addressCity" />
           <Field label={labels.zip} value={postalCode} onChange={touchAddress(setPostal)} keyboardType="number-pad" autoComplete="postal-code" textContentType="postalCode" />
-          {offer ? <Text style={styles.checked}>{`${labels.suggestion}: ${offer.label}`}</Text> : null}
+          {offer ? (
+            <View>
+              <LabeledAddress label={labels.checked} street={preview?.kept?.street || street} unit={preview?.kept?.unit || unitNumber} city={preview?.kept?.city || city} region={preview?.kept?.region || home.region} postalCode={preview?.kept?.postalCode || postalCode} />
+              <LabeledAddress label={labels.suggestion} street={offer.street} unit={offer.unit} city={offer.city} region={offer.region} postalCode={offer.postalCode} />
+            </View>
+          ) : null}
           <Field label={labels.landlordName} value={landlordName} onChange={setLandlord} autoComplete="name" textContentType="name" />
           <Field label={labels.landlordEmail} value={landlordEmail} onChange={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" textContentType="emailAddress" />
           <Field label={labels.rent} value={rent} onChange={setRent} keyboardType="decimal-pad" />
@@ -379,7 +376,7 @@ export default function ResidenceScreen() {
       ) : null}
       {home && !home.canEdit ? (
         <Card>
-          <Text style={styles.body}>{placeLine(home)}</Text>
+          <Address street={home.street} unit={home.unitNumber} city={home.city} region={home.region} postalCode={home.postalCode} style={styles.body} />
           <Text style={styles.body}>{home.summary}</Text>
         </Card>
       ) : null}
@@ -395,7 +392,6 @@ const styles = StyleSheet.create({
   linkHit: { minHeight: 44, justifyContent: "center" },
   link: { color: colors.pine, fontSize: 16, fontWeight: "700" },
   relay: { ...wrapText, marginTop: 6, fontSize: 16, lineHeight: 22, color: colors.ink },
-  checked: { ...wrapText, color: colors.ink, fontSize: 15, lineHeight: 21, marginTop: 12 },
   note: { ...wrapText, marginTop: 12, color: colors.pine, fontSize: 16, lineHeight: 22, fontWeight: "700" },
   warn: { ...wrapText, color: colors.warn, fontSize: 17, lineHeight: 24, fontWeight: "700" },
   body: { ...wrapText, color: colors.ink, fontSize: 16, lineHeight: 22, marginTop: 8 },

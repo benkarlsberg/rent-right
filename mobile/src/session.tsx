@@ -13,7 +13,20 @@ export type Me = {
   needsUnit: boolean;
   needsLandlord?: boolean;
   user: { name: string; email: string; locale: "en" | "es"; lowBandwidth: boolean; sample: boolean };
-  unit: { id?: string; address: string; landlordName: string; landlordEmail: string; relay: string; jurisdiction: string; archived?: boolean } | null;
+  unit: {
+    id?: string;
+    address: string;
+    street?: string;
+    unitNumber?: string;
+    city?: string;
+    region?: string;
+    postalCode?: string;
+    landlordName: string;
+    landlordEmail: string;
+    relay: string;
+    jurisdiction: string;
+    archived?: boolean;
+  } | null;
 };
 
 type SessionValue = {

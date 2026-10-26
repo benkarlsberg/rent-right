@@ -294,6 +294,7 @@ describe("evidence packet", () => {
     expect(text).toMatch(/Tenant waives the right to a jury/);
     expect(text).toMatch(/Small claims is a self-help option/);
     expect(text).toContain("https://selfhelp.courts.ca.gov/small-claims");
+    expect(text).toContain("1842 N Echo Park Ave, Unit 3\nLos Angeles, CA 90026");
     expect(text).toContain(DISCLAIMER_EN);
     const pdf = await renderPdf("Factual evidence packet", lines);
     expect(Buffer.from(pdf.subarray(0, 5)).toString("utf8")).toBe("%PDF-");

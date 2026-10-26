@@ -4,6 +4,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "r
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SvgXml } from "react-native-svg";
 import { api } from "@/api";
+import { Address } from "@/address";
 import { DeleteAccount } from "@/delete-account";
 import { saveAuthorizedFile } from "@/files";
 import { LanguageToggle } from "@/language-toggle";
@@ -21,6 +22,11 @@ type Segment = "issues" | "documents" | "evidence";
 export type Records = {
   name: string;
   address: string;
+  street?: string;
+  unitNumber?: string;
+  city?: string;
+  region?: string;
+  postalCode?: string;
   sample: boolean;
   locale: "en" | "es";
   notice: Notice;
@@ -205,13 +211,22 @@ export default function Records() {
   const issues = data?.issues || [];
   const archive = data?.archive || [];
   const notes = data?.notes || [];
+  const place = data?.street
+    ? data
+    : me?.unit?.street
+      ? me.unit
+      : null;
   const address = data?.address || me?.unit?.address || (me?.needsUnit ? (es ? "Agregue su vivienda cuando pueda." : "Add your place when you are ready.") : (es ? "Sus solicitudes, documentos y evidencia." : "Your requests, documents, and evidence."));
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <View style={styles.header}>
         <View style={styles.headerText}>
-          <Text style={styles.address}>{address}</Text>
+          {place ? (
+            <Address street={place.street} unit={place.unitNumber} city={place.city} region={place.region} postalCode={place.postalCode} style={styles.address} />
+          ) : (
+            <Text style={styles.address}>{address}</Text>
+          )}
           {data?.sample ? <Text style={styles.sample}>{es ? "Muestra" : "Sample"}</Text> : null}
           {data?.archivedNote ? <Text style={styles.note}>{data.archivedNote}</Text> : null}
           {me?.needsUnit ? (

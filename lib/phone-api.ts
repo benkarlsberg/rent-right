@@ -173,6 +173,11 @@ function publicUnit(unit: Unit) {
   return {
     id: unit.id,
     address: unitAddress(unit),
+    street: unit.street,
+    unitNumber: unit.unitNumber,
+    city: unit.city,
+    region: unit.region,
+    postalCode: unit.postalCode,
     landlordName: unit.landlordName,
     landlordEmail: unit.landlordEmail,
     relay: relayAddress(unit.relayLocal),
@@ -1183,6 +1188,11 @@ function emptyRecords(user: User) {
   return {
     name: user.name,
     address: "",
+    street: "",
+    unitNumber: "",
+    city: "",
+    region: "",
+    postalCode: "",
     sample: user.email === DEMO_EMAIL,
     locale,
     notice: notice(locale),
@@ -1211,6 +1221,11 @@ function presentRecordsPayload(user: User, unit: Unit, bundle: ReturnType<typeof
   return {
     name: user.name,
     address: unitAddress(unit),
+    street: unit.street,
+    unitNumber: unit.unitNumber,
+    city: unit.city,
+    region: unit.region,
+    postalCode: unit.postalCode,
     sample: user.email === DEMO_EMAIL,
     locale,
     notice: notice(locale),
@@ -1408,6 +1423,11 @@ async function packetPayload() {
       "El PDF lista lo que usted guardó. No dice quién es responsable ni qué presentar.",
     ),
     address: unitAddress(unit),
+    street: unit.street,
+    unitNumber: unit.unitNumber,
+    city: unit.city,
+    region: unit.region,
+    postalCode: unit.postalCode,
     notice: notice(locale),
   };
 }

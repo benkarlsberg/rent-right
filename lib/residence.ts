@@ -238,6 +238,11 @@ export async function residencePayload(user: User) {
     homes: homes.map((item) => ({
       id: item.id,
       address: unitAddress(item),
+      street: item.street,
+      unitNumber: item.unitNumber,
+      city: item.city,
+      region: item.region,
+      postalCode: item.postalCode,
       archived: Boolean(item.archivedAt),
       selected: item.id === selected.id,
       status: item.archivedAt ? labels.archived : labels.active,

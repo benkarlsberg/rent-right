@@ -95,20 +95,24 @@ async function accountCounts(): Promise<{ originals: number; autoAccept: number;
   return { originals, autoAccept, rewrites: 0 };
 }
 
-async function post(token: string, path: string, body: Record<string, unknown>): Promise<{ status: number; json: Record<string, unknown> | null }> {
+async function call(token: string, path: string, body?: Record<string, unknown>): Promise<{ status: number; json: Record<string, unknown> | null }> {
   const response = await fetch(`https://api.rentrightportal.com/api/v1/${path}`, {
-    method: "POST",
+    method: body ? "POST" : "GET",
     headers: {
       authorization: `Bearer ${token}`,
       accept: "application/json",
-      "content-type": "application/json",
       "user-agent": "Mozilla/5.0",
+      ...(body ? { "content-type": "application/json" } : {}),
     },
-    body: JSON.stringify(body),
+    body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(20_000),
   });
   const text = await response.text();
   return { status: response.status, json: text ? JSON.parse(text) as Record<string, unknown> : null };
+}
+
+async function post(token: string, path: string, body: Record<string, unknown>) {
+  return call(token, path, body);
 }
 
 async function main(): Promise<void> {
@@ -156,8 +160,26 @@ async function main(): Promise<void> {
     const unitKept = storedUnit === "Apt 2";
     const offered = Boolean(suggestion?.street);
     const differs = offered && houseNumber(String(suggestion?.street)) !== "1604";
-    console.log(`address_check in_california=true house_number_kept=${houseKept} suggestion_offered=${offered} suggestion_differs=${differs} unit_kept=${unitKept}`);
+    const city = String(kept?.city || "Thousand Oaks");
+    const zip = String(kept?.postalCode || "91360");
+    const expected = `${keptStreet}, Apt 2\n${city}, CA ${zip}`;
+    const shown = String((saved.json?.unit as { address?: string } | undefined)?.address || "");
+    const records = await call(token, "records");
+    const recordsAddress = String(records.json?.address || "");
+    const logged = await post(token, "log", {
+      type: "repair",
+      severity: "leak",
+      description: "The kitchen sink is leaking under the cabinet.",
+      sendEmail: false,
+    });
+    const chat = logged.status === 200 ? await call(token, "chat") : { status: logged.status, json: null };
+    const draft = ((chat.json?.items as { draft?: boolean; text?: string }[] | undefined) || []).find((item) => item.draft);
+    const draftText = draft?.text || "";
+    const displayOk = shown === expected && recordsAddress === expected && !shown.includes("DOVER");
+    const draftOk = draftText.includes(expected) && !draftText.includes("DOVER");
+    console.log(`address_check in_california=true house_number_kept=${houseKept} suggestion_offered=${offered} suggestion_differs=${differs} unit_kept=${unitKept} address_display_ok=${displayOk} address_draft_ok=${draftOk}`);
     if (!houseKept || !unitKept) throw new Error("saved address did not keep the typed street and unit");
+    if (!displayOk || !draftOk) throw new Error("address display is not two lines");
   } finally {
     await deleteUserAccount(id).catch(() => {});
     await closeSql();

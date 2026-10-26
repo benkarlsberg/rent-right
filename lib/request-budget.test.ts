@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { readFileSync } from "fs";
 import { describe, expect, it, vi } from "vitest";
+import { titleCase } from "@/lib/address-format";
 import { signSession } from "@/lib/crypto";
 import { createNamedUser, createUnit, type UnitInput } from "@/lib/db";
 import { handlePhone } from "@/lib/phone-api";
@@ -80,13 +81,14 @@ describe("tab reads", () => {
     expect(records.status).toBe(200);
     expect(thread.status).toBe(200);
     expect(chat.status).toBe(200);
-    expect(records.json?.address).toBe(`${suffix} N Echo Park Ave, Unit 25, Los Angeles CA 90026`);
+    const shown = `${titleCase(`${suffix} N Echo Park Ave`)}, Unit 25\nLos Angeles, CA 90026`;
+    expect(records.json?.address).toBe(shown);
     expect(records.trips, `records queries ${records.trips}`).toBeLessThanOrEqual(48);
     expect(thread.trips, `thread queries ${thread.trips}`).toBeLessThanOrEqual(48);
     expect(chat.trips, `chat queries ${chat.trips}`).toBeLessThanOrEqual(36);
     const bootstrap = await get(user.id, "bootstrap");
     expect(bootstrap.status).toBe(200);
-    expect(bootstrap.json?.records && (bootstrap.json.records as { address?: string }).address).toBe(`${suffix} N Echo Park Ave, Unit 25, Los Angeles CA 90026`);
+    expect(bootstrap.json?.records && (bootstrap.json.records as { address?: string }).address).toBe(shown);
     expect(Array.isArray((bootstrap.json?.chat as { items?: unknown[] } | undefined)?.items)).toBe(true);
     expect((bootstrap.json?.thread as { landlord?: string } | undefined)?.landlord).toBe("Elena Vasquez");
     expect(bootstrap.trips, `bootstrap queries ${bootstrap.trips}`).toBeLessThan(records.trips + thread.trips + chat.trips);

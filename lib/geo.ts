@@ -1,5 +1,8 @@
+import { titleCase } from "@/lib/address-format";
 import { detectPlace, type PlaceDetection } from "@/lib/rules/detect";
 import type { Jurisdiction } from "@/lib/rules/engine";
+
+export { titleCase };
 
 export type AddressFields = {
   street: string;
@@ -49,14 +52,6 @@ type CensusMatch = {
 
 const DIRECTION = /^(n|s|e|w|ne|nw|se|sw|north|south|east|west)$/;
 const SUFFIX = /^(ave|avenue|st|street|rd|road|blvd|boulevard|dr|drive|ln|lane|ct|court|way|pl|place|ter|terrace|pkwy|parkway|cir|circle|hwy|highway|trl|trail)$/;
-
-export function titleCase(value: string): string {
-  return value.toLowerCase().replace(/[a-z]+/g, (word, offset: number, whole: string) => {
-    const before = offset > 0 ? whole[offset - 1] : "";
-    if (/\d/.test(before) && /^(st|nd|rd|th)$/.test(word)) return word;
-    return word.charAt(0).toUpperCase() + word.slice(1);
-  });
-}
 
 function clean(value: string): string {
   return value.trim().replace(/\s+/g, " ");

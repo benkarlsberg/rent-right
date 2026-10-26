@@ -8,13 +8,14 @@ describe("repair draft letter", () => {
       tenantName: "Ada Tenant",
       description: "The kitchen sink is leaking under the cabinet",
       eventDate: "2026-10-23",
-      address: "1842 N Echo Park Ave, Unit 9, Los Angeles CA 90026",
+      address: "1842 N Echo Park Ave, Unit 9\nLos Angeles, CA 90026",
       severity: "leak",
     });
     expect(letter.ruleId).toBe("CA-CC-1942");
     expect(letter.dueDate).toBe("2026-10-30");
     expect(letter.subject).toBe("Repair request: The kitchen sink is leaking under the cabinet");
-    expect(letter.body).toContain("Ada Tenant is writing about a repair at 1842 N Echo Park Ave, Unit 9, Los Angeles CA 90026.");
+    expect(letter.body).toContain("Ada Tenant is writing about a repair.");
+    expect(letter.body).toContain("1842 N Echo Park Ave, Unit 9\nLos Angeles, CA 90026");
     expect(letter.body).toContain("Issue: The kitchen sink is leaking under the cabinet");
     expect(letter.body).toContain("Date: Oct 23, 2026");
     expect(letter.body).toContain("Please repair this.");

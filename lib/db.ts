@@ -1,5 +1,6 @@
 import "server-only";
 import { randomUUID } from "crypto";
+import { displayUnit, formatAddressPlain } from "@/lib/address-format";
 import { encryptChatText, openDraftPayload, readChatText, sealDraftPayload } from "@/lib/chat-text";
 import { decryptString, encryptString, hashToken, randomToken, shortCode } from "@/lib/crypto";
 import { all, dropRequestMemo, hasUserActor, one, requestMemo, run, withActor } from "@/lib/pg";
@@ -142,19 +143,17 @@ function mapUnit(row: UnitRow, role: "owner" | "roommate"): Unit {
 }
 
 export function unitLabel(unitNumber: string): string {
-  const raw = unitNumber.trim().replace(/\s+/g, " ");
-  if (!raw) return "";
-  if (/^(apt|apartment|#)\b/i.test(raw)) return raw;
-  const stripped = raw.replace(/^(unit\s+)+/i, "").trim();
-  if (!stripped) return "";
-  return `Unit ${stripped}`;
+  return displayUnit(unitNumber);
 }
 
-export function unitAddress(unit: Unit): string {
-  return [unit.street, unitLabel(unit.unitNumber), unit.city, "CA", unit.postalCode]
-    .filter(Boolean)
-    .join(", ")
-    .replace(", CA,", " CA");
+export function unitAddress(unit: Pick<Unit, "street" | "unitNumber" | "city" | "region" | "postalCode">): string {
+  return formatAddressPlain({
+    street: unit.street,
+    unit: unit.unitNumber,
+    city: unit.city,
+    region: unit.region,
+    postalCode: unit.postalCode,
+  });
 }
 
 export async function getUser(id: string) {

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { FlatList, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/api";
+import { Address } from "@/address";
 import { saveAuthorizedFile } from "@/files";
 import type { Notice } from "@/session";
 import { useSession } from "@/session";
@@ -17,7 +18,7 @@ import * as ImagePicker from "expo-image-picker";
 type Action = { id: string; label: string };
 type Item =
   | { role: "user"; text: string }
-  | { role: "card"; headline: string; status: string; action: Action | null; actions?: Action[]; detail: string; ruleId: string | null; notice: Notice };
+  | { role: "card"; headline: string; status: string; action: Action | null; actions?: Action[]; detail: string; ruleId: string | null; notice: Notice; address?: { street?: string; unit?: string; city?: string; region?: string; postalCode?: string } | null };
 type Thread = {
   landlord: string;
   needsUnit?: boolean;
@@ -366,6 +367,9 @@ function CardView({ item, spanish, busy, onAction }: { item: Extract<Item, { rol
     <View style={styles.card} {...wrapMarker()}>
       <Text style={styles.headline}>{item.headline}</Text>
       <Text style={styles.status}>{item.status}</Text>
+      {item.address?.street || item.address?.city ? (
+        <Address street={item.address.street} unit={item.address.unit} city={item.address.city} region={item.address.region} postalCode={item.address.postalCode} style={styles.detail} />
+      ) : null}
       {actions.map((action) => {
         const suggestion = action.id.startsWith("prompt:");
         const reset = action.id === "reset";

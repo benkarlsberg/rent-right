@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emailLogoUrl, renderMail, signInMessage, signInUrl } from "@/lib/email-template";
+import { emailLogoUrl, messageParagraphs, renderMail, signInMessage, signInUrl } from "@/lib/email-template";
 import { shortCode } from "@/lib/crypto";
 
 describe("sign-in mail", () => {
@@ -41,5 +41,17 @@ describe("sign-in mail", () => {
     expect(mail.html).not.toContain("<script>");
     expect(mail.text).toContain("A landlord wrote <script>");
     expect(mail.text).toContain("Open Rent Right: https://app.rentrightportal.com/");
+  });
+
+  it("keeps a two-line address as a break in HTML and plain text", () => {
+    const mail = renderMail({
+      subject: "Repair request",
+      heading: "Message from your tenant",
+      paragraphs: messageParagraphs("Ada Tenant is writing about a repair.\n\n1604 Dover Ave, Apt 2\nThousand Oaks, CA 91360\n\nPlease repair this."),
+    });
+    expect(mail.text).toContain("1604 Dover Ave, Apt 2\nThousand Oaks, CA 91360");
+    expect(mail.html).toContain("1604 Dover Ave, Apt 2<br>Thousand Oaks, CA 91360");
+    expect(mail.html).not.toContain("<br><br>");
+    expect(mail.text).not.toMatch(/<[^>]+>/);
   });
 });

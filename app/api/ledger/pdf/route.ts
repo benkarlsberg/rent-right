@@ -1,4 +1,5 @@
-import { listLedger, primaryUnit, unitAddress } from "@/lib/db";
+import { formatAddressLines } from "@/lib/address-format";
+import { listLedger, primaryUnit } from "@/lib/db";
 import { formatMoney } from "@/lib/format";
 import { renderPdf } from "@/lib/pdf";
 import { withActor } from "@/lib/pg";
@@ -14,7 +15,13 @@ export async function GET() {
   const lines = [
     "# Rent ledger",
     "Payments the tenant entered. Rent Right did not collect this money.",
-    unitAddress(unit),
+    ...formatAddressLines({
+      street: unit.street,
+      unit: unit.unitNumber,
+      city: unit.city,
+      region: unit.region,
+      postalCode: unit.postalCode,
+    }).filter(Boolean),
     ...rows.map((row) => `${row.paid_on} | ${formatMoney(row.amount_cents, "en")} | ${row.method}${row.voided_at ? " | voided" : ""} | ${row.notes}`),
   ];
   const pdf = await renderPdf("Rent ledger", lines);

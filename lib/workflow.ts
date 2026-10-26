@@ -26,7 +26,7 @@ import {
   type User,
 } from "@/lib/db";
 import { landlordMessageBody, sendRelayEmail } from "@/lib/email";
-import { renderMail } from "@/lib/email-template";
+import { messageParagraphs, renderMail } from "@/lib/email-template";
 import { LIBRARY_VERSION, type Locale } from "@/lib/disclaimer";
 import { LEASE_REVIEW_MONTHLY_CAP, mergeModelFindings, redactPii, reviewLease, type ModelFinding } from "@/lib/lease/review";
 import { RULES } from "@/lib/rules/library";
@@ -232,7 +232,7 @@ export async function emailLandlord(input: {
     subject: input.subject,
     heading: "Message from your tenant",
     paragraphs: [
-      ...input.tenantText.trim().split(/\n+/).map((line) => line.trim()).filter(Boolean),
+      ...messageParagraphs(input.tenantText),
       "The tenant wrote this message. Rent Right only provides the mailbox.",
       "You can acknowledge, give a schedule, mark the issue fixed, dispute it, or block later non-essential mail.",
     ],

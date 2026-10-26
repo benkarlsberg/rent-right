@@ -15,18 +15,23 @@ export type DemandInput = {
   letterDate: string;
 };
 
+function addressLines(value: string): string[] {
+  return value.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+}
+
 export function demandLetter(input: DemandInput): string {
   if (input.disputeNotes.trim().length < 20) {
     throw new Error("Write at least a short explanation in your own words before downloading the letter.");
   }
   const amount = formatMoney(input.depositCents, "en");
+  const lines = addressLines(input.unitAddress);
   return [
     input.letterDate,
     "",
     input.landlordName,
     input.landlordEmail || "[landlord mailing address]",
     "",
-    `Re: Security deposit for ${input.unitAddress}`,
+    `Re: Security deposit for ${lines.join(", ")}`,
     "",
     `${input.landlordName}:`,
     "",
@@ -43,7 +48,7 @@ export function demandLetter(input: DemandInput): string {
     "Please mail the remaining deposit and any itemized statement to the forwarding address above.",
     "",
     input.tenantName,
-    input.unitAddress,
+    ...lines,
     "",
     "I filled in this letter and I am sending it myself. Rent Right did not send it and is not my lawyer.",
     "",
@@ -71,7 +76,7 @@ export function certifiedMailLetter(input: {
     input.landlordEmail || "[landlord mailing address]",
     "",
     `From: ${input.tenantName}`,
-    input.unitAddress,
+    ...addressLines(input.unitAddress),
     "",
     `Re: ${input.subject}`,
     `Log reference: ${input.logId}`,

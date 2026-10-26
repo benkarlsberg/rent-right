@@ -7,6 +7,7 @@ import { useSession } from "@/session";
 import { setSkippedSetup } from "@/setup-later";
 import { refreshBootstrap } from "@/tab-cache";
 import { colors } from "@/theme";
+import { Address, LabeledAddress } from "@/address";
 import { Button, ErrorLine, Field, H1, Muted, Page } from "@/ui";
 
 type Suggestion = { label: string; street: string; city: string; region: string; postalCode: string; unit?: string };
@@ -245,11 +246,12 @@ export default function Setup() {
         </>
       ) : null}
       {step === 4 ? (
-        <Text style={styles.recap}>{[street, unitNumber, city, "CA", postalCode].filter(Boolean).join(", ")}</Text>
+        <Address street={street} unit={unitNumber} city={city} postalCode={postalCode} region="CA" style={styles.recap} />
       ) : null}
       {step === 0 && offer ? (
         <>
-          <Text style={styles.checked}>{es ? `Sugerencia: ${offer.label}` : `Suggestion: ${offer.label}`}</Text>
+          <LabeledAddress label={es ? "Revisada" : "Checked"} street={kept?.street || street} unit={kept?.unit || unitNumber} city={kept?.city || city} region={kept?.region || "CA"} postalCode={kept?.postalCode || postalCode} />
+          <LabeledAddress label={es ? "Sugerencia" : "Suggestion"} street={offer.street} unit={offer.unit} city={offer.city} region={offer.region} postalCode={offer.postalCode} />
           <Button label={es ? "Usar lo que escribí" : "Use what I typed"} onPress={applyKept} disabled={busy} />
           <Button label={es ? "Usar la sugerencia" : "Use suggestion"} ghost onPress={applySuggestion} disabled={busy} />
         </>
@@ -264,7 +266,6 @@ export default function Setup() {
 }
 
 const styles = StyleSheet.create({
-  checked: { color: colors.ink, fontSize: 15, lineHeight: 21, marginTop: 12 },
   recap: { color: colors.ink, fontSize: 16, lineHeight: 22, marginTop: 16 },
   later: { minHeight: 48, justifyContent: "center", alignItems: "center", marginTop: 8 },
   laterText: { color: colors.pine, fontSize: 16, fontWeight: "700" },

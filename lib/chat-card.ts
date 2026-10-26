@@ -1,3 +1,5 @@
+import type { AddressParts } from "@/lib/address-format";
+
 export type ChatAction = { id: string; label: string };
 
 export type ChatCard = {
@@ -7,6 +9,7 @@ export type ChatCard = {
   actions?: ChatAction[];
   detail: string;
   ruleId: string | null;
+  address?: AddressParts | null;
 };
 
 export function serializeCard(card: ChatCard): string {
@@ -29,6 +32,7 @@ export function parseCard(content: string): ChatCard | null {
     const actions = Array.isArray(value.actions)
       ? value.actions.filter((item): item is ChatAction => Boolean(item) && typeof item.id === "string" && typeof item.label === "string")
       : [];
+    const address = readAddress(value.address);
     return {
       headline: value.headline,
       status: value.status,
@@ -36,8 +40,22 @@ export function parseCard(content: string): ChatCard | null {
       actions: actions.length ? actions : undefined,
       detail: value.detail,
       ruleId: typeof value.ruleId === "string" ? value.ruleId : null,
+      ...(address ? { address } : {}),
     };
   } catch {
     return null;
   }
+}
+
+function readAddress(value: unknown): AddressParts | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (typeof row.street !== "string" || typeof row.city !== "string") return null;
+  return {
+    street: row.street,
+    unit: typeof row.unit === "string" ? row.unit : "",
+    city: row.city,
+    region: typeof row.region === "string" ? row.region : "",
+    postalCode: typeof row.postalCode === "string" ? row.postalCode : "",
+  };
 }

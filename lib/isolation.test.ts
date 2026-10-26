@@ -112,8 +112,9 @@ describe("tenant isolation", () => {
 
     const homeB = await api(userB.id, "GET", "home");
     expect(homeB.status).toBe(200);
-    expect(JSON.stringify(homeB.json)).not.toContain(unitA.street);
-    expect(JSON.stringify(homeB.json)).toContain(unitB.street);
+    const homeText = JSON.stringify(homeB.json).toLowerCase();
+    expect(homeText).not.toContain(unitA.street.toLowerCase());
+    expect(homeText).toContain(unitB.street.toLowerCase());
 
     const ledgerB = await api(userB.id, "GET", "ledger");
     expect(ledgerB.status).toBe(200);
@@ -134,10 +135,10 @@ describe("tenant isolation", () => {
     tokenFor(userB.id);
     const exported = await exportGet();
     expect(exported.status).toBe(200);
-    const exportText = await exported.text();
-    expect(exportText).not.toContain(unitA.street);
-    expect(exportText).not.toContain(`Private note ${suffix}`);
-    expect(exportText).toContain(unitB.street);
+    const exportText = (await exported.text()).toLowerCase();
+    expect(exportText).not.toContain(unitA.street.toLowerCase());
+    expect(exportText).not.toContain(`Private note ${suffix}`.toLowerCase());
+    expect(exportText).toContain(unitB.street.toLowerCase());
 
     tokenFor(userB.id);
     const hidden = await fileGet(new Request("http://localhost"), { params: Promise.resolve({ id: fileId }) });

@@ -1,7 +1,7 @@
+import { formatAddressLines } from "@/lib/address-format";
 import { DISCLAIMER_EN } from "@/lib/disclaimer";
 import { formatMoney, formatTimestamp } from "@/lib/format";
 import type { Unit, User } from "@/lib/db";
-import { unitAddress } from "@/lib/db";
 import { relayAddress } from "@/lib/text";
 
 const SMALL_CLAIMS_URL = "https://selfhelp.courts.ca.gov/small-claims";
@@ -22,7 +22,13 @@ export function packetLines(input: {
     "This is a record of communications stored in Rent Right. It is not legal advice and it is not a court filing.",
     `Prepared ${formatTimestamp(new Date().toISOString(), "en")} for ${input.user.name || input.user.email}.`,
     "# Property the tenant entered",
-    unitAddress(input.unit),
+    ...formatAddressLines({
+      street: input.unit.street,
+      unit: input.unit.unitNumber,
+      city: input.unit.city,
+      region: input.unit.region,
+      postalCode: input.unit.postalCode,
+    }).filter(Boolean),
     `Jurisdiction selected by the tenant: ${input.unit.jurisdiction}. Confirmed by tenant: ${input.unit.jurisdictionConfirmed ? "yes" : "no"}.`,
     `Landlord name entered: ${input.unit.landlordName || "(blank)"}. Landlord email entered: ${input.unit.landlordEmail || "(blank)"}.`,
     `Relay address: ${relayAddress(input.unit.relayLocal)}. Monthly rent entered: ${input.unit.rentCents != null ? formatMoney(input.unit.rentCents, "en") : "(blank)"}.`,

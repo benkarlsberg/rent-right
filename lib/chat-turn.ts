@@ -1,3 +1,4 @@
+import { formatAddressPlain, type AddressParts } from "@/lib/address-format";
 import { cardAfterSend, serializeCard, type ChatCard } from "@/lib/chat-card";
 import { aiConfigured } from "@/lib/ai";
 import { answerFromConversation } from "@/lib/chat-answer";
@@ -48,6 +49,16 @@ function monthPrefix(now = new Date()): string {
 
 async function remember(user: User, unit: Unit, role: "user" | "assistant", content: string, ruleId: string | null, unsure: boolean): Promise<string> {
   return await addAssistantMessage(user.id, unit.id, role, { locale: user.locale, content, ruleIds: ruleId ? [ruleId] : [], unsure });
+}
+
+function cardAddress(unit: Unit): AddressParts {
+  return {
+    street: unit.street,
+    unit: unit.unitNumber,
+    city: unit.city,
+    region: unit.region,
+    postalCode: unit.postalCode,
+  };
 }
 
 async function say(user: User, unit: Unit, card: ChatCard): Promise<string> {
@@ -441,6 +452,7 @@ async function logRepair(user: User, unit: Unit, summary: string, severity: Repa
       ? { id: `send:${draft.id}`, label: tx(user.locale, "Send to landlord", "Enviar al propietario") }
       : { id: "add-landlord", label: addLandlordLabel(user.locale) },
     detail: `${user.locale === "es" ? reminder.explanationEs : reminder.explanation}\n\n${reminder.computation}\n\n${landlordReady(unit) ? tx(user.locale, "Nothing was emailed. Send only if you want the landlord to get this note.", "No se envió ningún correo. Envíe solo si quiere que el propietario reciba esta nota.") : landlordPrompt(user.locale)}`,
+    address: cardAddress(unit),
     ruleId: reminder.ruleId,
   });
   await setChatDraftPayload(user.id, draft.id, { ...draft.payload, cardMessageId: messageId });
@@ -552,7 +564,7 @@ async function writeLetter(user: User, unit: Unit, text: string) {
   }
   const letter = demandLetter({
     tenantName: user.name,
-    unitAddress: [unit.street, unit.unitNumber, unit.city, unit.postalCode].filter(Boolean).join(", "),
+    unitAddress: formatAddressPlain(cardAddress(unit)),
     landlordName: unit.landlordName,
     landlordEmail: unit.landlordEmail,
     depositCents: deposit.amount_cents,
@@ -568,6 +580,7 @@ async function writeLetter(user: User, unit: Unit, text: string) {
     status: tx(user.locale, "Not sent", "No enviado"),
     action: null,
     detail: `${letter}\n\n${tx(user.locale, "Rent Right did not mail this letter.", "Rent Right no envió esta carta.")}`,
+    address: cardAddress(unit),
     ruleId: "CA-CC-1950.5",
   });
 }

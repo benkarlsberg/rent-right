@@ -31,6 +31,11 @@ export function signInMessage(href: string): { subject: string; text: string; ht
   });
 }
 
+/** Blank lines separate paragraphs. A single newline stays inside a paragraph so an address can use <br>. */
+export function messageParagraphs(text: string): string[] {
+  return text.replace(/\r\n/g, "\n").trim().split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+}
+
 export function renderMail(input: MailInput): { subject: string; text: string; html: string } {
   const paragraphs = (input.paragraphs || []).map((line) => line.trim()).filter(Boolean);
   const lines = (input.lines || []).map((line) => line.trim()).filter(Boolean);
@@ -70,7 +75,7 @@ export function renderMail(input: MailInput): { subject: string; text: string; h
 <tr><td style="padding:12px 28px 0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:22px;line-height:28px;color:#14343C;font-weight:700;">
 ${escapeHtml(input.heading)}
 </td></tr>
-${paragraphs.map((line) => `<tr><td style="padding:12px 28px 0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:24px;color:#14343C;">${escapeHtml(line)}</td></tr>`).join("")}
+${paragraphs.map((line) => `<tr><td style="padding:12px 28px 0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:24px;color:#14343C;">${paragraphHtml(line)}</td></tr>`).join("")}
 ${input.button ? `<tr><td style="padding:24px 28px 8px;">
 <a href="${escapeHtml(input.button.href)}" style="display:inline-block;background:#0B5C6E;color:#ffffff;text-decoration:none;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:20px;font-weight:700;padding:14px 22px;border-radius:999px;">${escapeHtml(input.button.label)}</a>
 </td></tr>
@@ -96,4 +101,8 @@ function escapeHtml(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function paragraphHtml(value: string): string {
+  return escapeHtml(value).replace(/\r\n/g, "\n").replace(/\n/g, "<br>");
 }
