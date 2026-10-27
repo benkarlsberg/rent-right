@@ -1,6 +1,7 @@
 import { createHash, createHmac } from "crypto";
 import { mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from "fs";
 import path from "path";
+import { one, run } from "@/lib/pg";
 
 function localPath(id: string): string {
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Bad file id.");
@@ -14,6 +15,50 @@ function r2Ready(): boolean {
       process.env.R2_SECRET_ACCESS_KEY &&
       process.env.R2_BUCKET,
   );
+}
+
+function workerRuntime(): boolean {
+  return typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers";
+}
+
+/** Where encrypted file bytes are stored. Workers have no writable disk. */
+export function blobDestination(): "r2" | "database" | "filesystem" {
+  if (r2Ready()) return "r2";
+  if (process.env.BLOB_STORE === "database" || workerRuntime()) return "database";
+  return "filesystem";
+}
+
+function denied(error: unknown): boolean {
+  const code = typeof error === "object" && error && "code" in error ? String((error as { code: unknown }).code) : "";
+  const message = error instanceof Error ? error.message : String(error);
+  return code === "EPERM" || code === "EROFS" || /operation not permitted|read-only file system|not implemented/i.test(message);
+}
+
+async function writeDatabase(id: string, body: Buffer): Promise<void> {
+  await run(
+    "insert into file_blobs (id, body) values (?, ?) on conflict (id) do update set body = excluded.body",
+    [id, body],
+  );
+}
+
+function asBuffer(value: unknown): Buffer | null {
+  if (Buffer.isBuffer(value)) return value;
+  if (value instanceof Uint8Array) return Buffer.from(value);
+  if (typeof value === "string") {
+    if (value.startsWith("\\x")) return Buffer.from(value.slice(2), "hex");
+    return Buffer.from(value);
+  }
+  return null;
+}
+
+async function readDatabase(id: string): Promise<Buffer | null> {
+  const row = await one<{ body: unknown }>("select body from file_blobs where id = ?", [id]);
+  if (!row) return null;
+  return asBuffer(row.body);
+}
+
+async function deleteDatabase(id: string): Promise<void> {
+  await run("delete from file_blobs where id = ?", [id]);
 }
 
 function hmac(key: Buffer | string, data: string): Buffer {
@@ -60,27 +105,48 @@ async function r2Request(method: "PUT" | "GET" | "DELETE", id: string, body?: Bu
 }
 
 export async function putBlob(id: string, body: Buffer): Promise<void> {
-  if (r2Ready()) {
+  const dest = blobDestination();
+  if (dest === "r2") {
     await r2Request("PUT", id, body);
     return;
   }
-  const file = localPath(id);
-  mkdirSync(path.dirname(file), { recursive: true });
-  writeFileSync(file, body);
+  if (dest === "database") {
+    await writeDatabase(id, body);
+    return;
+  }
+  try {
+    const file = localPath(id);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, body);
+  } catch (error) {
+    if (!denied(error)) throw error;
+    await writeDatabase(id, body);
+  }
 }
 
 export async function getBlob(id: string): Promise<Buffer | null> {
-  if (r2Ready()) return r2Request("GET", id);
-  const file = localPath(id);
-  if (!existsSync(file)) return null;
-  return readFileSync(file);
+  const dest = blobDestination();
+  if (dest === "r2") return r2Request("GET", id);
+  if (dest === "filesystem") {
+    const file = localPath(id);
+    if (existsSync(file)) return readFileSync(file);
+  }
+  return readDatabase(id);
 }
 
 export async function deleteBlob(id: string): Promise<void> {
-  if (r2Ready()) {
+  const dest = blobDestination();
+  if (dest === "r2") {
     await r2Request("DELETE", id);
     return;
   }
-  const file = localPath(id);
-  if (existsSync(file)) rmSync(file);
+  if (dest === "filesystem") {
+    try {
+      const file = localPath(id);
+      if (existsSync(file)) rmSync(file);
+    } catch (error) {
+      if (!denied(error)) throw error;
+    }
+  }
+  await deleteDatabase(id);
 }

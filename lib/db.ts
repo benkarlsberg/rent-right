@@ -1032,10 +1032,15 @@ export async function saveFile(userId: string, unitId: string | null, name: stri
   if (unitId) await requireUnit(userId, unitId);
   if (bytes.length > 8 * 1024 * 1024) throw new HttpError("Files must be 8 MB or smaller.");
   const id = randomUUID();
-  await putBlob(id, encryptStringBuffer(bytes));
   await run("insert into files (id, user_id, unit_id, name, mime, bytes, created_at) values (?, ?, ?, ?, ?, ?, ?)", [
     id, userId, unitId, name, mime, bytes.length, new Date().toISOString(),
   ]);
+  try {
+    await putBlob(id, encryptStringBuffer(bytes));
+  } catch (error) {
+    await run("delete from files where id = ?", [id]);
+    throw error;
+  }
   return id;
 }
 

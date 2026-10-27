@@ -1,6 +1,7 @@
 import { readFileSync } from "fs";
 import path from "path";
 import { DISCLAIMER_EN } from "@/lib/disclaimer";
+import { LOGO_PNG } from "@/lib/logo-png";
 import type { PacketImage, PacketModel } from "@/lib/packet";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 
@@ -98,7 +99,7 @@ export async function renderPacket(model: PacketModel): Promise<Uint8Array> {
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   let logo: PDFImage | null = null;
   try {
-    logo = await doc.embedPng(readFileSync(path.join(process.cwd(), "public/email/logo.png")));
+    logo = await doc.embedPng(LOGO_PNG.byteLength ? LOGO_PNG : readFileSync(path.join(process.cwd(), "public/email/logo.png")));
   } catch {
     logo = null;
   }
