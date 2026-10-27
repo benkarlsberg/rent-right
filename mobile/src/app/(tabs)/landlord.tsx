@@ -85,8 +85,6 @@ export default function Landlord() {
   const [menu, setMenu] = useState<null | { where: "composer" | "draft" | "library"; id?: string }>(null);
   const [pending, setPending] = useState<PendingPhoto[]>([]);
   const [pickingIssue, setPickingIssue] = useState<PendingPhoto | null>(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const composing = Boolean(draft.trim() || pending.length);
   const labels = data?.labels;
   const identityBlocked = Boolean(data?.mail && !data.mail.ready);
   const needsPrompt = Boolean(data && (data.needsLandlord || data.needsUnit));
@@ -129,7 +127,6 @@ export default function Landlord() {
       setPending([]);
       setMenu(null);
       setPickingIssue(null);
-      setDetailsOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send.");
     } finally {
@@ -517,17 +514,11 @@ export default function Landlord() {
           </View>
         ) : null}
         {data?.mail && !data.mail.ready ? <MailPreviewBlock mail={data.mail} subjectLabel={labels?.subject || "Subject"} subject={data.mail.subject} onName={() => void reload()} /> : null}
-        {data?.mail?.ready && (composing || detailsOpen) ? <MailPreviewBlock mail={data.mail} subjectLabel={labels?.subject || "Subject"} subject={data.mail.subject} onName={() => void reload()} /> : null}
-        {data?.mail?.ready && !composing && !detailsOpen ? (
-          <Pressable onPress={() => setDetailsOpen(true)} accessibilityRole="button" accessibilityLabel={spanish ? "Detalles del correo" : "Email details"}>
-            <Text style={styles.prompt}>{spanish ? "Detalles del correo" : "Email details"}</Text>
-          </Pressable>
-        ) : null}
         <View style={styles.composer}>
           <Pressable style={styles.plus} onPress={() => setMenu((open) => open?.where === "composer" ? null : { where: "composer" })} disabled={Boolean(data?.archived)} accessibilityRole="button" accessibilityLabel={spanish ? "Agregar una foto" : "Add a photo"}>
             <Text style={styles.plusText}>+</Text>
           </Pressable>
-          <TextInput value={draft} onChangeText={(value) => { setDraft(value); if (!value.trim() && pending.length === 0) setDetailsOpen(false); }} placeholder={spanish ? "Mensaje" : "Message"} placeholderTextColor={colors.mute} accessibilityLabel={spanish ? "Mensaje" : "Message"} editable={!data?.archived} style={styles.input} />
+          <TextInput value={draft} onChangeText={setDraft} placeholder={spanish ? "Mensaje" : "Message"} placeholderTextColor={colors.mute} accessibilityLabel={spanish ? "Mensaje" : "Message"} editable={!data?.archived} style={styles.input} />
           <Pressable onPress={send} disabled={Boolean(data?.archived) || sending || identityBlocked} style={styles.send} accessibilityRole="button" accessibilityLabel={spanish ? "Enviar" : "Send"} accessibilityState={{ disabled: Boolean(data?.archived) || sending || identityBlocked }}><Text style={styles.sendText}>{sending ? (spanish ? "Enviando" : "Sending") : (spanish ? "Enviar" : "Send")}</Text></Pressable>
         </View>
       </KeyboardAvoidingView>
