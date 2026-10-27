@@ -211,13 +211,13 @@ export default function Reminders() {
           <Text style={styles.addText}>{es ? "Agregar su vivienda" : "Add your place"}</Text>
         </Pressable>
       ) : null}
-      <ErrorLine message={error} />
+      <ErrorLine message={error} onRetry={!data ? () => void reload() : undefined} retryLabel={es ? "Reintentar" : "Retry"} />
       <ScrollView
         style={clipX}
         contentContainerStyle={styles.page}
         refreshControl={<RefreshControl refreshing={false} onRefresh={reload} tintColor={colors.pine} />}
       >
-        {loading && !data ? <TabLoading label={es ? "Cargando" : "Loading"} /> : null}
+        {loading && !data && !error ? <TabLoading label={es ? "Cargando" : "Loading"} /> : null}
         {data?.steps?.items?.length ? (
           <NextSteps
             title={data.steps.title}

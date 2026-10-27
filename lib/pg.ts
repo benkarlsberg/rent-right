@@ -337,27 +337,64 @@ async function applyRole(tx: Tx, userId: string | null) {
 // cannot roll back a message that was already stored. postgres.js reserve()
 // never settles when fetch_types is false, which is how the Hyperdrive client
 // is opened, so this does not keep a reserved connection.
+const DATABASE_WAIT_MS = 8_000;
+const CLOSE_WAIT_SECONDS = 2;
+
+function databaseTimedOut(error: unknown): boolean {
+  return error instanceof Error && error.message === "The database connection timed out.";
+}
+
+async function closeClient(sql: Sql | undefined) {
+  if (!sql) return;
+  // Hyperdrive's initial connection timeout is 15 seconds, and the free plan
+  // keeps about 20 origin connections. Waiting forever for Terminate holds one
+  // of those slots until the platform kills the request with an empty 500, so
+  // the page spins and never receives an error. Two seconds lets a finished
+  // connection close cleanly, then the socket is released either way.
+  await sql.end({ timeout: CLOSE_WAIT_SECONDS }).catch(() => {});
+}
+
 export async function withActor<T>(userId: string | null, fn: () => Promise<T>): Promise<T> {
   const current = actors.getStore();
   if (current && current.userId === userId) return fn();
   const scope: Scope = { userId, memo: new Map() };
+  let timedOut = false;
+  let rejectWait: (error: Error) => void = () => {};
+  const wait = new Promise<never>((_, reject) => {
+    rejectWait = reject;
+  });
+  const timer = setTimeout(() => {
+    timedOut = true;
+    rejectWait(new Error("The database connection timed out."));
+  }, DATABASE_WAIT_MS);
   try {
-    return await actors.run(scope, fn);
+    return await Promise.race([actors.run(scope, fn), wait]);
+  } catch (error) {
+    if (databaseTimedOut(error)) timedOut = true;
+    throw error;
   } finally {
-    // Reads already returned. Closing the leftover read transaction, or the
-    // socket, must not replace a finished response with a connection error.
-    try {
-      await scope.tail?.catch(() => {});
-      await finishShared(scope, true);
-    } catch {
-      // The statements for this request already finished.
-    } finally {
-      const sql = scope.sql;
-      scope.sql = undefined;
-      scope.opening = undefined;
-      // Wait for a graceful close. A short timeout destroys the socket and
-      // Hyperdrive then hands the next request a dead connection.
-      if (sql) await sql.end().catch(() => {});
+    clearTimeout(timer);
+    const sql = scope.sql;
+    scope.sql = undefined;
+    scope.opening = undefined;
+    if (timedOut) {
+      // The query is still on this socket. Close it before waiting on the
+      // transaction, or the commit waits for the same query that already timed out.
+      await closeClient(sql);
+      try {
+        await scope.tail?.catch(() => {});
+        await finishShared(scope, false);
+      } catch {
+        // The connection is already closed.
+      }
+    } else {
+      try {
+        await scope.tail?.catch(() => {});
+        await finishShared(scope, true);
+      } catch {
+        // The statements for this request already finished.
+      }
+      await closeClient(sql);
     }
   }
 }
@@ -468,7 +505,7 @@ async function execute(sql: string, params: unknown[]): Promise<{ rows: Record<s
       noteRoundTrip();
       return readResult(await db.unsafe(text, params as never[], prepared(params)));
     } finally {
-      if (transient) await db.end().catch(() => {});
+      if (transient) await closeClient(db);
     }
   }
   return enqueue(scope, () => executeAuthed(scope, userId, text, params));

@@ -328,7 +328,7 @@ export default function Landlord() {
           ) : (
             <>
               <Text style={styles.promptText}>{loading && !data ? (spanish ? "Cargando" : "Loading") : prompt}</Text>
-              <ErrorLine message={error} />
+              <ErrorLine message={error} onRetry={!data ? () => void reload() : undefined} retryLabel={spanish ? "Reintentar" : "Retry"} />
               <Button
                 label={addLabel}
                 onPress={() => {
@@ -350,7 +350,7 @@ export default function Landlord() {
           onScrollToIndexFailed={({ index }) => {
             setTimeout(() => listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.2 }), 50);
           }}
-          ListEmptyComponent={loading && !data ? <TabLoading label={spanish ? "Cargando" : "Loading"} /> : <Text style={styles.empty}>{spanish ? "Los mensajes que envíe a su propietario aparecen aquí. No se envía nada hasta que usted confirme." : "Messages you send to your landlord show up here. Nothing is sent until you confirm."}</Text>}
+          ListEmptyComponent={loading && !data && !error ? <TabLoading label={spanish ? "Cargando" : "Loading"} /> : <Text style={styles.empty}>{spanish ? "Los mensajes que envíe a su propietario aparecen aquí. No se envía nada hasta que usted confirme." : "Messages you send to your landlord show up here. Nothing is sent until you confirm."}</Text>}
           renderItem={({ item }) => {
             const mine = item.side === "tenant";
             const highlighted = Boolean(focusId) && item.id === focusId;
@@ -468,7 +468,7 @@ export default function Landlord() {
             );
           }}
         />
-        <ErrorLine message={error} />
+        <ErrorLine message={error} onRetry={!data ? () => void reload() : undefined} retryLabel={spanish ? "Reintentar" : "Retry"} />
         {pending.length ? (
           <View style={styles.pending}>
             {pending.map((photo) => (

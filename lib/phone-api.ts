@@ -293,6 +293,9 @@ function publicFailure(error: unknown): { message: string; status: number } {
   if (/network connection lost|CONNECTION_CLOSED|CONNECTION_DESTROYED|ECONNRESET|socket hang up/i.test(raw)) {
     return { message: "The database connection closed before the query finished.", status: 503 };
   }
+  if (/database connection timed out|failed to acquire a connection|CONNECT_TIMEOUT|ETIMEDOUT/i.test(raw)) {
+    return { message: "The database connection timed out. Try again.", status: 503 };
+  }
   if (raw && !/violates foreign key|violates check|syntax error at|ECONNREFUSED|password authentication failed|relation "|column "|duplicate key value|null value in column/i.test(raw)) {
     return { message: raw, status: 400 };
   }

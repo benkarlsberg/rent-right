@@ -345,7 +345,7 @@ export default function AssistantChat() {
               ) : null}
             </View>
           ) : null}
-          ListEmptyComponent={loading && !data ? <TabLoading label={spanish ? "Cargando" : "Loading"} /> : (
+          ListEmptyComponent={loading && !data && !error ? <TabLoading label={spanish ? "Cargando" : "Loading"} /> : (
             <View>
               <Text style={styles.intro}>{spanish ? "Cuénteme qué pasó." : "Tell me what happened."}</Text>
               <Text style={styles.support}>{spanish ? "Un fregadero que gotea, un aumento, o su depósito." : "A leaking sink, a rent increase, or your deposit."}</Text>
@@ -407,7 +407,7 @@ export default function AssistantChat() {
             <CardView item={item} spanish={spanish} busy={busy} token={token} library={data?.library || []} onAction={onAction} onNameSaved={() => { void reload(); }} />
           )}
         />
-        <ErrorLine message={error} />
+        <ErrorLine message={error} onRetry={!pending && !data ? () => void reload() : undefined} retryLabel={spanish ? "Reintentar" : "Retry"} />
         {error && pending ? (
           <Pressable style={styles.headerButton} onPress={() => void send(pending.text, pending.extra, pending.id)} disabled={busy} accessibilityRole="button" accessibilityLabel={spanish ? "Intentar de nuevo" : "Try again"}>
             <Text style={styles.headerButtonText}>{spanish ? "Intentar de nuevo" : "Try again"}</Text>

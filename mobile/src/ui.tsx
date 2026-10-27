@@ -162,11 +162,16 @@ export function Field({ label, value, onChange, placeholder, multiline, inputRef
   );
 }
 
-export function ErrorLine({ message }: { message: string }) {
+export function ErrorLine({ message, onRetry, retryLabel = "Retry" }: { message: string; onRetry?: () => void; retryLabel?: string }) {
   if (!message) return null;
   return (
     <View style={styles.errorBox} accessibilityRole="alert">
       <Text style={styles.error}>{message}</Text>
+      {onRetry ? (
+        <Pressable onPress={onRetry} accessibilityRole="button" accessibilityLabel={retryLabel} style={styles.retry}>
+          <Text style={styles.retryText}>{retryLabel}</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -232,6 +237,8 @@ const styles = StyleSheet.create({
   area: { minHeight: 88, textAlignVertical: "top", paddingVertical: 12 },
   errorBox: { backgroundColor: "#f8ecec", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, marginTop: 16 },
   error: { color: colors.bad, fontSize: 15, lineHeight: 21 },
+  retry: { alignSelf: "flex-start", marginTop: 10, minHeight: 44, justifyContent: "center" },
+  retryText: { color: colors.pine, fontSize: 16, fontWeight: "700" },
   more: { color: colors.pine, fontWeight: "700", marginTop: 8, textAlign: "left" },
   moreBody: { marginTop: 6, alignSelf: "stretch", width: "100%", maxWidth: "100%", minWidth: 0 },
   detail: { color: colors.ink, fontSize: 15, lineHeight: 21, textAlign: "left", flexShrink: 1, minWidth: 0, maxWidth: "100%" },

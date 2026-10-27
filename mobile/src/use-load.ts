@@ -55,6 +55,14 @@ export function useLoad<T>(path: string) {
     }
   }, [path]);
 
+  const noteFailure = useCallback((err: unknown, current: string) => {
+    if (tokenRef.current !== current) return;
+    if (tab && readSlice(current, tab) != null) return;
+    if (tab) setTabFailed(true);
+    setLocalLoading(false);
+    setError(err instanceof Error && err.message ? err.message : "Something went wrong.");
+  }, [tab]);
+
   const reload = useCallback((patch?: T) => {
     const current = tokenRef.current;
     if (!current) return Promise.resolve();
@@ -67,16 +75,10 @@ export function useLoad<T>(path: string) {
       }
       setTabFailed(false);
       setError("");
-      return refreshBootstrap(current, true).catch((err: unknown) => {
-        if (tokenRef.current !== current) return;
-        if (readSlice(current, tab) == null) {
-          setTabFailed(true);
-          setError(err instanceof Error ? err.message : "Something went wrong.");
-        }
-      });
+      return refreshBootstrap(current, true).catch((err: unknown) => noteFailure(err, current));
     }
     return run(true);
-  }, [run, tab]);
+  }, [noteFailure, run, tab]);
 
   useEffect(() => {
     setError("");
@@ -93,37 +95,34 @@ export function useLoad<T>(path: string) {
     if (!needsBootstrap(token) || readSlice(token, tab) != null) return;
     let alive = true;
     void refreshBootstrap(token, false).catch((err: unknown) => {
-      if (!alive || tokenRef.current !== token) return;
-      if (readSlice(token, tab) == null) {
-        setTabFailed(true);
-        setError(err instanceof Error ? err.message : "Something went wrong.");
-      }
+      if (!alive) return;
+      noteFailure(err, token);
     });
     return () => {
       alive = false;
     };
-  }, [run, tab, token]);
+  }, [noteFailure, run, tab, token]);
 
   useFocusEffect(useCallback(() => {
     const current = tokenRef.current;
     if (!current || !screenVisible()) return;
     if (tab) {
-      if (needsBootstrap(current)) void refreshBootstrap(current, false).catch(() => {});
+      if (needsBootstrap(current)) void refreshBootstrap(current, false).catch((err: unknown) => noteFailure(err, current));
       return;
     }
     void run(false);
-  }, [run, tab]));
+  }, [noteFailure, run, tab]));
 
   useEffect(() => {
     if (!tab || !token || Platform.OS !== "web" || typeof document === "undefined") return;
     const onShow = () => {
       if (document.visibilityState === "hidden") return;
       const current = tokenRef.current;
-      if (current && needsBootstrap(current)) void refreshBootstrap(current, false).catch(() => {});
+      if (current && needsBootstrap(current)) void refreshBootstrap(current, false).catch((err: unknown) => noteFailure(err, current));
     };
     document.addEventListener("visibilitychange", onShow);
     return () => document.removeEventListener("visibilitychange", onShow);
-  }, [tab, token]);
+  }, [noteFailure, tab, token]);
 
   return { data, error, loading, reload, setError, token };
 }

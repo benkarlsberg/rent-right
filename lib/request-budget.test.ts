@@ -97,7 +97,9 @@ describe("tab reads", () => {
     expect(driver).not.toContain(".reserve(");
     expect(driver).not.toContain("prepare: hyperdrive ? false");
     expect(driver).not.toContain("end({ timeout: 1 })");
-    expect(driver).toContain("if (sql) await sql.end().catch(() => {});");
+    expect(driver).not.toContain("await sql.end().catch(() => {})");
+    expect(driver).toContain("timeout: CLOSE_WAIT_SECONDS");
+    expect(driver).toContain("The database connection timed out.");
     expect(driver).toContain("{ prepare: true }");
     const deadlines = records.json?.deadlines as { id: string; closed?: boolean }[] | undefined;
     const open = deadlines?.find((item) => item.closed === false);
