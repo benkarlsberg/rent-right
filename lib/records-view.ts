@@ -3,6 +3,7 @@ import { formatDate, formatTimestamp } from "@/lib/format";
 import { issueTitle, landlordFixedNote, resolutionPhrase, sourceLabel, timelineSummary, type ResolutionSource } from "@/lib/resolution";
 import { daysBetween } from "@/lib/rules/dates";
 import { tx } from "@/lib/text";
+import { isIssueTier, tierForSeverity, tierLabel, violationFlag, type IssueTier } from "@/lib/triage";
 
 export type DeadlineInput = {
   id: string;
@@ -426,6 +427,11 @@ export type OpenIssueCard = {
   pendingNote: string | null;
   earliest: string;
   sent: boolean;
+  tier: IssueTier | null;
+  tierLabel: string | null;
+  flag: string | null;
+  citation: string | null;
+  unsure: boolean;
 };
 
 export type ArchiveIssueCard = {
@@ -439,6 +445,18 @@ export type ArchiveIssueCard = {
   note: string | null;
 };
 
+function tierFields(log: { type?: string; tier?: string | null; severity?: string | null; flags?: Record<string, unknown> }, locale: Locale): Pick<OpenIssueCard, "tier" | "tierLabel" | "flag" | "citation" | "unsure"> {
+  const stored = log.tier && isIssueTier(log.tier) ? log.tier : log.type === "repair" ? tierForSeverity(log.severity) : null;
+  const citation = typeof log.flags?.citation === "string" ? log.flags.citation : stored === "possible_violation" ? "CA-CC-1942" : null;
+  return {
+    tier: stored,
+    tierLabel: stored ? tierLabel(stored, locale) : null,
+    flag: stored === "possible_violation" ? violationFlag(locale) : null,
+    citation,
+    unsure: log.flags?.unsure === true,
+  };
+}
+
 export function issueBoard(input: {
   locale: Locale;
   logs: (LogInput & {
@@ -447,11 +465,13 @@ export function issueBoard(input: {
     resolvedBy?: ResolutionSource | null;
     resolutionNote?: string | null;
     flags?: Record<string, unknown>;
+    tier?: string | null;
+    severity?: string | null;
   })[];
   messages: MessageInput[];
 }): { open: OpenIssueCard[]; archive: ArchiveIssueCard[] } {
   const locale = input.locale;
-  const repairs = input.logs.filter((log) => log.type === "repair");
+  const repairs = input.logs.filter((log) => log.type === "repair" || (log.tier === "possible_violation" && log.type !== "issue_event"));
   const cards = new Map(logCards(repairs, input.messages, locale).map((card) => [card.id, card]));
   const open: OpenIssueCard[] = [];
   const archive: ArchiveIssueCard[] = [];
@@ -502,6 +522,7 @@ export function issueBoard(input: {
       pendingNote: landlordFixedNote(log.flags),
       earliest: log.eventDate || log.createdAt.slice(0, 10),
       sent: sentMail(log.id, input.messages),
+      ...tierFields(log, locale),
     });
   }
   return { open, archive };

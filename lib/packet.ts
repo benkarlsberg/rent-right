@@ -8,7 +8,7 @@ import { relayDomain } from "@/lib/text";
 const SMALL_CLAIMS_URL = "https://selfhelp.courts.ca.gov/small-claims";
 
 const REMINDER_NOTE =
-  "A follow-up date is the tenant's own reminder, counted as 7 days after the request was stored. It is not a legal deadline, and it does not mean the landlord had to answer by that date.";
+  "A follow-up date is the tenant's own reminder. A routine repair uses the 30-day presumption in Civil Code §1942. An urgent condition uses a 3-day reminder that is not in the statute. It is not a legal deadline, and it does not mean the landlord had to answer by that date.";
 
 export type PacketImage = { id: string; bytes: Uint8Array; mime: string; caption?: string };
 
@@ -28,9 +28,12 @@ export type PacketLog = {
   resolutionNote?: string | null;
   photoFileId?: string | null;
   flags?: Record<string, unknown> | null;
+  tier?: string | null;
+  severity?: string | null;
 };
 
 export type PacketMessage = {
+  id?: string;
   createdAt: string;
   direction: string;
   subject: string;
@@ -62,10 +65,10 @@ export type PacketModel = {
     reminder: string | null;
     description: string;
     updates: string[];
-    messages: { when: string; direction: string; subject: string; excerpt: string }[];
+    messages: { when: string; direction: string; subject: string; excerpt: string; images: PacketImage[] }[];
     images: PacketImage[];
   }[];
-  communications: { when: string; direction: string; subject: string; excerpt: string }[];
+  communications: { when: string; direction: string; subject: string; excerpt: string; photoNote: string; images: PacketImage[] }[];
   conditions: { title: string; when: string; images: PacketImage[] }[];
   looseImages: PacketImage[];
   ledger: string[];
@@ -117,12 +120,21 @@ function tenantLine(user: User): string {
   return "Tenant";
 }
 
+function tierName(log: PacketLog): string | null {
+  if (log.tier === "urgent") return "Urgent";
+  if (log.tier === "possible_violation") return "This may not follow California rules";
+  if (log.tier === "routine") return "Routine";
+  return null;
+}
+
 function statusLabel(log: PacketLog): string {
   if (removed(log)) return "Removed by tenant";
-  if (log.status === "resolved" && log.resolvedAt) return `Resolved on ${when(log.resolvedAt)}`;
-  if (log.status === "resolved") return "Resolved";
-  if (log.status === "pending_confirm") return "Landlord says fixed";
-  return "Open";
+  const tier = tierName(log);
+  const withTier = (label: string) => tier ? `${label} · ${tier}` : label;
+  if (log.status === "resolved" && log.resolvedAt) return withTier(`Resolved on ${when(log.resolvedAt)}`);
+  if (log.status === "resolved") return withTier("Resolved");
+  if (log.status === "pending_confirm") return withTier("Landlord says fixed");
+  return withTier("Open");
 }
 
 function visibleMessage(message: PacketMessage): boolean {
@@ -140,9 +152,18 @@ export function buildPacket(input: {
   conditions: { id?: string; kind: string; createdAt: string; contentHash?: string | null; acknowledgedAt?: string | null; rooms?: { room?: string; notes?: string; photoFileId?: string | null }[] }[];
   leaseNotes?: { quote: string; ruleId?: string | null; filename?: string | null }[];
   images?: PacketImage[];
+  messageImages?: { messageId: string; fileId: string }[];
   preparedAt?: string;
 }): PacketModel {
   const images = new Map((input.images || []).map((image) => [image.id, image]));
+  const imagesFor = (messageId?: string | null) => {
+    if (!messageId) return [] as PacketImage[];
+    return (input.messageImages || [])
+      .filter((item) => item.messageId === messageId)
+      .map((item) => images.get(item.fileId))
+      .filter((image): image is PacketImage => Boolean(image));
+  };
+  const photoNote = (count: number) => count === 1 ? "1 photo with this message" : count > 1 ? `${count} photos with this message` : "";
   const logs = input.logs.filter((log) => log.description || log.type);
   const repairs = logs.filter((log) => log.type === "repair");
   const groups = new Map<string, PacketLog[]>();
@@ -160,9 +181,14 @@ export function buildPacket(input: {
     const photoIds = [
       ...versions.map((log) => log.photoFileId).filter(Boolean),
     ] as string[];
-    const updates = versions
-      .filter((log) => log.photoFileId && !images.has(log.photoFileId))
-      .map(() => "A photo is stored with this note.");
+    const updates = [
+      ...versions
+        .filter((log) => log.photoFileId && !images.has(log.photoFileId))
+        .map(() => "A photo is stored with this note."),
+      ...logs
+        .filter((log) => log.type === "issue_event" && log.flags?.issueId && ids.has(String(log.flags.issueId)) && log.description)
+        .map((log) => log.description),
+    ];
     return {
       title: latest.description.replace(/\s+/g, " ").trim().slice(0, 90) || "Repair request",
       status: statusLabel(latest),
@@ -170,18 +196,39 @@ export function buildPacket(input: {
       reminder: reminder ? when(reminder.tenantReminderOn || reminder.dueDate || "") : null,
       description: latest.description,
       updates,
-      messages: messages.map((message) => ({
-        when: when(message.createdAt),
-        direction: message.direction === "inbound" ? "Received" : "Sent",
-        subject: message.subject,
-        excerpt: excerpt(message.body),
-      })),
+      messages: messages.map((message) => {
+        const attached = imagesFor(message.id);
+        return {
+          when: when(message.createdAt),
+          direction: message.direction === "inbound" ? "Received" : "Sent",
+          subject: message.subject,
+          excerpt: excerpt(message.body),
+          images: attached.map((image) => ({ ...image, caption: image.caption || photoNote(attached.length) })),
+        };
+      }),
       images: photoIds.map((id) => images.get(id)).filter((image): image is PacketImage => Boolean(image)),
       sort: latest.eventDate || latest.createdAt,
       ids,
       hash: latest.contentHash || "",
     };
-  }).sort((a, b) => a.sort.localeCompare(b.sort));
+  });
+  for (const log of logs) {
+    if (log.type === "repair" || log.type === "issue_event" || log.tier !== "possible_violation" || removed(log) || !log.id) continue;
+    issues.push({
+      title: log.description.replace(/\s+/g, " ").trim().slice(0, 90) || "Request",
+      status: statusLabel(log),
+      reported: when(log.eventDate || log.createdAt),
+      reminder: null,
+      description: log.description,
+      updates: [],
+      messages: [],
+      images: [],
+      sort: log.eventDate || log.createdAt,
+      ids: new Set([log.id]),
+      hash: log.contentHash || "",
+    });
+  }
+  issues.sort((a, b) => a.sort.localeCompare(b.sort));
 
   const open = issues.filter((issue) => issue.status === "Open" || issue.status === "Landlord says fixed").length;
   const resolved = issues.filter((issue) => issue.status.startsWith("Resolved")).length;
@@ -227,9 +274,10 @@ export function buildPacket(input: {
   }).filter((report) => report.count > 0);
 
   const looseImages = (input.images || []).filter((image) => {
-    const onIssue = issues.some((issue) => issue.images.some((item) => item.id === image.id));
+    const onIssue = issues.some((issue) => issue.images.some((item) => item.id === image.id) || issue.messages.some((message) => message.images.some((item) => item.id === image.id)));
     const onReport = conditions.some((report) => report.images.some((item) => item.id === image.id));
-    return !onIssue && !onReport;
+    const onMail = mail.some((message) => imagesFor(message.id).some((item) => item.id === image.id));
+    return !onIssue && !onReport && !onMail;
   });
 
   const ledger = input.ledger.filter((row) => !row.voidedAt).map((row) => (
@@ -263,12 +311,18 @@ export function buildPacket(input: {
     issues: issues.map(({ title, status, reported, reminder, description, updates, messages, images: issueImages }) => ({
       title, status, reported, reminder, description, updates, messages, images: issueImages,
     })),
-    communications: mail.map((message) => ({
-      when: when(message.createdAt),
-      direction: message.direction === "inbound" ? "Received" : "Sent",
-      subject: message.subject,
-      excerpt: excerpt(message.body),
-    })),
+    communications: mail.map((message) => {
+      const attached = imagesFor(message.id);
+      const onIssue = Boolean(message.logEntryId);
+      return {
+        when: when(message.createdAt),
+        direction: message.direction === "inbound" ? "Received" : "Sent",
+        subject: message.subject,
+        excerpt: excerpt(message.body),
+        photoNote: photoNote(attached.length),
+        images: onIssue ? [] : attached,
+      };
+    }),
     conditions: conditions.map(({ title, when: at, images: reportImages }) => ({ title, when: at, images: reportImages })),
     looseImages,
     ledger,
@@ -301,9 +355,9 @@ export function packetLines(input: Parameters<typeof buildPacket>[0]): string[] 
       issue.reminder ? `Reminder ${issue.reminder}` : "",
       issue.description,
       ...issue.updates,
-      ...issue.messages.map((message) => `${message.direction} ${message.when} ${message.subject} ${message.excerpt}`),
+      ...issue.messages.map((message) => `${message.direction} ${message.when} ${message.subject} ${message.excerpt}${message.images.length ? ` ${message.images.length === 1 ? "1 photo with this message" : `${message.images.length} photos with this message`}` : ""}`),
     ]),
-    ...model.communications.map((row) => `${row.direction} ${row.when} ${row.subject} ${row.excerpt}`),
+    ...model.communications.map((row) => `${row.direction} ${row.when} ${row.subject} ${row.excerpt}${row.photoNote ? ` ${row.photoNote}` : ""}`),
     ...model.conditions.map((report) => `${report.title} ${report.when}`),
     ...model.ledger,
     model.deposit || "",

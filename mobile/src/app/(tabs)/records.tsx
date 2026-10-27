@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { useState } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SvgXml } from "react-native-svg";
 import { api } from "@/api";
@@ -8,7 +8,7 @@ import { Address } from "@/address";
 import { DeleteAccount } from "@/delete-account";
 import { saveAuthorizedFile } from "@/files";
 import { LanguageToggle } from "@/language-toggle";
-import type { StepItem } from "@/next-steps";
+import { NextSteps, type StepItem } from "@/next-steps";
 import { ResolvePanel } from "@/resolve-panel";
 import type { Me, Notice } from "@/session";
 import { useSession } from "@/session";
@@ -62,7 +62,14 @@ export type Records = {
     pendingNote: string | null;
     earliest: string;
     sent?: boolean;
+    tier?: "routine" | "urgent" | "possible_violation" | null;
+    tierLabel?: string | null;
+    flag?: string | null;
+    citation?: string | null;
+    unsure?: boolean;
+    aid?: { name: string; url: string }[];
     photos?: { id: string; fileId: string; room: string; caption: string }[];
+    attachments?: { id: string; fileId: string; time: string }[];
   }[];
   archive?: {
     id: string;
@@ -156,6 +163,7 @@ export default function Records() {
   const [section, setSection] = useState<Segment>("issues");
   const [menu, setMenu] = useState(false);
   const [pendingLocale, setPendingLocale] = useState<"en" | "es" | null>(null);
+  const [held, setHeld] = useState("");
 
   const locale: "en" | "es" = pendingLocale ?? (me?.user.locale === "es" || (!me && data?.locale === "es") ? "es" : "en");
   const labels = data?.labels;
@@ -175,6 +183,22 @@ export default function Records() {
     }
   }
 
+  function onStep(step: StepItem) {
+    if (step.action === "wait") {
+      setHeld(data?.steps.held || "Nothing was sent.");
+      return;
+    }
+    if (step.action === "followup" || step.action === "send" || step.href === "/landlord") {
+      router.push((step.href || "/landlord") as "/landlord");
+      return;
+    }
+    if (step.action === "export") {
+      void download();
+      return;
+    }
+    if (step.action === "small_claims" && step.href) void Linking.openURL(step.href);
+  }
+
   async function download() {
     if (!token || !data) return;
     try {
@@ -183,6 +207,19 @@ export default function Records() {
       if (saved === "needs-landlord") router.push("/landlord");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not download the records.");
+    }
+  }
+
+  async function setTier(id: string, tier: "routine" | "urgent" | "possible_violation") {
+    if (!token || busy || !data || data.archived) return;
+    try {
+      setBusy(true);
+      setError("");
+      await reload(await api<Records>("records/tier", { token, body: { id, tier } }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not change the label.");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -307,14 +344,14 @@ export default function Records() {
       >
         {loading && !data ? <TabLoading label={es ? "Cargando" : "Loading"} /> : null}
         {data?.steps?.items?.length ? (
-          <Pressable
-            style={styles.linkHit}
-            accessibilityRole="link"
-            accessibilityLabel={labels?.nextStepsLink || (es ? "Sus próximos pasos están en Recordatorios" : "Your next steps are on Reminders")}
-            onPress={() => router.push("/reminders")}
-          >
-            <Text style={styles.link}>{labels?.nextStepsLink || (es ? "Sus próximos pasos están en Recordatorios" : "Your next steps are on Reminders")}</Text>
-          </Pressable>
+          <NextSteps
+            title={data.steps.title}
+            steps={data.steps.items}
+            note={held}
+            moreLabel={labels?.seeAll || (es ? "Ver todos los pasos" : "See all steps")}
+            hideLabel={labels?.hide || (es ? "Ocultar" : "Hide")}
+            onAction={onStep}
+          />
         ) : null}
         {section === "issues" ? (
           <View>
@@ -338,14 +375,53 @@ export default function Records() {
                       <Text style={styles.cardTitle}>{issue.title}</Text>
                       <Text style={styles.meta}>{issue.reported || issue.when}</Text>
                     </View>
-                    <View style={[styles.chip, issue.pending && styles.chipPending]}>
-                      <Text style={[styles.chipText, issue.pending && styles.chipTextPending]}>{issue.status}</Text>
+                    <View style={[styles.chip, issue.pending && styles.chipPending, issue.tier === "urgent" && styles.chipUrgent]}>
+                      <Text style={[styles.chipText, issue.pending && styles.chipTextPending, issue.tier === "urgent" && styles.chipTextUrgent]}>{issue.tier === "urgent" ? (issue.tierLabel || "Urgent") : issue.status}</Text>
                     </View>
                   </Pressable>
                   {open ? (
                     <View style={styles.expand}>
+                      {issue.flag ? <Text style={styles.flag}>{issue.flag}</Text> : null}
+                      {issue.citation ? <Text style={styles.meta}>{issue.citation}</Text> : null}
+                      {issue.unsure ? <Text style={styles.meta}>{es ? "No se puede precisar." : "Unsure."}</Text> : null}
                       <Text style={styles.body}>{issue.issue}</Text>
                       {issue.message ? <Text style={styles.body}>{issue.message}</Text> : null}
+                      {(issue.aid || []).map((link) => (
+                        <Pressable key={link.url} style={styles.linkHit} accessibilityRole="link" accessibilityLabel={link.name} onPress={() => void Linking.openURL(link.url)}>
+                          <Text style={styles.link}>{link.name}</Text>
+                        </Pressable>
+                      ))}
+                      {!data?.archived ? (
+                        <View style={styles.tiers}>
+                          {([
+                            ["routine", es ? "Rutina" : "Routine"],
+                            ["urgent", es ? "Urgente" : "Urgent"],
+                            ["possible_violation", es ? "Reglas" : "Rules"],
+                          ] as const).map(([tier, label]) => (
+                            <Pressable
+                              key={tier}
+                              style={[styles.tierButton, issue.tier === tier && styles.tierOn]}
+                              accessibilityRole="button"
+                              accessibilityLabel={label}
+                              accessibilityState={{ selected: issue.tier === tier }}
+                              disabled={busy}
+                              onPress={() => void setTier(issue.id, tier)}
+                            >
+                              <Text style={[styles.tierText, tier === "urgent" && styles.urgentText]}>{label}</Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      ) : null}
+                      {issue.attachments?.length ? (
+                        <View style={styles.thumbs}>
+                          {issue.attachments.map((photo) => (
+                            <View key={photo.id}>
+                              <PhotoThumb fileId={photo.fileId} token={token} />
+                              <Text style={styles.meta}>{photo.time}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      ) : null}
                       {issue.photos?.length ? (
                         <View style={styles.thumbs}>
                           {issue.photos.map((photo) => <PhotoThumb key={photo.id} fileId={photo.fileId} token={token} />)}
@@ -565,6 +641,14 @@ const styles = StyleSheet.create({
   body: { ...wrapText, fontSize: 14, lineHeight: 20, color: colors.mute, marginTop: 6 },
   duration: { ...wrapText, fontSize: 14, lineHeight: 20, color: colors.ink, fontWeight: "700", marginTop: 4 },
   chip: { maxWidth: "46%", backgroundColor: "#E7F3F1", borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
+  chipUrgent: { backgroundColor: "#FDE8EE" },
+  chipTextUrgent: { color: colors.bad },
+  flag: { ...wrapText, color: colors.ink, fontSize: 15, lineHeight: 21, fontWeight: "700", marginBottom: 6 },
+  tiers: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
+  tierButton: { minHeight: 36, borderRadius: 999, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 12, justifyContent: "center", backgroundColor: colors.card },
+  tierOn: { borderColor: colors.pine, backgroundColor: "#E7F3F1" },
+  tierText: { color: colors.ink, fontSize: 13, fontWeight: "700" },
+  urgentText: { color: colors.bad },
   chipPending: { backgroundColor: "#F8F1E4" },
   chipText: { ...wrapText, fontSize: 12, lineHeight: 16, color: colors.pine, fontWeight: "700", textAlign: "center" },
   chipTextPending: { color: colors.warn },

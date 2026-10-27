@@ -440,6 +440,7 @@ export type LogEntry = {
   type: string;
   noticeKind: string | null;
   severity: string | null;
+  tier: string | null;
   room: string | null;
   description: string;
   flags: Record<string, unknown>;
@@ -464,6 +465,7 @@ type LogRow = {
   type: string;
   notice_kind: string | null;
   severity: string | null;
+  tier: string | null;
   room: string | null;
   description: string;
   flags: string;
@@ -489,6 +491,7 @@ function mapLog(row: LogRow): LogEntry {
     type: row.type,
     noticeKind: row.notice_kind,
     severity: row.severity,
+    tier: row.tier || null,
     room: row.room,
     description: row.description,
     flags: parseJson<Record<string, unknown>>(row.flags, {}),
@@ -533,6 +536,7 @@ export async function insertLog(input: {
   type: string;
   noticeKind?: string | null;
   severity?: string | null;
+  tier?: string | null;
   room?: string | null;
   description: string;
   flags?: Record<string, unknown>;
@@ -558,6 +562,7 @@ export async function insertLog(input: {
     type: input.type,
     noticeKind: input.noticeKind || null,
     severity: input.severity || null,
+    tier: input.tier || null,
     room: input.room || null,
     description: input.description,
     flags: input.flags || {},
@@ -568,12 +573,12 @@ export async function insertLog(input: {
   const contentHash = chainHash(prev?.content_hash || GENESIS_HASH, payload);
   await run(
     `insert into log_entries (
-      id, unit_id, user_id, version_group, version, revises_id, type, notice_kind, severity, room,
+      id, unit_id, user_id, version_group, version, revises_id, type, notice_kind, severity, tier, room,
       description, flags, photo_file_id, prev_hash, content_hash, event_date, created_at
-    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id, input.unitId, input.userId, versionGroup, version, input.revisesId || null, input.type,
-      input.noticeKind || null, input.severity || null, input.room || null, input.description,
+      input.noticeKind || null, input.severity || null, input.tier || null, input.room || null, input.description,
       JSON.stringify(input.flags || {}), input.photoFileId || null, prev?.content_hash || GENESIS_HASH,
       contentHash, input.eventDate, createdAt,
     ],
@@ -935,6 +940,14 @@ export async function updateLogResolution(userId: string, id: string, patch: {
   return await getLog(userId, id);
 }
 
+export async function setLogTier(userId: string, id: string, tier: string, flags: Record<string, unknown>): Promise<LogEntry> {
+  const current = await getLog(userId, id);
+  await requireWritable(userId, current.unitId);
+  if (current.flags?.removed === true) throw new HttpError("That request was removed.");
+  await run("update log_entries set tier = ?, flags = ? where id = ?", [tier, JSON.stringify(flags), id]);
+  return await getLog(userId, id);
+}
+
 export async function setLinkedDeadlines(userId: string, unitId: string, sourceId: string, from: string, to: string) {
   await requireWritable(userId, unitId);
   return await run(
@@ -1224,6 +1237,7 @@ export type StoredPhoto = {
   link: string;
   logId: string | null;
   reportId: string | null;
+  messageId: string | null;
   createdAt: string;
 };
 
@@ -1231,7 +1245,7 @@ export async function listPhotos(userId: string, unitId: string): Promise<Stored
   await requireUnit(userId, unitId);
   const rows = await all<{
     id: string; file_id: string; room: string | null; caption: string | null; link: string;
-    log_id: string | null; report_id: string | null; created_at: string;
+    log_id: string | null; report_id: string | null; message_id: string | null; created_at: string;
   }>("select * from photos where unit_id = ? order by created_at desc", [unitId]);
   return rows.map((row) => ({
     id: row.id,
@@ -1241,21 +1255,57 @@ export async function listPhotos(userId: string, unitId: string): Promise<Stored
     link: row.link,
     logId: row.log_id,
     reportId: row.report_id,
+    messageId: row.message_id,
     createdAt: timeText(row.created_at) || new Date().toISOString(),
   }));
 }
 
 export async function insertPhoto(userId: string, unitId: string, input: {
-  fileId: string; room: string; caption: string; link: string; logId: string | null; reportId: string | null;
+  fileId: string; room: string; caption: string; link: string; logId: string | null; reportId: string | null; messageId?: string | null;
 }) {
   await requireWritable(userId, unitId);
   const id = randomUUID();
   await run(
-    `insert into photos (id, unit_id, user_id, file_id, room, caption, link, log_id, report_id, created_at)
-     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, unitId, userId, input.fileId, input.room, input.caption, input.link, input.logId, input.reportId, new Date().toISOString()],
+    `insert into photos (id, unit_id, user_id, file_id, room, caption, link, log_id, report_id, message_id, created_at)
+     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, unitId, userId, input.fileId, input.room, input.caption, input.link, input.logId, input.reportId, input.messageId || null, new Date().toISOString()],
   );
   return id;
+}
+
+export async function linkPhotoMessage(userId: string, photoId: string, messageId: string): Promise<void> {
+  const message = await messageForUser(userId, messageId);
+  const photo = await one<{ id: string; unit_id: string; log_id: string | null; link: string; message_id: string | null }>(
+    "select id, unit_id, log_id, link, message_id from photos where id = ?",
+    [photoId],
+  );
+  if (!photo || photo.unit_id !== message.unitId) throw new HttpError("That photo was not found.");
+  if (message.logEntryId && photo.log_id && photo.log_id !== message.logEntryId) {
+    throw new HttpError("That photo belongs to a different request.");
+  }
+  if (photo.message_id === messageId) return;
+  const logId = photo.log_id || message.logEntryId;
+  const link = logId ? "issue" : photo.link;
+  if (hasUserActor()) return withActor(null, () => linkPhotoMessage(userId, photoId, messageId));
+  await run("update photos set message_id = ?, log_id = ?, link = ? where id = ?", [messageId, logId, link, photoId]);
+}
+
+export async function detachPhotoMessage(userId: string, photoId: string, messageId: string): Promise<void> {
+  const message = await messageForUser(userId, messageId);
+  if (message.deliveryStatus !== "draft") throw new HttpError("This message was already sent.");
+  if (hasUserActor()) return withActor(null, () => detachPhotoMessage(userId, photoId, messageId));
+  await run("update photos set message_id = null where id = ? and message_id = ? and unit_id = ?", [photoId, messageId, message.unitId]);
+}
+
+export async function messagePhotoFiles(userId: string, messageId: string): Promise<{ id: string; fileId: string; name: string; mime: string; bytes: number }[]> {
+  const message = await messageForUser(userId, messageId);
+  const rows = await all<{ id: string; file_id: string; name: string; mime: string; bytes: number }>(
+    `select p.id, p.file_id, f.name, f.mime, f.bytes
+     from photos p join files f on f.id = p.file_id
+     where p.message_id = ? and p.unit_id = ?`,
+    [messageId, message.unitId],
+  );
+  return rows.map((row) => ({ id: row.id, fileId: row.file_id, name: row.name, mime: row.mime, bytes: Number(row.bytes) || 0 }));
 }
 
 export async function deleteEmptyConditions(userId: string, unitId: string) {

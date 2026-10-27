@@ -15,8 +15,13 @@ import {
   insertDeadline,
   insertLog,
   insertMessage,
+  insertPhoto,
   isBlocked,
+  linkPhotoMessage,
+  messagePhotoFiles,
   promoteDraftMessage,
+  readFileForUser,
+  saveFile,
   leaseTextHash,
   listLogs,
   replaceOpenDeadline,
@@ -26,8 +31,10 @@ import {
   type User,
 } from "@/lib/db";
 import { landlordMessageBody, sendRelayEmail } from "@/lib/email";
+import { photoFilename, rejectPhotoSet } from "@/lib/message-photos";
 import { messageParagraphs, renderMail } from "@/lib/email-template";
 import { LIBRARY_VERSION, type Locale } from "@/lib/disclaimer";
+import { tierForSeverity } from "@/lib/triage";
 import { LEASE_REVIEW_MONTHLY_CAP, mergeModelFindings, redactPii, reviewLease, type ModelFinding } from "@/lib/lease/review";
 import { RULES } from "@/lib/rules/library";
 import {
@@ -90,12 +97,22 @@ export async function recordLog(input: {
       };
     }
   }
+  const entryCheck = flags.entry as { atLeast24?: boolean } | undefined;
+  const retaliation = flags.retaliation as { flagged?: boolean } | undefined;
+  const failedCheck = entryCheck?.atLeast24 === false || retaliation?.flagged === true;
+  const tier = failedCheck
+    ? "possible_violation"
+    : input.type === "repair"
+      ? tierForSeverity(input.severity)
+      : null;
+  if (failedCheck) flags.unsure = true;
   const entry = await insertLog({
     unitId: input.unit.id,
     userId: input.user.id,
     type: input.type,
     noticeKind: input.noticeKind,
     severity: input.severity,
+    tier,
     room: input.room,
     description: input.description,
     flags,
@@ -172,9 +189,9 @@ async function storeLandlordMail(input: {
       providerId: input.providerId || null,
       responseToken: input.responseToken || null,
     });
-    return;
+    return input.existingId;
   }
-  await insertMessage({
+  const message = await insertMessage({
     unitId: input.unit.id,
     userId: input.user.id,
     logEntryId: input.logEntryId,
@@ -189,6 +206,46 @@ async function storeLandlordMail(input: {
     providerId: input.providerId,
     responseToken: input.responseToken,
   });
+  return message.id;
+}
+
+export type OutgoingPhoto = {
+  name: string;
+  mime: string;
+  bytes: Buffer;
+  issueId: string | null;
+  existingPhotoId: string | null;
+};
+
+async function stagedPhotos(user: User, messageId: string): Promise<OutgoingPhoto[]> {
+  const rows = await messagePhotoFiles(user.id, messageId);
+  const photos: OutgoingPhoto[] = [];
+  for (const row of rows) {
+    const file = await readFileForUser(user.id, row.fileId);
+    if (!file) throw new Error("That photo could not be read.");
+    photos.push({ name: file.name || row.name, mime: file.mime || row.mime, bytes: file.bytes, issueId: null, existingPhotoId: row.id });
+  }
+  return photos;
+}
+
+async function persistPhotos(user: User, unit: Unit, messageId: string, logEntryId: string | null, photos: OutgoingPhoto[]) {
+  for (const photo of photos) {
+    const issueId = photo.issueId || logEntryId;
+    if (photo.existingPhotoId) {
+      await linkPhotoMessage(user.id, photo.existingPhotoId, messageId);
+      continue;
+    }
+    const fileId = await saveFile(user.id, unit.id, photoFilename(photo.name, photo.mime), photo.mime, photo.bytes);
+    await insertPhoto(user.id, unit.id, {
+      fileId,
+      room: "",
+      caption: "",
+      link: issueId ? "issue" : "none",
+      logId: issueId,
+      reportId: null,
+      messageId,
+    });
+  }
 }
 
 export async function emailLandlord(input: {
@@ -198,27 +255,36 @@ export async function emailLandlord(input: {
   existingId?: string | null;
   subject: string;
   tenantText: string;
+  photos?: OutgoingPhoto[];
 }) {
   assertWritable(input.unit, input.user.locale);
   if (!input.unit.landlordEmail) {
     throw new Error("Add the landlord's email on your unit before sending.");
   }
+  const staged = input.existingId ? await stagedPhotos(input.user, input.existingId) : [];
+  const photos = [...staged, ...(input.photos || []).filter((photo) => !photo.existingPhotoId || !staged.some((item) => item.existingPhotoId === photo.existingPhotoId))];
+  const tooBig = rejectPhotoSet(photos.map((photo) => ({ mime: photo.mime, bytes: photo.bytes.length })));
+  if (tooBig) throw new Error(tooBig);
+  const attachments = photos.map((photo) => ({ filename: photoFilename(photo.name, photo.mime), content: photo.bytes.toString("base64") }));
+  const photoLine = photos.length === 1 ? "1 photo is attached to this email." : photos.length > 1 ? `${photos.length} photos are attached to this email.` : "";
   if (isSampleAccount(input.user.email)) {
-    await storeLandlordMail({
+    const messageId = await storeLandlordMail({
       ...input,
       body: input.tenantText,
       deliveryStatus: "local_only",
       deliveryDetail: "This sample home does not email a landlord.",
     });
+    await persistPhotos(input.user, input.unit, messageId, input.logEntryId, photos);
     return "local_only";
   }
   if (await isBlocked(input.unit.id)) {
-    await storeLandlordMail({
+    const messageId = await storeLandlordMail({
       ...input,
       body: input.tenantText,
       deliveryStatus: "blocked",
       deliveryDetail: "The landlord blocked later mail. Print a letter and mail it yourself.",
     });
+    await persistPhotos(input.user, input.unit, messageId, input.logEntryId, photos);
     return "blocked";
   }
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -233,9 +299,10 @@ export async function emailLandlord(input: {
     heading: "Message from your tenant",
     paragraphs: [
       ...messageParagraphs(input.tenantText),
+      photoLine,
       "The tenant wrote this message. Rent Right only provides the mailbox.",
       "You can acknowledge, give a schedule, mark the issue fixed, dispute it, or block later non-essential mail.",
-    ],
+    ].filter(Boolean),
     button: { label: "Respond", href: responseUrl },
   });
   const sent = await sendRelayEmail({
@@ -245,8 +312,9 @@ export async function emailLandlord(input: {
     subject: input.subject,
     text: mail.text,
     html: mail.html,
+    attachments,
   });
-  await storeLandlordMail({
+  const messageId = await storeLandlordMail({
     ...input,
     body,
     deliveryStatus: sent.status,
@@ -254,6 +322,7 @@ export async function emailLandlord(input: {
     providerId: sent.providerId,
     responseToken: token,
   });
+  await persistPhotos(input.user, input.unit, messageId, input.logEntryId, photos);
   return sent.status;
 }
 

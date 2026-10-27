@@ -1,5 +1,5 @@
 import { formatAddressPlain, type AddressParts } from "@/lib/address-format";
-import { cardAfterSend, serializeCard, type ChatCard } from "@/lib/chat-card";
+import { cardAfterSend, flagCard, serializeCard, type CardKind, type ChatCard } from "@/lib/chat-card";
 import { aiConfigured } from "@/lib/ai";
 import { answerFromConversation } from "@/lib/chat-answer";
 import { fold, planFromIntent, planTurn, repairFacts, resolveIntent, type TurnPlan } from "@/lib/chat-intent";
@@ -14,6 +14,7 @@ import {
   createChatDraft,
   getDeposit,
   getLog,
+  insertPhoto,
   listDeadlines,
   listLeaseReviews,
   listLogs,
@@ -35,11 +36,12 @@ import { ORDINANCES } from "@/lib/rules/cities/catalog";
 import { detectPlace } from "@/lib/rules/detect";
 import { todayISO } from "@/lib/rules/dates";
 import { checkRentIncrease, depositReturnDeadline, repairReminder, type AreaKey, type RepairSeverity } from "@/lib/rules/engine";
+import { aidLinks, aidText, photoPrompt, safetySteps, tierForSeverity, timelinePointer, violationDetail, violationFlag } from "@/lib/triage";
 import { renderAnswer, selectRules } from "@/lib/rules/assistant";
 import { getRule } from "@/lib/rules/library";
 import { formatMoney, percentLabel } from "@/lib/format";
 import { tx } from "@/lib/text";
-import { findResolutionTarget, resolveRepair } from "@/lib/issues";
+import { findResolutionTarget, recordRulesIssue, resolveRepair } from "@/lib/issues";
 import { issueTitle } from "@/lib/resolution";
 import { addLandlordLabel, landlordPrompt, landlordReady } from "@/lib/landlord";
 import { ensureRepairDeadline, ensureRepairDrafts } from "@/lib/repair-draft";
@@ -66,12 +68,13 @@ function cardAddress(unit: Unit): AddressParts {
   };
 }
 
-async function say(user: User, unit: Unit, card: ChatCard): Promise<string> {
-  return await sayTo(user, unit.id, card);
+async function say(user: User, unit: Unit, card: ChatCard, kind: CardKind = "prompt"): Promise<string> {
+  return await sayTo(user, unit.id, card, kind);
 }
 
-async function sayTo(user: User, unitId: string | null, card: ChatCard): Promise<string> {
-  return await remember(user, unitId, "assistant", serializeCard(card), card.ruleId, card.status.toLowerCase().includes("unsure") || card.headline.toLowerCase().includes("not sure"));
+async function sayTo(user: User, unitId: string | null, card: ChatCard, kind: CardKind = "prompt"): Promise<string> {
+  const flagged = flagCard(card, kind);
+  return await remember(user, unitId, "assistant", serializeCard(flagged), flagged.ruleId, flagged.status.toLowerCase().includes("unsure") || flagged.headline.toLowerCase().includes("not sure"));
 }
 
 async function asked(user: User, unit: Unit | null, text: string) {
@@ -181,7 +184,7 @@ async function answerStatewide(user: User, question: string) {
     action: null,
     detail: answer.text,
     ruleId: answer.ruleIds[0] || null,
-  });
+  }, "cited");
 }
 
 async function runWithoutPlace(user: User, text: string, action: string, attachment: { name: string; mime: string; base64: string } | null) {
@@ -252,6 +255,11 @@ export async function runChatTurn(user: User, unit: Unit | null, input: {
   if (action === "letter") {
     await asked(user, unit, text || tx(user.locale, "Draft a letter", "Redactar una carta"));
     await askForLetter(user, unit);
+    return;
+  }
+  if (action.startsWith("photo-link:")) {
+    await asked(user, unit, input.attachment?.name || text || tx(user.locale, "Issue photo", "Foto del problema"));
+    await linkChatPhoto(user, unit, action.slice("photo-link:".length), input.attachment || null, text);
     return;
   }
   if (action === "upload-lease") {
@@ -333,20 +341,20 @@ async function confirmSend(user: User, unit: Unit, draftId: string) {
     const entry = await getLog(user.id, logId);
     await ensureRepairDeadline(user, unit, entry);
   }
-  const confirmed: ChatCard = {
+  const confirmed = flagCard({
     headline: tx(user.locale, "Landlord email", "Correo al propietario"),
     status: deliveryLabel(status, false, user.locale),
     action: { id: "open-landlord", label: tx(user.locale, "Open landlord", "Abrir propietario") },
     detail: tx(user.locale, `You confirmed this send.\n\n${body}`, `Usted confirmó este envío.\n\n${body}`),
     ruleId: null,
-  };
+  }, "issue");
   const messageId = typeof draft.payload.cardMessageId === "string" ? draft.payload.cardMessageId : "";
   const stored = messageId ? await assistantMessageContent(user.id, messageId) : null;
   const next = stored ? cardAfterSend(stored, confirmed) : stored;
   const replaced = stored && next && next !== stored
     ? await updateAssistantMessage(user.id, messageId, { content: next, ruleIds: [], unsure: false })
     : false;
-  if (!replaced) await say(user, unit, confirmed);
+  if (!replaced) await say(user, unit, confirmed, "issue");
   await closeChatDraft(user.id, draft.id, "sent");
 }
 
@@ -393,7 +401,7 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: Awaited<
     if (plan.proposedCents == null) {
       await say(user, unit, {
         headline: tx(user.locale, "Need the rent amounts", "Faltan los montos"),
-        status: tx(user.locale, "Not checked", "Sin revisión"),
+        status: "",
         action: null,
         detail: tx(
           user.locale,
@@ -437,7 +445,7 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: Awaited<
       }
       await say(user, unit, {
         headline: tx(user.locale, "Need your move-out date", "Falta la fecha de salida"),
-        status: tx(user.locale, "Not counted", "Sin conteo"),
+        status: "",
         action: null,
         detail: tx(user.locale, "Say the day you moved out, like 2026-09-01. The 21-day count has not started.", "Diga el día en que se mudó, como 2026-09-01. El conteo de 21 días no ha empezado."),
         ruleId: "CA-CC-1950.5",
@@ -476,7 +484,7 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: Awaited<
       action: null,
       detail: `${user.locale === "es" ? next.explanationEs : next.explanation}\n\n${next.computation}`,
       ruleId: next.ruleId,
-    });
+    }, "cited-issue");
     return;
   }
   if (plan.type === "rights") {
@@ -487,15 +495,27 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: Awaited<
 }
 
 function repairPromptCard(user: User): ChatCard {
+  const spanish = user.locale === "es";
   return {
     headline: tx(user.locale, "What's broken?", "¿Qué está descompuesto?"),
-    status: tx(user.locale, "Not saved", "Sin guardar"),
+    status: "",
     action: null,
-    detail: tx(
-      user.locale,
-      "Say what needs repair, like no hot water or a leaking sink. Nothing was saved yet.",
-      "Diga qué hay que reparar, como que no hay agua caliente o que se filtra el fregadero. Aún no se guardó nada.",
-    ),
+    actions: spanish
+      ? [
+          { id: "prompt:No hay agua caliente", label: "No hay agua caliente" },
+          { id: "prompt:El fregadero se filtra", label: "El fregadero se filtra" },
+          { id: "prompt:No hay calefacción", label: "No hay calefacción" },
+          { id: "prompt:Hay moho", label: "Hay moho" },
+          { id: "prompt:Hay plagas", label: "Hay plagas" },
+        ]
+      : [
+          { id: "prompt:No hot water", label: "No hot water" },
+          { id: "prompt:The sink is leaking", label: "Leaking sink" },
+          { id: "prompt:No heat", label: "No heat" },
+          { id: "prompt:There is mold", label: "Mold" },
+          { id: "prompt:There are pests", label: "Pests" },
+        ],
+    detail: tx(user.locale, "Pick one, or describe what needs repair.", "Elija una, o describa qué hay que reparar."),
     ruleId: null,
   };
 }
@@ -503,7 +523,7 @@ function repairPromptCard(user: User): ChatCard {
 function leaseCard(user: User): ChatCard {
   return {
     headline: tx(user.locale, "Add your lease", "Agregue su contrato"),
-    status: tx(user.locale, "Not reviewed", "Sin revisión"),
+    status: "",
     action: { id: "upload-lease", label: tx(user.locale, "Upload lease", "Subir contrato") },
     detail: tx(
       user.locale,
@@ -517,7 +537,7 @@ function leaseCard(user: User): ChatCard {
 function leasePlaceCard(user: User): ChatCard {
   return {
     headline: tx(user.locale, "A place is required", "Se necesita una vivienda"),
-    status: tx(user.locale, "Not reviewed", "Sin revisión"),
+    status: "",
     action: { id: "add-unit", label: tx(user.locale, "Add your place", "Agregue su vivienda") },
     detail: tx(
       user.locale,
@@ -532,7 +552,7 @@ function suggestionCard(user: User): ChatCard {
   const spanish = user.locale === "es";
   return {
     headline: tx(user.locale, "What do you want to do?", "¿Qué quiere hacer?"),
-    status: tx(user.locale, "Nothing was sent.", "No se envió nada."),
+    status: "",
     action: null,
     actions: spanish
       ? [
@@ -570,7 +590,7 @@ async function answerRights(user: User, unit: Unit, question: string, history: s
     action: null,
     detail: answer.text,
     ruleId: answer.ruleIds[0] || null,
-  });
+  }, "cited");
 }
 
 async function offerResolve(user: User, unit: Unit, summary: string) {
@@ -709,7 +729,7 @@ async function applyRepairChoice(user: User, unit: Unit, action: string) {
     action: null,
     detail: tx(user.locale, "The note was added to the open request. Nothing new was emailed.", "La nota se agregó a la solicitud abierta. No se envió ningún correo nuevo."),
     ruleId: null,
-  });
+  }, "issue");
 }
 
 async function logRepair(user: User, unit: Unit, summary: string, severity: RepairSeverity, room: string | null, attachment: { name: string; mime: string; base64: string } | null, forceNew = false) {
@@ -749,24 +769,71 @@ async function logRepair(user: User, unit: Unit, summary: string, severity: Repa
     subject: letter?.subject || tx(user.locale, `${room || "Home"} repair`, `Reparación: ${room || "vivienda"}`),
     text: letter?.body || summary,
   });
+  const urgent = tierForSeverity(severity) === "urgent";
   const messageId = await say(user, unit, {
     headline: tx(user.locale, "Repair logged", "Reparación anotada"),
     status: tx(user.locale, "Not sent", "No enviado"),
+    badge: urgent ? "urgent" : undefined,
     action: landlordReady(unit)
       ? { id: `send:${draft.id}`, label: tx(user.locale, "Send to landlord", "Enviar al propietario") }
       : { id: "add-landlord", label: addLandlordLabel(user.locale) },
-    detail: `${user.locale === "es" ? reminder.explanationEs : reminder.explanation}\n\n${reminder.computation}\n\n${landlordReady(unit) ? tx(user.locale, "Nothing was emailed. Send only if you want the landlord to get this note.", "No se envió ningún correo. Envíe solo si quiere que el propietario reciba esta nota.") : landlordPrompt(user.locale)}`,
+    detail: [
+      safetySteps(severity, user.locale),
+      urgent ? photoPrompt(severity, user.locale) : "",
+      user.locale === "es" ? reminder.explanationEs : reminder.explanation,
+      reminder.computation,
+      landlordReady(unit)
+        ? tx(user.locale, "Nothing was emailed. Send only if you want the landlord to get this note.", "No se envió ningún correo. Envíe solo si quiere que el propietario reciba esta nota.")
+        : landlordPrompt(user.locale),
+    ].filter(Boolean).join("\n\n"),
     address: cardAddress(unit),
     ruleId: reminder.ruleId,
-  });
+  }, "cited-issue");
   await setChatDraftPayload(user.id, draft.id, { ...draft.payload, cardMessageId: messageId });
+}
+
+async function linkChatPhoto(user: User, unit: Unit, issueId: string, attachment: { name: string; mime: string; base64: string } | null, text: string) {
+  if (!attachment?.base64 || !attachment.mime.toLowerCase().startsWith("image/")) {
+    throw new Error(tx(user.locale, "That file type is not supported. Use a photo.", "Ese tipo de archivo no es compatible. Use una foto."));
+  }
+  const bytes = Buffer.from(attachment.base64, "base64");
+  if (!bytes.length) throw new Error(tx(user.locale, "That photo was empty.", "Esa foto estaba vacía."));
+  if (bytes.length > 8 * 1024 * 1024) throw new Error(tx(user.locale, "That photo is too large. Each photo must be 8 MB or smaller.", "Esa foto es demasiado grande. Cada foto debe ser de 8 MB o menos."));
+  const entry = await getLog(user.id, issueId);
+  if (!entry || entry.unitId !== unit.id || entry.type !== "repair" || entry.status === "resolved" || entry.flags?.removed === true) {
+    await say(user, unit, {
+      headline: tx(user.locale, "Photo not added", "Foto sin agregar"),
+      status: tx(user.locale, "Nothing saved", "Nada guardado"),
+      action: null,
+      detail: tx(user.locale, "That request is not open. Nothing was saved.", "Esa solicitud no está abierta. No se guardó nada."),
+      ruleId: null,
+    });
+    return;
+  }
+  const fileId = await saveFile(user.id, unit.id, attachment.name || "issue.jpg", attachment.mime, bytes);
+  await insertPhoto(user.id, unit.id, {
+    fileId,
+    room: entry.room || "",
+    caption: text.slice(0, 200),
+    link: "issue",
+    logId: entry.id,
+    reportId: null,
+  });
+  const title = issueTitle(entry.description, tx(user.locale, "request", "solicitud"));
+  await say(user, unit, {
+    headline: tx(user.locale, `Photo added to ${title}`, `Foto agregada a ${title}`),
+    status: tx(user.locale, "Saved on the request", "Guardada en la solicitud"),
+    action: null,
+    detail: tx(user.locale, "The photo is stored with that request. Nothing was emailed.", "La foto quedó guardada con esa solicitud. No se envió ningún correo."),
+    ruleId: null,
+  }, "issue");
 }
 
 async function runRent(user: User, unit: Unit, lowest: number | null, proposed: number | null, effectiveDate: string, noticeDate: string | null = null) {
   if (lowest == null || proposed == null) {
     await say(user, unit, {
       headline: tx(user.locale, "Need both rents", "Faltan las dos rentas"),
-      status: tx(user.locale, "Not checked", "Sin revisión"),
+      status: "",
       action: null,
       detail: tx(user.locale, "The current rent is not on the unit, and the message did not include it. No cap was checked.", "La renta actual no está en la unidad y el mensaje no la incluyó. No se revisó un tope."),
       ruleId: null,
@@ -789,21 +856,64 @@ async function runRent(user: User, unit: Unit, lowest: number | null, proposed: 
   });
   await saveRentCheck(user.id, unit.id, { source: "chat", effectiveDate }, result);
   const status = result.applicable.ppm != null ? percentLabel(result.applicable.ppm) : tx(user.locale, "No single cap", "Sin un solo tope");
+  const over = result.applicable.status === "over_cap";
+  const reason = user.locale === "es" ? result.applicable.reasonEs : result.applicable.reason;
+  const links = aidFor(unit);
+  if (over) {
+    await recordRulesIssue(user, unit, {
+      kind: "rent_cap",
+      noticeKind: "rent_increase",
+      citation: result.applicable.ruleId || "CA-CC-1947.12",
+      unsure: false,
+      description: [
+        violationFlag(user.locale),
+        result.applicable.ruleId || "",
+        reason,
+        timelinePointer(user.locale),
+        aidText(links, user.locale),
+      ].filter(Boolean).join("\n\n"),
+    });
+  }
   await say(user, unit, {
-    headline: rentHeadline(result.applicable.status, user.locale),
+    headline: over ? violationFlag(user.locale) : rentHeadline(result.applicable.status, user.locale),
     status,
+    badge: over ? "violation" : undefined,
     action: null,
-    detail: [
-      user.locale === "es" ? result.applicable.reasonEs : result.applicable.reason,
-      result.notice.computation,
-      noticeDate
-        ? ""
-        : tx(user.locale, "The notice date was not in the message, so the 30-day or 90-day count uses today.", "La fecha del aviso no estaba en el mensaje, así que el conteo de 30 o 90 días usa hoy."),
-      result.frequency.computation,
-      user.locale === "es" ? result.jurisdictionNoteEs : result.jurisdictionNote,
-    ].filter(Boolean).join("\n\n"),
+    detail: over
+      ? violationDetail({
+          locale: user.locale,
+          citation: result.applicable.ruleId || "CA-CC-1947.12",
+          reason: [
+            reason,
+            result.notice.computation,
+            result.frequency.computation,
+            user.locale === "es" ? result.jurisdictionNoteEs : result.jurisdictionNote,
+          ].filter(Boolean).join("\n\n"),
+          unsure: false,
+          links,
+        })
+      : [
+          reason,
+          result.notice.computation,
+          noticeDate
+            ? ""
+            : tx(user.locale, "The notice date was not in the message, so the 30-day or 90-day count uses today.", "La fecha del aviso no estaba en el mensaje, así que el conteo de 30 o 90 días usa hoy."),
+          result.frequency.computation,
+          user.locale === "es" ? result.jurisdictionNoteEs : result.jurisdictionNote,
+          result.applicable.status === "unsure" ? tx(user.locale, "Unsure.", "No se puede precisar.") : "",
+        ].filter(Boolean).join("\n\n"),
     ruleId: result.applicable.ruleId,
-  });
+  }, "cited-quiet");
+}
+
+function aidFor(unit: Unit) {
+  const place = detectPlace({ address: unit.street, city: unit.city, postalCode: unit.postalCode, region: unit.region });
+  const local = place.pack
+    ? { name: place.pack.housingName, url: place.pack.housingUrl }
+    : place.localOrdinance
+      ? { name: place.localOrdinance.housingName || place.localOrdinance.name, url: place.localOrdinance.housingUrl }
+      : null;
+  return aidLinks(local);
 }
 
 async function runDeposit(user: User, unit: Unit, moveOutDate: string) {
@@ -828,14 +938,14 @@ async function sayDeposit(user: User, unit: Unit, dueDate: string | null, explan
     action: { id: "letter", label: tx(user.locale, "Draft a letter", "Redactar una carta") },
     detail: `${user.locale === "es" ? explanationEs : explanation}\n\n${tx(user.locale, "The letter is not emailed. You would mail or send it yourself.", "La carta no se envía por correo. Usted la enviaría.")}`,
     ruleId,
-  });
+  }, "cited-issue");
 }
 
 async function askForLetter(user: User, unit: Unit) {
   await createChatDraft(user.id, unit.id, "letter", {});
   await say(user, unit, {
     headline: tx(user.locale, "Your words", "Sus palabras"),
-    status: tx(user.locale, "Not created", "Sin crear"),
+    status: "",
     action: null,
     detail: tx(user.locale, "Write at least a short explanation in your own words. If a forwarding address is not saved, include “My forwarding address is …”. Nothing is emailed.", "Escriba al menos una explicación breve con sus palabras. Si no hay una dirección de reenvío guardada, incluya “My forwarding address is …”. No se envía ningún correo."),
     ruleId: "CA-CC-1950.5",
@@ -888,7 +998,7 @@ async function writeLetter(user: User, unit: Unit, text: string) {
     detail: `${letter}\n\n${tx(user.locale, "Rent Right did not mail this letter.", "Rent Right no envió esta carta.")}`,
     address: cardAddress(unit),
     ruleId: "CA-CC-1950.5",
-  });
+  }, "cited-quiet");
 }
 
 async function reviewAttachment(user: User, unit: Unit, file: { name: string; mime: string; base64: string }) {
@@ -906,7 +1016,7 @@ async function reviewAttachment(user: User, unit: Unit, file: { name: string; mi
       ? review.result.findings.map((item) => `${findingStatus(item.label, user.locale)}\n${item.quote}\n${item.ruleId || tx(user.locale, "unsure", "no se puede precisar")}`).join("\n\n")
       : tx(user.locale, "The review was saved.", "La revisión se guardó."),
     ruleId: finding?.ruleId || null,
-  });
+  }, "cited-quiet");
 }
 
 function numberOrNull(value: unknown): number | null {

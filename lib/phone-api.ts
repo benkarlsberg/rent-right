@@ -20,6 +20,10 @@ import {
   listConditions,
   listPhotos,
   insertPhoto,
+  linkPhotoMessage,
+  detachPhotoMessage,
+  messagePhotoFiles,
+  readFileForUser,
   deleteEmptyConditions,
   discardDraftMessage,
   insertCustomReminder,
@@ -69,6 +73,7 @@ import {
   type LogInput,
   type MessageInput,
 } from "@/lib/records-view";
+import { aidLinks, aidText, isIssueTier, timelinePointer, violationFlag } from "@/lib/triage";
 import {
   chatPreview,
   deliveryLabel,
@@ -85,14 +90,15 @@ import { reviewerEmail, reviewerMatch } from "@/lib/reviewer";
 import { DEMO_EMAIL, startSampleTenancy } from "@/lib/seed";
 import { userFromAppleIdToken } from "@/lib/supabase-auth";
 import { appUrl, relayAddress, tx } from "@/lib/text";
-import { parseCard } from "@/lib/chat-card";
+import { chatTurnShowsSteps, parseCard, replyShowsNotice } from "@/lib/chat-card";
 import { runChatTurn } from "@/lib/chat-turn";
 import { drainRoundTrips, withActor } from "@/lib/pg";
 import { archivedNote, previewResidence, residencePayload, saveResidence, selectResidence } from "@/lib/residence";
-import { hideIssue, issueHistory, issueSummary, reopenRepair, resolveRepair } from "@/lib/issues";
+import { hideIssue, issueHistory, issueSummary, recordRulesIssue, refreshIssueTiers, reopenRepair, resolveRepair, setIssueTier } from "@/lib/issues";
 import { deleteReminder, dismissReminder, restoreReminder } from "@/lib/reminders";
 import { confirmedOutbound, ensureRepairDeadline, ensureRepairDrafts } from "@/lib/repair-draft";
-import { askAssistant, emailLandlord, extractPdfOrText, recordLog, runLeaseReview, sampleLeaseText, saveDepositAndDeadline } from "@/lib/workflow";
+import { photoFilename, rejectPhotoSet } from "@/lib/message-photos";
+import { askAssistant, emailLandlord, extractPdfOrText, recordLog, runLeaseReview, sampleLeaseText, saveDepositAndDeadline, type OutgoingPhoto } from "@/lib/workflow";
 
 function json(data: unknown, status = 200) {
   return Response.json(data, {
@@ -255,6 +261,16 @@ function unitPlace(unit: Unit) {
   return detectPlace({ address: unit.street, city: unit.city, postalCode: unit.postalCode, region: unit.region });
 }
 
+function aidFor(unit: Unit) {
+  const place = unitPlace(unit);
+  const local = place.pack
+    ? { name: place.pack.housingName, url: place.pack.housingUrl }
+    : place.localOrdinance
+      ? { name: place.localOrdinance.housingName || place.localOrdinance.name, url: place.localOrdinance.housingUrl }
+      : null;
+  return aidLinks(local);
+}
+
 function unitLocal(unit: Unit, locale: Locale) {
   const place = unitPlace(unit);
   if (place.pack) return null;
@@ -415,6 +431,8 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "POST" && key === "chat/draft") return json(await saveDraft(await readBody(request)));
   if (method === "POST" && key === "chat/draft/send") return json(await sendDraft(await readBody(request)));
   if (method === "POST" && key === "chat/draft/discard") return json(await discardDraft(await readBody(request)));
+  if (method === "POST" && key === "chat/draft/photo") return json(await attachDraftPhoto(await readBody(request)));
+  if (method === "POST" && key === "chat/draft/photo/remove") return json(await removeDraftPhoto(await readBody(request)));
   if (method === "POST" && key === "chat/landlord-email") return json(await saveLandlordEmail(await readBody(request)));
   if (method === "POST" && key === "landlord") return json(await saveLandlord(await readBody(request)));
   if (method === "GET" && key === "dates") return json(await datesPayload());
@@ -438,6 +456,7 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "POST" && key === "records/reminder/dismiss") return json(await dismissPostedReminder(await readBody(request)));
   if (method === "POST" && key === "records/reminder/restore") return json(await restorePostedReminder(await readBody(request)));
   if (method === "POST" && key === "records/resolve") return json(await resolvePosted(await readBody(request)));
+  if (method === "POST" && key === "records/tier") return json(await tierPosted(await readBody(request)));
   if (method === "POST" && key === "records/reopen") return json(await reopenPosted(await readBody(request)));
   if (method === "POST" && key === "records/issue/delete") return json(await deletePostedIssue(await readBody(request)));
   if (method === "POST" && key === "thread") return json(await postThread(await readBody(request)));
@@ -698,11 +717,15 @@ type ListedAssistant = Awaited<ReturnType<typeof listAssistant>>[number];
 type HomeRows = { deadlines: ListedDeadline[]; logs: ListedLog[]; messages: ListedMessage[]; reviews: ListedReview[] };
 
 function emptyChat(user: User) {
-  return { landlord: "", items: [], needsUnit: true, needsLandlord: false, prompt: "", archived: false, archivedNote: null, needsEmail: true, labels: draftLabels(user.locale) };
+  return { landlord: "", items: [], needsUnit: true, needsLandlord: false, prompt: "", archived: false, archivedNote: null, needsEmail: true, labels: draftLabels(user.locale), issues: [] as { id: string; title: string }[], library: [] as { id: string; fileId: string; logId: string | null; caption: string }[] };
 }
 
-function presentChat(user: User, unit: Unit, messages: ListedMessage[]) {
+function presentChat(user: User, unit: Unit, messages: ListedMessage[], photos: Awaited<ReturnType<typeof listPhotos>> = [], issues: { id: string; title: string }[] = []) {
   const locale = user.locale;
+  const thumbs = (messageId: string) => photos.filter((photo) => photo.messageId === messageId).map((photo) => ({
+    id: photo.id,
+    fileId: photo.fileId,
+  }));
   return {
     landlord: landlordReady(unit) ? unit.landlordName || unit.landlordEmail : "",
     needsUnit: false,
@@ -712,6 +735,13 @@ function presentChat(user: User, unit: Unit, messages: ListedMessage[]) {
     archivedNote: archivedNote(unit, locale),
     needsEmail: !unit.landlordEmail,
     labels: draftLabels(locale),
+    issues,
+    library: photos.filter((photo) => photo.logId).map((photo) => ({
+      id: photo.id,
+      fileId: photo.fileId,
+      logId: photo.logId,
+      caption: photo.caption,
+    })),
     items: messages.map((message) => {
       const draft = message.deliveryStatus === "draft";
       const preview = chatPreview(message.body);
@@ -724,6 +754,8 @@ function presentChat(user: User, unit: Unit, messages: ListedMessage[]) {
         time: formatTimestamp(message.createdAt, locale),
         status: draft ? draftLabels(locale).draft : deliveryLabel(message.deliveryStatus, message.openIndicative, locale),
         draft,
+        logId: message.logEntryId,
+        photos: thumbs(message.id),
       };
     }),
   };
@@ -735,26 +767,42 @@ async function visibleMessages(user: User, unit: Unit) {
   return [...messages, ...created].filter((message) => message.deliveryStatus !== "discarded");
 }
 
+async function chatContext(user: User, unit: Unit) {
+  const [messages, photos, logs] = await Promise.all([
+    visibleMessages(user, unit),
+    listPhotos(user.id, unit.id),
+    listLogs(user.id, unit.id),
+  ]);
+  const issues = logs
+    .filter((log) => log.type === "repair" && log.status !== "resolved" && log.flags?.removed !== true)
+    .map((log) => ({ id: log.id, title: log.description.replace(/\s+/g, " ").trim().slice(0, 80) }));
+  return { messages, photos, issues };
+}
+
 async function chatPayload() {
   const user = await actor();
   const unit = await primaryUnit(user.id);
   if (!unit) return emptyChat(user);
-  return presentChat(user, unit, await visibleMessages(user, unit));
+  const loaded = await chatContext(user, unit);
+  return presentChat(user, unit, loaded.messages, loaded.photos, loaded.issues);
 }
 
 async function sendChat(input: Record<string, unknown>) {
   const user = await actor();
   const unit = await primaryUnit(user.id);
   if (!unit) throw new Error("Add your place before writing to your landlord.");
-  if (!landlordReady(unit)) return presentChat(user, unit, await visibleMessages(user, unit));
+  if (!landlordReady(unit)) return chatPayload();
   const message = text(input.text);
   if (message.length < 2) throw new Error("Write a message.");
+  const photos = await outgoingPhotos(user, unit, input);
+  const issueId = photos.find((photo) => photo.issueId)?.issueId || null;
   await emailLandlord({
     user,
     unit,
-    logEntryId: null,
+    logEntryId: issueId,
     subject: text(input.subject) || tx(user.locale, "Message from your tenant", "Mensaje de su inquilino"),
     tenantText: message,
+    photos,
   });
   return chatPayload();
 }
@@ -780,7 +828,7 @@ async function sendDraft(input: Record<string, unknown>) {
   if (body.length < 2) throw new Error(tx(user.locale, "Write the message.", "Escriba el mensaje."));
   if (body.length > 8000) throw new Error(tx(user.locale, "Keep the message under 8000 characters.", "El mensaje debe tener menos de 8000 caracteres."));
   if (body !== current.body) await saveDraftBody(user.id, id, body);
-  if (!landlordReady(unit)) return presentChat(user, unit, await visibleMessages(user, unit));
+  if (!landlordReady(unit)) return chatPayload();
   await emailLandlord({
     user,
     unit,
@@ -793,6 +841,93 @@ async function sendDraft(input: Record<string, unknown>) {
     const entry = await getLog(user.id, current.logEntryId);
     await ensureRepairDeadline(user, unit, entry);
   }
+  return chatPayload();
+}
+
+function readAttachment(value: unknown): { name: string; mime: string; base64: string; issueId: string | null } | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as { name?: unknown; mime?: unknown; base64?: unknown; issueId?: unknown };
+  const base64 = text(row.base64);
+  if (!base64) return null;
+  return { name: text(row.name) || "photo.jpg", mime: text(row.mime), base64, issueId: text(row.issueId) || null };
+}
+
+async function outgoingPhotos(user: User, unit: Unit, input: Record<string, unknown>): Promise<OutgoingPhoto[]> {
+  const photoIds = Array.isArray(input.photoIds) ? input.photoIds.map((item) => text(item)).filter(Boolean) : [];
+  const raw = Array.isArray(input.attachments) ? input.attachments : [];
+  const known = photoIds.length ? await listPhotos(user.id, unit.id) : [];
+  const openIds = new Set((await listLogs(user.id, unit.id))
+    .filter((log) => log.type === "repair" && log.status !== "resolved" && log.flags?.removed !== true)
+    .map((log) => log.id));
+  const photos: OutgoingPhoto[] = [];
+  for (const id of photoIds) {
+    const photo = known.find((item) => item.id === id);
+    if (!photo) throw new Error("That photo was not found.");
+    const file = await readFileForUser(user.id, photo.fileId);
+    if (!file) throw new Error("That photo could not be read.");
+    photos.push({ name: file.name, mime: file.mime, bytes: file.bytes, issueId: photo.logId, existingPhotoId: photo.id });
+  }
+  for (const item of raw) {
+    const file = readAttachment(item);
+    if (!file) throw new Error("That photo could not be read.");
+    const bytes = Buffer.from(file.base64, "base64");
+    const issueId = file.issueId && openIds.has(file.issueId) ? file.issueId : null;
+    photos.push({ name: file.name, mime: file.mime, bytes, issueId, existingPhotoId: null });
+  }
+  const reason = rejectPhotoSet(photos.map((photo) => ({ mime: photo.mime, bytes: photo.bytes.length })));
+  if (reason) throw new Error(reason);
+  if (photos.length && openIds.size === 1) {
+    const only = [...openIds][0];
+    for (const photo of photos) if (!photo.issueId) photo.issueId = only;
+  }
+  return photos;
+}
+
+async function attachDraftPhoto(input: Record<string, unknown>) {
+  const { user, unit } = await withUnit();
+  const id = text(input.id);
+  if (!id) throw new Error(tx(user.locale, "Choose a draft.", "Elija un borrador."));
+  const message = await messageForUser(user.id, id);
+  if (message.deliveryStatus !== "draft") throw new Error(tx(user.locale, "This message was already sent.", "Este mensaje ya se envió."));
+  const staged = await messagePhotoFiles(user.id, id);
+  const photoId = text(input.photoId);
+  if (photoId) {
+    const file = await readFileForUser(user.id, (await listPhotos(user.id, unit.id)).find((item) => item.id === photoId)?.fileId || "");
+    if (!file) throw new Error("That photo was not found.");
+    const already = staged.some((item) => item.id === photoId);
+    const reason = rejectPhotoSet([
+      ...staged.filter((item) => item.id !== photoId).map((item) => ({ mime: item.mime, bytes: item.bytes })),
+      { mime: file.mime, bytes: file.bytes.length },
+    ]);
+    if (!already && reason) throw new Error(reason);
+    if (already) return chatPayload();
+    await linkPhotoMessage(user.id, photoId, id);
+    return chatPayload();
+  }
+  const file = readAttachment(input.attachment);
+  if (!file) throw new Error("That photo could not be read.");
+  const bytes = Buffer.from(file.base64, "base64");
+  const reason = rejectPhotoSet([...staged.map((item) => ({ mime: item.mime, bytes: item.bytes })), { mime: file.mime, bytes: bytes.length }]);
+  if (reason) throw new Error(reason);
+  const saved = await saveFile(user.id, unit.id, photoFilename(file.name, file.mime), file.mime, bytes);
+  await insertPhoto(user.id, unit.id, {
+    fileId: saved,
+    room: "",
+    caption: "",
+    link: message.logEntryId ? "issue" : "none",
+    logId: message.logEntryId,
+    reportId: null,
+    messageId: message.id,
+  });
+  return chatPayload();
+}
+
+async function removeDraftPhoto(input: Record<string, unknown>) {
+  const { user } = await withUnit();
+  const id = text(input.id);
+  const photoId = text(input.photoId);
+  if (!id || !photoId) throw new Error(tx(user.locale, "Choose a photo.", "Elija una foto."));
+  await detachPhotoMessage(user.id, photoId, id);
   return chatPayload();
 }
 
@@ -929,6 +1064,17 @@ async function runIncrease(input: Record<string, unknown>) {
     localFacts: parseLocalFacts(input),
   });
   await saveRentCheck(user.id, unit.id, input, result);
+  if (result.applicable.status === "over_cap") {
+    const reason = user.locale === "es" ? result.applicable.reasonEs : result.applicable.reason;
+    const links = aidFor(unit);
+    await recordRulesIssue(user, unit, {
+      kind: "rent_cap",
+      noticeKind: "rent_increase",
+      citation: result.applicable.ruleId || "CA-CC-1947.12",
+      unsure: false,
+      description: [violationFlag(user.locale), result.applicable.ruleId || "", reason, timelinePointer(user.locale), aidText(links, user.locale)].filter(Boolean).join("\n\n"),
+    });
+  }
   return increasePayload();
 }
 
@@ -994,10 +1140,11 @@ function threadItems(locale: Locale, rows: ListedAssistant[]) {
         action: null,
         detail: row.content,
         ruleId: null,
-        notice: notice(locale),
+        legal: false,
       };
     }
-    return { role: "card" as const, ...card, notice: notice(locale) };
+    const legal = replyShowsNotice(card);
+    return { role: "card" as const, ...card, legal, ...(legal ? { notice: notice(locale) } : {}) };
   });
 }
 
@@ -1013,14 +1160,16 @@ function emptyThread(user: User, rows: ListedAssistant[] = []) {
     notice: notice(locale),
     steps: { title: tx(locale, "Your next steps", "Sus próximos pasos"), held: tx(locale, "Nothing was sent.", "No se envió nada."), items: [] },
     packetFile: evidenceFilename(todayISO()),
+    issues: [] as { id: string; title: string }[],
     archived: false,
     archivedNote: null as string | null,
   };
 }
 
-function presentThread(user: User, unit: Unit, rows: ListedAssistant[], steps: { title: string; held: string; items: unknown[] }) {
+function presentThread(user: User, unit: Unit, rows: ListedAssistant[], steps: { title: string; held: string; items: unknown[] }, issueTitles: string[] = [], issues: { id: string; title: string }[] = []) {
   const locale = user.locale;
   const items = threadItems(locale, rows);
+  const visibleSteps = chatTurnShowsSteps(rows, issueTitles) ? steps : { ...steps, items: [] };
   return {
     landlord: landlordReady(unit) ? unit.landlordName : "",
     needsUnit: false,
@@ -1029,7 +1178,8 @@ function presentThread(user: User, unit: Unit, rows: ListedAssistant[], steps: {
     items,
     chips: rows.some((row) => row.role === "user") ? [] : chips(locale),
     notice: notice(locale),
-    steps,
+    steps: visibleSteps,
+    issues,
     packetFile: evidenceFilename(todayISO()),
     archived: Boolean(unit.archivedAt),
     archivedNote: archivedNote(unit, locale),
@@ -1044,7 +1194,8 @@ async function threadPayload() {
     listAssistant(user.id, "visible"),
     recordsBundle(user, unit, { reviews: false }),
   ]);
-  return presentThread(user, unit, rows, bundle.steps);
+  const issues = bundle.issues.map((issue) => ({ id: issue.id, title: issue.title }));
+  return presentThread(user, unit, rows, bundle.steps, issues.map((issue) => issue.title), issues);
 }
 
 async function postThread(input: Record<string, unknown>) {
@@ -1074,13 +1225,15 @@ async function postThread(input: Record<string, unknown>) {
 }
 
 async function loadHomeRows(user: User, unit: Unit, options?: { reviews?: boolean; assistant?: boolean }) {
-  const [deadlines, logs, storedMessages, reviews, assistant] = await Promise.all([
+  const [deadlines, firstLogs, storedMessages, reviews, assistant] = await Promise.all([
     listDeadlines(user.id, unit.id),
     listLogs(user.id, unit.id),
     listMessages(user.id, unit.id),
     options?.reviews === false ? Promise.resolve([] as ListedReview[]) : listLeaseReviews(user.id, unit.id),
     options?.assistant === false ? Promise.resolve([] as ListedAssistant[]) : listAssistant(user.id, "visible"),
   ]);
+  const changed = await refreshIssueTiers(user, unit, firstLogs, storedMessages, deadlines);
+  const logs = changed ? await listLogs(user.id, unit.id) : firstLogs;
   const createdDrafts = await ensureRepairDrafts(user, unit, logs, storedMessages);
   const messages = [...storedMessages, ...createdDrafts].filter((message) => message.deliveryStatus !== "discarded");
   return { deadlines, logs, messages, reviews, assistant };
@@ -1131,6 +1284,8 @@ function presentRecords(user: User, unit: Unit, loaded: HomeRows, photos: Awaite
       resolvedBy: item.resolvedBy,
       resolutionNote: item.resolutionNote,
       flags: item.flags,
+      tier: item.tier,
+      severity: item.severity,
     })),
     messages: messages.map((item) => ({
       logEntryId: item.logEntryId,
@@ -1158,12 +1313,21 @@ function presentRecords(user: User, unit: Unit, loaded: HomeRows, photos: Awaite
     notes: logCards(logInput.filter((item) => item.type !== "repair" && item.type !== "issue_event"), messageInput, locale).slice(0, 20),
     issues: board.open.map((issue) => ({
       ...issue,
-      photos: photos.filter((photo) => photo.logId === issue.id).map((photo) => ({
+      aid: issue.tier === "possible_violation" ? aidFor(unit) : [],
+      photos: photos.filter((photo) => photo.logId === issue.id && !photo.messageId).map((photo) => ({
         id: photo.id,
         fileId: photo.fileId,
         room: photo.room,
         caption: photo.caption,
       })),
+      attachments: photos.filter((photo) => photo.logId === issue.id && photo.messageId).map((photo) => {
+        const sent = messages.find((message) => message.id === photo.messageId);
+        return {
+          id: photo.id,
+          fileId: photo.fileId,
+          time: formatTimestamp(sent?.createdAt || photo.createdAt, locale),
+        };
+      }),
     })),
     archive: board.archive,
     steps: (() => {
@@ -1297,10 +1461,32 @@ async function bootstrapPayload() {
   const recordsBundleView = presentRecords(user, unit, loaded, photos);
   const threadBundle = presentRecords(user, unit, { ...loaded, reviews: [] }, photos);
   return {
-    thread: presentThread(user, unit, loaded.assistant, threadBundle.steps),
-    chat: presentChat(user, unit, loaded.messages),
+    thread: presentThread(
+      user,
+      unit,
+      loaded.assistant,
+      threadBundle.steps,
+      threadBundle.issues.map((issue) => issue.title),
+      threadBundle.issues.map((issue) => ({ id: issue.id, title: issue.title })),
+    ),
+    chat: presentChat(
+      user,
+      unit,
+      loaded.messages,
+      photos,
+      threadBundle.issues.map((issue) => ({ id: issue.id, title: issue.title })),
+    ),
     records: presentRecordsPayload(user, unit, recordsBundleView),
   };
+}
+
+async function tierPosted(input: Record<string, unknown>) {
+  const { user, unit } = await withUnit();
+  const id = text(input.id);
+  const tier = text(input.tier);
+  if (!id || !isIssueTier(tier)) throw new Error(tx(user.locale, "Choose routine, urgent, or a possible rules issue.", "Elija rutina, urgente, o un posible problema de reglas."));
+  await setIssueTier(user, unit, id, tier);
+  return recordsPayload();
 }
 
 async function resolvePosted(input: Record<string, unknown>) {

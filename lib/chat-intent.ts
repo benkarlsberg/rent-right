@@ -1,12 +1,13 @@
 import { aiConfigured, completeJson } from "@/lib/ai";
 import { intentPrompt } from "@/lib/chat-text";
 import { isResolvedClaim } from "@/lib/resolution";
+import type { RepairSeverity } from "@/lib/rules/engine";
+
+export type { RepairSeverity };
 
 export type ChatIntent = "repair" | "lease" | "rent" | "deposit" | "packet" | "deadlines" | "confirm" | "letter" | "rights" | "unclear";
 
 export type PendingKind = "repair" | "rent_date" | "deposit_date" | "letter" | null;
-
-export type RepairSeverity = "no_heat" | "no_water" | "no_electricity" | "gas_leak" | "leak" | "mold" | "pests" | "other";
 
 export type TurnPlan =
   | { type: "confirm_send" }
@@ -25,7 +26,7 @@ export type TurnPlan =
 
 const INTENTS = ["repair", "lease", "rent", "deposit", "packet", "deadlines", "rights", "unclear"] as const;
 
-const REPAIR = /\b(leak|leaking|drip|dripping|sink|mold|mould|pests?|roaches?|rats?|mice|bed bugs?|heater|heat|heating|furnace|hot water|shower|repair|broken|faucet|toilet|water|electricity|power|gas|locks?|clogged|smoke detector|gotera|fregadero|filtra|filtrando|moho|plaga|cucarachas?|calefaccion|calentador|agua caliente|regadera|ducha|cerradura|fuga|agua|luz|request a fix|request a repair|like to request a fix|like to ask for a fix|arreglar|arreglo|reparar|reparacion)\b/;
+const REPAIR = /\b(leak|leaking|drip|dripping|sink|mold|mould|pests?|roaches?|rats?|mice|bed bugs?|heater|heat|heating|furnace|hot water|shower|repair|broken|faucet|toilet|water|electricity|power|gas|locks?|clogged|smoke detector|sewage|sewer|flood|flooding|window|wiring|monoxide|monoxido|fire|hazard|incendio|chispas|ventana|inundacion|alcantarill|gotera|fregadero|filtra|filtrando|moho|plaga|cucarachas?|calefaccion|calentador|agua caliente|regadera|ducha|cerradura|fuga|agua|luz|puerta|inodoro|request a fix|request a repair|like to request a fix|like to ask for a fix|arreglar|arreglo|reparar|reparacion)\b/;
 const RENT = /\b(rent increase|raised rent|raise rent|raising rent|new rent|aumento|subio el alquiler|subio la renta|aumento de renta)\b/;
 const DEPOSIT = /\b(deposit|security deposit|deposito|moved out|move out|moving out|me mude)\b/;
 const LEASE = /\b(lease|contrato|rental agreement)\b/;
@@ -71,7 +72,15 @@ export function moneyCents(text: string): number[] {
 export function repairFacts(text: string): { severity: RepairSeverity; room: string | null } {
   const value = fold(text);
   let severity: RepairSeverity = "other";
-  if (/gas leak|fuga de gas|smells like gas|huele a gas/.test(value)) severity = "gas_leak";
+  if (/gas leak|fuga de gas|gas smell|smell of gas|smells like gas|smell gas|huele a gas|olor a gas|olor de gas/.test(value)) severity = "gas_leak";
+  else if (/carbon monoxide|monoxido de carbono|co alarm|alarma de monoxido|\bco detector\b/.test(value)) severity = "co_alarm";
+  else if (/fire hazard|on fire|electrical fire|peligro de incendio|riesgo de incendio/.test(value)) severity = "fire";
+  else if (/exposed wir|sparking|cable expuesto|cables expuestos|chispas en/.test(value)) severity = "wiring";
+  else if (/sewage|sewer backup|sewer|aguas negras|alcantarill/.test(value)) severity = "sewage";
+  else if (/\bflood(?:ing|ed)?\b|inundacion|se inunda/.test(value)) severity = "flood";
+  else if (/no working toilet|toilet (?:does not|doesn t|won t|will not) (?:work|flush)|no toilet|inodoro no funciona|no funciona el inodoro|sin inodoro|el inodoro no sirve/.test(value)) severity = "no_toilet";
+  else if (/exterior door|broken (?:exterior )?lock|door (?:won t|will not|does not|doesn t|cannot|can t) (?:lock|latch|close)|cannot lock|can t lock the door|puerta exterior|cerradura rota|la cerradura no funciona|no puedo cerrar la puerta/.test(value)) severity = "door";
+  else if (/broken window|window (?:is |was )?broken|shattered window|ventana rota|ventana quebrada|se rompio la ventana/.test(value)) severity = "window";
   else if (/no heat|not heating|isn.t heating|no heater|heater|furnace|hot water|no hot water|sin calefaccion|calentador|agua caliente/.test(value)) severity = "no_heat";
   else if (/no water|sin agua/.test(value)) severity = "no_water";
   else if (/no electricity|no power|sin luz/.test(value)) severity = "no_electricity";

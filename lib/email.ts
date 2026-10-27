@@ -23,6 +23,7 @@ export async function sendRelayEmail(input: {
   subject: string;
   text: string;
   html?: string;
+  attachments?: { filename: string; content: string }[];
 }): Promise<SendResult> {
   const fromAddress = relayAddress(input.relayLocal);
   const apiKey = process.env.RESEND_API_KEY;
@@ -49,6 +50,7 @@ export async function sendRelayEmail(input: {
         subject: input.subject,
         text: input.text,
         ...(input.html ? { html: input.html } : {}),
+        ...(input.attachments?.length ? { attachments: input.attachments } : {}),
       }),
     });
     const json = (await response.json().catch(() => ({}))) as { id?: string; message?: string };

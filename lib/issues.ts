@@ -9,8 +9,11 @@ import {
   listLogs,
   listMessages,
   setLinkedDeadlines,
+  setLogTier,
   updateLogResolution,
+  type Deadline,
   type LogEntry,
+  type Message,
   type Unit,
   type User,
 } from "@/lib/db";
@@ -27,6 +30,9 @@ import {
   type ResolutionSource,
 } from "@/lib/resolution";
 import { confirmedOutbound } from "@/lib/repair-draft";
+import { todayISO } from "@/lib/rules/dates";
+import { repairReminder } from "@/lib/rules/engine";
+import { asRepairSeverity, escalationNote, isHabitability, isIssueTier, shouldEscalate, tierForSeverity, tierLabel, violationFlag, type IssueTier } from "@/lib/triage";
 import { tx } from "@/lib/text";
 
 function fail(locale: Locale, en: string, es: string): never {
@@ -272,4 +278,123 @@ export function issueSummary(entry: LogEntry, messages: { logEntryId: string | n
     }),
     pendingNote: landlordFixedNote(entry.flags),
   };
+}
+
+function openRepair(log: LogEntry): boolean {
+  return log.type === "repair" && log.status !== "resolved" && log.flags?.removed !== true;
+}
+
+async function noteTier(user: User, unit: Unit, issueId: string, description: string) {
+  await insertLog({
+    unitId: unit.id,
+    userId: user.id,
+    type: "issue_event",
+    description,
+    eventDate: todayISO(),
+    flags: { issueId, event: "tier" },
+  });
+}
+
+export async function refreshIssueTiers(user: User, unit: Unit, logs: LogEntry[], messages: Message[], deadlines: Deadline[]): Promise<boolean> {
+  if (unit.archivedAt) return false;
+  const today = todayISO();
+  const responses = await listLandlordResponses(user.id, unit.id);
+  let changed = false;
+  for (const log of logs) {
+    if (log.flags?.removed === true || log.flags?.tierManual === true) continue;
+    const entry = log.flags?.entry as { atLeast24?: boolean; explanation?: string; explanationEs?: string } | undefined;
+    const retaliation = log.flags?.retaliation as { flagged?: boolean; explanation?: string; explanationEs?: string } | undefined;
+    const failed = entry?.atLeast24 === false || retaliation?.flagged === true;
+    if (failed && log.tier !== "possible_violation" && !log.flags?.violationNoted) {
+      const reason = entry?.atLeast24 === false
+        ? (user.locale === "es" ? entry.explanationEs : entry.explanation) || "Civil Code §1954."
+        : (user.locale === "es" ? retaliation?.explanationEs : retaliation?.explanation) || "Civil Code §1942.5.";
+      const note = `${violationFlag(user.locale)}. ${reason} ${tx(user.locale, "Unsure.", "No se puede precisar.")}`;
+      await setLogTier(user.id, log.id, "possible_violation", {
+        ...log.flags,
+        violationNoted: true,
+        unsure: true,
+        citation: entry?.atLeast24 === false ? "CA-CC-1954" : "CA-CC-1942.5",
+      });
+      await noteTier(user, unit, log.id, note);
+      changed = true;
+      continue;
+    }
+    if (!openRepair(log) || log.flags?.escalatedAt) continue;
+    const tier = log.tier && isIssueTier(log.tier) ? log.tier : tierForSeverity(log.severity);
+    const due = deadlines.find((item) => item.kind === "repair" && item.sourceId === log.id && item.dueDate)?.dueDate
+      || repairReminder((log.eventDate || today).slice(0, 10), asRepairSeverity(log.severity)).dueDate;
+    const ids = new Set(messages.filter((message) => message.logEntryId === log.id).map((message) => message.id));
+    const replied = messages.some((message) => message.logEntryId === log.id && message.direction === "inbound")
+      || responses.some((response) => Boolean(response.message_id && ids.has(response.message_id)));
+    if (!shouldEscalate({ tier, manual: false, open: true, due, today, replied })) continue;
+    const note = escalationNote(user.locale, due || today, isHabitability(log.severity));
+    await setLogTier(user.id, log.id, "possible_violation", {
+      ...log.flags,
+      escalatedAt: new Date().toISOString(),
+      citation: "CA-CC-1942",
+      unsure: true,
+    });
+    await noteTier(user, unit, log.id, note);
+    changed = true;
+  }
+  const deposit = deadlines.find((item) => item.kind === "deposit" && item.status === "open" && item.dueDate && item.dueDate < today);
+  if (deposit?.dueDate && !logs.some((log) => log.flags?.depositLate === true && log.flags?.removed !== true)) {
+    const description = `${violationFlag(user.locale)}. ${tx(
+      user.locale,
+      `The deposit date you entered (${deposit.dueDate}) has passed. Civil Code §1950.5.`,
+      `La fecha de depósito que anotó (${deposit.dueDate}) ya pasó. Código Civil §1950.5.`,
+    )}`;
+    await insertLog({
+      unitId: unit.id,
+      userId: user.id,
+      type: "notice_received",
+      noticeKind: "deposit",
+      tier: "possible_violation",
+      description,
+      eventDate: today,
+      flags: { depositLate: true, citation: "CA-CC-1950.5", unsure: false },
+    });
+    changed = true;
+  }
+  return changed;
+}
+
+export async function setIssueTier(user: User, unit: Unit, id: string, tier: IssueTier): Promise<void> {
+  const log = await getLog(user.id, id);
+  if (log.unitId !== unit.id) throw new Error(tx(user.locale, "That request was not found.", "No se encontró esa solicitud."));
+  if (log.flags?.removed === true) throw new Error(tx(user.locale, "That request was removed.", "Esa solicitud se eliminó."));
+  await setLogTier(user.id, id, tier, { ...log.flags, tierManual: true });
+  await noteTier(user, unit, id, tx(
+    user.locale,
+    `The tenant set this request to ${tierLabel(tier, "en")}.`,
+    `El inquilino marcó esta solicitud como ${tierLabel(tier, "es")}.`,
+  ));
+}
+
+export async function recordRulesIssue(user: User, unit: Unit, input: {
+  kind: string;
+  noticeKind: string;
+  description: string;
+  citation: string;
+  unsure: boolean;
+}): Promise<void> {
+  const logs = await listLogs(user.id, unit.id);
+  const existing = logs.find((log) => log.flags?.rulesKind === input.kind && log.flags?.removed !== true && log.description === input.description);
+  if (existing) {
+    if (existing.tier !== "possible_violation" && existing.flags?.tierManual !== true) {
+      await setLogTier(user.id, existing.id, "possible_violation", { ...existing.flags, citation: input.citation, unsure: input.unsure });
+    }
+    return;
+  }
+  await insertLog({
+    unitId: unit.id,
+    userId: user.id,
+    type: "notice_received",
+    noticeKind: input.noticeKind,
+    tier: "possible_violation",
+    description: input.description,
+    eventDate: todayISO(),
+    flags: { rulesKind: input.kind, citation: input.citation, unsure: input.unsure },
+  });
 }

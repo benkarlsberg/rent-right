@@ -12,7 +12,7 @@ describe("repair draft letter", () => {
       severity: "leak",
     });
     expect(letter.ruleId).toBe("CA-CC-1942");
-    expect(letter.dueDate).toBe("2026-10-30");
+    expect(letter.dueDate).toBe("2026-11-22");
     expect(letter.subject).toBe("Repair request: The kitchen sink is leaking under the cabinet");
     expect(letter.body).toContain("I'm writing about a repair.");
     expect(letter.body).not.toContain("is writing about a repair.");
@@ -20,8 +20,8 @@ describe("repair draft letter", () => {
     expect(letter.body).toContain("Issue: The kitchen sink is leaking under the cabinet");
     expect(letter.body).toContain("Date: Oct 23, 2026");
     expect(letter.body).toContain("Please repair this.");
-    expect(letter.body).toContain("2026-10-23 + 7 days = 2026-10-30 (leak)");
+    expect(letter.body).toContain("2026-10-23 + 30 days = 2026-11-22 (leak)");
     expect(letter.body).toContain("Rule CA-CC-1942");
-    expect(letter.body).toContain("not a determination that the landlord broke the law");
+    expect(letter.body).toContain("not a decision about anyone's legal responsibility");
   });
 });

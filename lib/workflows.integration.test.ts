@@ -168,9 +168,12 @@ describe("renter workflows", () => {
 
     const switched = await api("POST", "thread", { text: "Nevermind, I'd like to request a fix" }, token);
     expect(switched.status).toBe(200);
-    const cards = switched.json?.items as { headline?: string; actions?: { id: string; label: string }[]; action?: { id: string } | null }[];
+    const cards = switched.json?.items as { headline?: string; status?: string; legal?: boolean; actions?: { id: string; label: string }[]; action?: { id: string } | null }[];
     expect(cards.some((item) => item.headline === "Unsure")).toBe(false);
-    expect(cards.some((item) => item.headline === "What's broken?")).toBe(true);
+    const prompt = cards.find((item) => item.headline === "What's broken?");
+    expect(prompt?.legal).toBe(false);
+    expect(prompt?.status || "").toBe("");
+    expect((prompt?.actions || []).map((action) => action.label)).toEqual(expect.arrayContaining(["No hot water", "Leaking sink"]));
     expect(cards.some((item) => item.action?.id.startsWith("send:"))).toBe(false);
 
     const logged = await api("POST", "thread", { text: "The sink is leaking" }, token);
@@ -178,12 +181,14 @@ describe("renter workflows", () => {
     expect(JSON.stringify(logged.json)).toMatch(/Repair logged/i);
 
     const vague = await api("POST", "thread", { text: "purple balloons on the ceiling" }, token);
+    expect((vague.json?.steps as { items: unknown[] }).items).toEqual([]);
     const vagueCards = vague.json?.items as { actions?: { label: string }[] }[];
     const suggestions = vagueCards.at(-1)?.actions?.map((action) => action.label) || [];
     expect(suggestions).toEqual(expect.arrayContaining(["Request a repair", "Review my lease agreement", "Is my rent increase legal?", "Get my deposit back", "Start over"]));
 
     const records = await api("GET", "records", undefined, token);
     expect((records.json?.issues as { title: string }[]).length).toBeGreaterThan(0);
+    expect((records.json?.steps as { items: { action: string }[] }).items.map((item) => item.action)).toContain("send");
 
     const cleared = await api("POST", "thread", { action: "clear" }, token);
     expect(cleared.status).toBe(200);

@@ -18,7 +18,7 @@ import * as ImagePicker from "expo-image-picker";
 type Action = { id: string; label: string };
 type Item =
   | { role: "user"; text: string }
-  | { role: "card"; headline: string; status: string; action: Action | null; actions?: Action[]; detail: string; ruleId: string | null; notice: Notice; address?: { street?: string; unit?: string; city?: string; region?: string; postalCode?: string } | null };
+  | { role: "card"; headline: string; status: string; action: Action | null; actions?: Action[]; detail: string; ruleId: string | null; legal?: boolean; notice?: Notice; badge?: "urgent" | "violation"; address?: { street?: string; unit?: string; city?: string; region?: string; postalCode?: string } | null };
 type Thread = {
   landlord: string;
   needsUnit?: boolean;
@@ -28,6 +28,7 @@ type Thread = {
   chips: { label: string; text: string }[];
   notice: Notice;
   steps?: { title: string; held: string; items: StepItem[] };
+  issues?: { id: string; title: string }[];
   packetFile?: string;
 };
 type Attachment = { name: string; mime: string; base64: string };
@@ -46,6 +47,8 @@ export default function AssistantChat() {
   const [file, setFile] = useState<Attachment | null>(null);
   const [busy, setBusy] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [linkIssue, setLinkIssue] = useState<string | null>(null);
+  const [pickingIssue, setPickingIssue] = useState(false);
   const [account, setAccount] = useState(false);
   const [confirm, setConfirm] = useState<"new" | "clear" | null>(null);
   const [held, setHeld] = useState("");
@@ -78,6 +81,8 @@ export default function AssistantChat() {
       await reload(await api<Thread>("thread", { token, body: { text: body, action: extra?.action, draftId: extra?.draftId, attachment } }));
       setDraft("");
       setFile(null);
+      setLinkIssue(null);
+      setPickingIssue(false);
       setMenu(false);
       setPending(null);
     } catch (err) {
@@ -122,7 +127,8 @@ export default function AssistantChat() {
 
   function onEnter(shift: boolean) {
     if (shift || !canSend) return;
-    void send(draft);
+    if (linkIssue && file) void send(draft, { action: `photo-link:${linkIssue}` });
+    else void send(draft);
   }
 
   async function onAction(action: Action) {
@@ -200,15 +206,25 @@ export default function AssistantChat() {
     });
   }
 
-  async function pickPhoto() {
+  function keepIssuePhoto(chosen: Attachment) {
+    setFile(chosen);
+    setLinkIssue(null);
+    setPickingIssue(Boolean(data?.issues?.length));
+  }
+
+  async function pickIssuePhoto() {
     if (Platform.OS === "web") {
-      pickWeb("image/*");
+      pickWeb("image/*", keepIssuePhoto);
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({ base64: true, mediaTypes: ["images"], quality: 0.6 });
     const asset = result.canceled ? null : result.assets[0];
-    if (asset?.base64) setFile({ name: asset.fileName || "photo.jpg", mime: asset.mimeType || "image/jpeg", base64: asset.base64 });
+    if (asset?.base64) keepIssuePhoto({ name: asset.fileName || "photo.jpg", mime: asset.mimeType || "image/jpeg", base64: asset.base64 });
     setMenu(false);
+  }
+
+  function pickLease() {
+    chooseLease((chosen) => { void send(chosen.name, { action: "upload-lease", attachment: chosen }); });
   }
 
   const items = data?.items || [];
@@ -323,15 +339,23 @@ export default function AssistantChat() {
           )}
         />
         <ErrorLine message={error} />
-        {file ? <Text style={styles.file}>{file.name}</Text> : null}
+        {file ? <Text style={styles.file}>{file.name}{linkIssue ? ` · ${(data?.issues || []).find((issue) => issue.id === linkIssue)?.title || ""}` : ""}</Text> : null}
         {menu ? (
           <View style={styles.menu}>
-            <Pressable style={styles.menuButton} onPress={pickPhoto}><Text style={styles.menuText}>Photo</Text></Pressable>
-            <Pressable style={styles.menuButton} onPress={() => (Platform.OS === "web" ? pickWeb(".pdf,.txt,image/*") : pickPhoto())}><Text style={styles.menuText}>Lease or photo</Text></Pressable>
+            <Pressable style={styles.menuButton} onPress={() => void pickIssuePhoto()} accessibilityRole="button" accessibilityLabel={spanish ? "Foto del problema" : "Issue photo"}><Text style={styles.menuText}>{spanish ? "Foto del problema" : "Issue photo"}</Text></Pressable>
+            <Pressable style={styles.menuButton} onPress={pickLease} accessibilityRole="button" accessibilityLabel={spanish ? "Contrato" : "Lease"}><Text style={styles.menuText}>{spanish ? "Contrato" : "Lease"}</Text></Pressable>
+          </View>
+        ) : null}
+        {pickingIssue && file ? (
+          <View style={styles.menu}>
+            <Pressable style={styles.menuButton} onPress={() => { setLinkIssue(null); setPickingIssue(false); }} accessibilityRole="button" accessibilityLabel={spanish ? "Solicitud nueva" : "New request"}><Text style={styles.menuText}>{spanish ? "Solicitud nueva" : "New request"}</Text></Pressable>
+            {(data?.issues || []).map((issue) => (
+              <Pressable key={issue.id} style={styles.menuButton} onPress={() => { setLinkIssue(issue.id); setPickingIssue(false); }} accessibilityRole="button" accessibilityLabel={issue.title}><Text style={styles.menuText}>{issue.title}</Text></Pressable>
+            ))}
           </View>
         ) : null}
         <View style={styles.composer}>
-          <Pressable style={styles.plus} onPress={() => setMenu((open) => !open)} accessibilityRole="button" accessibilityLabel="Add a photo or lease">
+          <Pressable style={styles.plus} onPress={() => { setPickingIssue(false); setMenu((open) => !open); }} accessibilityRole="button" accessibilityLabel={spanish ? "Agregar una foto o un contrato" : "Add an issue photo or a lease"}>
             <Text style={styles.plusText}>+</Text>
           </Pressable>
           <TextInput
@@ -359,7 +383,7 @@ export default function AssistantChat() {
           />
           <Pressable
             style={[styles.send, !canSend && styles.sendOff]}
-            onPress={() => send(draft)}
+            onPress={() => { if (linkIssue && file) void send(draft, { action: `photo-link:${linkIssue}` }); else void send(draft); }}
             disabled={!canSend}
             accessibilityRole="button"
             accessibilityLabel="Send"
@@ -399,10 +423,13 @@ function CardView({ item, spanish, busy, onAction }: { item: Extract<Item, { rol
   return (
     <View style={styles.card} {...wrapMarker()}>
       <Text style={styles.headline}>{item.headline}</Text>
-      <Text style={styles.status}>{item.status}</Text>
+      {item.badge === "urgent" ? <Text style={styles.urgent}>{spanish ? "Urgente" : "Urgent"}</Text> : null}
+      {item.badge === "violation" ? <Text style={styles.flag}>{spanish ? "Esto puede no seguir las reglas de California" : "This may not follow California rules"}</Text> : null}
+      {item.status ? <Text style={styles.status}>{item.status}</Text> : null}
       {item.address?.street || item.address?.city ? (
         <Address street={item.address.street} unit={item.address.unit} city={item.address.city} region={item.address.region} postalCode={item.address.postalCode} style={styles.detail} />
       ) : null}
+      {picker && item.detail ? <Text style={styles.detail}>{item.detail}</Text> : null}
       {actions.map((action) => {
         const suggestion = action.id.startsWith("prompt:");
         const reset = action.id === "reset";
@@ -428,14 +455,18 @@ function CardView({ item, spanish, busy, onAction }: { item: Extract<Item, { rol
           {details ? <Text style={[styles.detail, wrapText]}>{`${item.detail}${item.ruleId ? `\n\n${item.ruleId}` : ""}`}</Text> : null}
         </View>
       ) : null}
-      <Text style={styles.detail}>{item.notice.short}</Text>
-      <Pressable onPress={() => setAdvice((open) => !open)} accessibilityRole="button" accessibilityLabel={spanish ? "Aviso completo" : "Full disclaimer"}>
-        <Text style={styles.note}>{advice ? (spanish ? "Ocultar" : "Hide") : (spanish ? "Aviso completo" : "Full disclaimer")}</Text>
-      </Pressable>
-      {advice ? (
+      {item.legal && item.notice ? (
         <View>
-          <Text style={[styles.detail, wrapText]}>{item.notice.full}</Text>
-          {item.notice.clinicFull ? <Text style={[styles.detail, wrapText, styles.gap]}>{item.notice.clinicFull}</Text> : null}
+          <Text style={styles.detail}>{item.notice.short}</Text>
+          <Pressable onPress={() => setAdvice((open) => !open)} accessibilityRole="button" accessibilityLabel={spanish ? "Aviso completo" : "Full disclaimer"}>
+            <Text style={styles.note}>{advice ? (spanish ? "Ocultar" : "Hide") : (spanish ? "Aviso completo" : "Full disclaimer")}</Text>
+          </Pressable>
+          {advice ? (
+            <View>
+              <Text style={[styles.detail, wrapText]}>{item.notice.full}</Text>
+              {item.notice.clinicFull ? <Text style={[styles.detail, wrapText, styles.gap]}>{item.notice.clinicFull}</Text> : null}
+            </View>
+          ) : null}
         </View>
       ) : null}
     </View>
@@ -468,11 +499,13 @@ const styles = StyleSheet.create({
   suggest: { marginTop: 10, backgroundColor: colors.paper, borderRadius: 14, borderWidth: 1, borderColor: colors.line, minHeight: 48, justifyContent: "center", paddingHorizontal: 16 },
   suggestText: { fontSize: 16, color: colors.ink, fontWeight: "600" },
   cancel: { marginTop: 8, minHeight: 44, justifyContent: "center", paddingHorizontal: 4 },
+  urgent: { color: colors.bad, fontSize: 15, lineHeight: 20, fontWeight: "700", marginTop: 6 },
+  flag: { ...wrapText, color: colors.ink, fontSize: 15, lineHeight: 20, fontWeight: "700", marginTop: 6 },
   note: { color: colors.pine, fontSize: 14, fontWeight: "700", marginTop: 12 },
   detail: { ...wrapText, color: colors.mute, fontSize: 14, lineHeight: 20, marginTop: 8 },
   gap: { marginTop: 8 },
   file: { color: colors.pine, paddingHorizontal: 16, paddingBottom: 4 },
-  menu: { flexDirection: "row", gap: 10, paddingHorizontal: 16, paddingBottom: 8 },
+  menu: { flexDirection: "row", flexWrap: "wrap", gap: 10, paddingHorizontal: 16, paddingBottom: 8 },
   menuButton: { flex: 1, minHeight: 48, borderRadius: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.card, alignItems: "center", justifyContent: "center" },
   menuText: { fontSize: 16, color: colors.ink, fontWeight: "600" },
   composer: { flexDirection: "row", alignItems: "flex-end", gap: 8, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.card },

@@ -28,6 +28,14 @@ export type RepairSeverity =
   | "no_water"
   | "no_electricity"
   | "gas_leak"
+  | "sewage"
+  | "flood"
+  | "no_toilet"
+  | "door"
+  | "window"
+  | "co_alarm"
+  | "fire"
+  | "wiring"
   | "leak"
   | "mold"
   | "pests"
@@ -144,8 +152,20 @@ export function depositReturnDeadline(moveOutDate: string): DatedResult {
   });
 }
 
-const URGENT = new Set<RepairSeverity>(["no_heat", "no_water", "no_electricity", "gas_leak"]);
-const SHORT = new Set<RepairSeverity>(["leak", "mold", "pests"]);
+const URGENT = new Set<RepairSeverity>([
+  "no_heat",
+  "no_water",
+  "no_electricity",
+  "gas_leak",
+  "sewage",
+  "flood",
+  "no_toilet",
+  "door",
+  "window",
+  "co_alarm",
+  "fire",
+  "wiring",
+]);
 
 export function repairReminder(requestDate: string, severity: RepairSeverity): DatedResult {
   const rule = getRule("CA-CC-1942");
@@ -155,15 +175,9 @@ export function repairReminder(requestDate: string, severity: RepairSeverity): D
   if (URGENT.has(severity)) {
     days = 3;
     preset =
-      "Rent Right uses a 3-day reminder preset for no heat, no water, no electricity, or a suspected gas leak. That number is not in the statute. Section 1942 says a shorter time than 30 days can be reasonable when the condition is urgent.";
+      "Rent Right uses a 3-day reminder preset for urgent conditions such as no heat, no hot water, no water, no electricity, a gas smell, sewage backup, a broken exterior door or lock, a broken window, no working toilet, flooding, a carbon monoxide alarm, or a fire hazard or exposed wiring. That number is not in the statute. Section 1942 says a shorter time than 30 days can be reasonable when the condition is urgent.";
     presetEs =
-      "Rent Right usa un recordatorio de 3 días para falta de calefacción, agua o electricidad, o una sospecha de fuga de gas. Ese número no está en la ley. La sección 1942 dice que un plazo menor de 30 días puede ser razonable si la condición es urgente.";
-  } else if (SHORT.has(severity)) {
-    days = 7;
-    preset =
-      "Rent Right uses a 7-day reminder preset for a leak, mold, or pests. That number is not in the statute. Section 1942 presumes 30 days and allows a shorter reasonable time when the condition calls for it.";
-    presetEs =
-      "Rent Right usa un recordatorio de 7 días para una fuga, moho o plagas. Ese número no está en la ley. La sección 1942 presume 30 días y permite un plazo razonable más corto cuando la condición lo pide.";
+      "Rent Right usa un recordatorio de 3 días para condiciones urgentes, como falta de calefacción, agua caliente, agua o electricidad, olor a gas, aguas negras, una puerta o cerradura exterior rota, una ventana rota, un inodoro que no funciona, una inundación, una alarma de monóxido o un riesgo de incendio o cable expuesto. Ese número no está en la ley. La sección 1942 dice que un plazo menor de 30 días puede ser razonable si la condición es urgente.";
   }
   const due = addDays(requestDate, days);
   return base({
@@ -172,8 +186,8 @@ export function repairReminder(requestDate: string, severity: RepairSeverity): D
     citation: rule?.citation ?? "Cal. Civ. Code §1942",
     unsure: false,
     computation: `${requestDate} + ${days} days = ${due} (${severity})`,
-    explanation: `${preset} The reminder date is ${due}. It is not a determination that the landlord broke the law on that date.`,
-    explanationEs: `${presetEs} La fecha del recordatorio es ${due}. No es una determinación de que el propietario incumplió la ley ese día.`,
+    explanation: `${preset} The reminder date is ${due}. It is not a decision about anyone's legal responsibility.`,
+    explanationEs: `${presetEs} La fecha del recordatorio es ${due}. No es una decisión sobre la responsabilidad legal de nadie.`,
   });
 }
 

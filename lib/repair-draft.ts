@@ -11,17 +11,16 @@ import {
   type User,
 } from "@/lib/db";
 import { formatDate } from "@/lib/format";
-import { repairReminder, type RepairSeverity } from "@/lib/rules/engine";
+import { repairReminder } from "@/lib/rules/engine";
 import { relayAddress, tx } from "@/lib/text";
-
-const SEVERITIES = new Set<RepairSeverity>(["no_heat", "no_water", "no_electricity", "gas_leak", "leak", "mold", "pests", "other"]);
+import { asRepairSeverity, tierForSeverity, urgentLetterLead } from "@/lib/triage";
 
 export function confirmedOutbound(status: string): boolean {
   return status === "sent" || status === "delivered" || status === "local_only" || status === "blocked";
 }
 
-function severityOf(value: string | null): RepairSeverity {
-  return value && SEVERITIES.has(value as RepairSeverity) ? value as RepairSeverity : "other";
+function severityOf(value: string | null) {
+  return asRepairSeverity(value);
 }
 
 export function repairDraftLetter(input: {
@@ -34,45 +33,33 @@ export function repairDraftLetter(input: {
 }): { subject: string; body: string; ruleId: string; dueDate: string | null } {
   const locale = input.locale;
   const day = input.eventDate.slice(0, 10);
-  const reminder = repairReminder(day, severityOf(input.severity));
+  const severity = severityOf(input.severity);
+  const reminder = repairReminder(day, severity);
+  const urgent = tierForSeverity(severity) === "urgent";
   const issue = input.description.replace(/\s+/g, " ").trim();
   const short = issue.length > 80 ? `${issue.slice(0, 77).trim()}…` : issue;
   const subject = tx(locale, `Repair request: ${short}`, `Solicitud de reparación: ${short}`);
   const date = formatDate(day, locale);
   const rule = locale === "es" ? reminder.explanationEs : reminder.explanation;
-  const body = tx(
-    locale,
-    [
-      "I'm writing about a repair.",
-      "",
-      input.address.trim(),
-      "",
-      `Issue: ${issue}`,
-      `Date: ${date}`,
-      "",
-      "Please repair this.",
-      "",
-      rule,
-      "",
-      reminder.computation,
-      `Rule ${reminder.ruleId}`,
-    ].join("\n"),
-    [
-      "Escribo sobre una reparación.",
-      "",
-      input.address.trim(),
-      "",
-      `Problema: ${issue}`,
-      `Fecha: ${date}`,
-      "",
-      "Por favor, repare esto.",
-      "",
-      rule,
-      "",
-      reminder.computation,
-      `Regla ${reminder.ruleId}`,
-    ].join("\n"),
-  );
+  const lead = urgent ? urgentLetterLead(locale) : tx(locale, "I'm writing about a repair.", "Escribo sobre una reparación.");
+  const ask = urgent
+    ? tx(locale, "Please reply with a time when the repair will be done.", "Responda con una hora en que se hará la reparación.")
+    : tx(locale, "Please repair this.", "Por favor, repare esto.");
+  const body = [
+    lead,
+    "",
+    input.address.trim(),
+    "",
+    tx(locale, `Issue: ${issue}`, `Problema: ${issue}`),
+    tx(locale, `Date: ${date}`, `Fecha: ${date}`),
+    "",
+    ask,
+    "",
+    rule,
+    "",
+    reminder.computation,
+    tx(locale, `Rule ${reminder.ruleId}`, `Regla ${reminder.ruleId}`),
+  ].join("\n");
   return { subject, body, ruleId: reminder.ruleId, dueDate: reminder.dueDate };
 }
 

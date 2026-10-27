@@ -57,7 +57,9 @@ describe("deposit and repair deadlines", () => {
     const urgent = repairReminder("2026-10-01", "no_heat");
     expect(urgent.dueDate).toBe("2026-10-04");
     expect(urgent.explanation).toMatch(/not in the statute/i);
-    expect(repairReminder("2026-10-01", "leak").dueDate).toBe("2026-10-08");
+    expect(repairReminder("2026-10-01", "leak").dueDate).toBe("2026-10-31");
+    expect(repairReminder("2026-10-01", "gas_leak").dueDate).toBe("2026-10-04");
+    expect(repairReminder("2026-10-01", "sewage").explanation).toMatch(/not in the statute/i);
   });
 
   it("checks 24-hour entry notice from the timestamps entered", () => {

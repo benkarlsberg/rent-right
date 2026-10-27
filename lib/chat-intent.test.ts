@@ -79,7 +79,24 @@ describe("chat intent", () => {
 
   it("keeps a gas leak separate from a water leak", () => {
     expect(repairFacts("I smell a gas leak in the kitchen").severity).toBe("gas_leak");
-    expect(repairFacts("the bathroom faucet is dripping").room).toBe("Bathroom");
+    expect(repairFacts("the bathroom faucet is dripping")).toMatchObject({ severity: "leak", room: "Bathroom" });
+    expect(repairFacts("I smell gas").severity).toBe("gas_leak");
+    expect(repairFacts("huele a gas en la cocina")).toMatchObject({ severity: "gas_leak", room: "Kitchen" });
+    expect(repairFacts("the carbon monoxide alarm is going off").severity).toBe("co_alarm");
+    expect(repairFacts("alarma de monoxido").severity).toBe("co_alarm");
+    expect(repairFacts("sewage is backing up into the tub").severity).toBe("sewage");
+    expect(repairFacts("hay aguas negras").severity).toBe("sewage");
+    expect(repairFacts("the exterior door lock is broken").severity).toBe("door");
+    expect(repairFacts("la puerta exterior no cierra").severity).toBe("door");
+    expect(repairFacts("broken window in the bedroom")).toMatchObject({ severity: "window", room: "Bedroom" });
+    expect(repairFacts("ventana rota").severity).toBe("window");
+    expect(repairFacts("no working toilet").severity).toBe("no_toilet");
+    expect(repairFacts("el inodoro no funciona").severity).toBe("no_toilet");
+    expect(repairFacts("the apartment is flooding").severity).toBe("flood");
+    expect(repairFacts("se inunda el bano")).toMatchObject({ severity: "flood", room: "Bathroom" });
+    expect(repairFacts("there is a fire hazard in the hall").severity).toBe("fire");
+    expect(repairFacts("exposed wiring in the kitchen")).toMatchObject({ severity: "wiring", room: "Kitchen" });
+    expect(repairFacts("cables expuestos").severity).toBe("wiring");
   });
 
   it("continues a rent date only when the tenant supplies one", () => {

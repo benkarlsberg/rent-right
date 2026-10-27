@@ -92,6 +92,7 @@ export async function renderPdf(title: string, blocks: string[]): Promise<Uint8A
 const INK = rgb(0.08, 0.2, 0.24);
 const MUTE = rgb(0.24, 0.35, 0.38);
 const PINE = rgb(0.04, 0.36, 0.43);
+const RED = rgb(0.62, 0.07, 0.22);
 
 export async function renderPacket(model: PacketModel): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
@@ -202,7 +203,7 @@ export async function renderPacket(model: PacketModel): Promise<Uint8Array> {
     for (const issue of model.issues) {
       y -= 4;
       wrap(issue.title, 12, bold);
-      wrap(issue.status, 11, bold, PINE, 3);
+      wrap(issue.status, 11, bold, issue.status.includes("Urgent") ? RED : PINE, 3);
       wrap(`Reported ${issue.reported}`, 10, font, MUTE, 3);
       if (issue.reminder) wrap(`Reminder ${issue.reminder}`, 10, font, MUTE, 3);
       wrap(issue.description, 10, font);
@@ -210,6 +211,10 @@ export async function renderPacket(model: PacketModel): Promise<Uint8Array> {
       for (const message of issue.messages) {
         wrap(`${message.direction} ${message.when} — ${message.subject}`, 10, bold, INK, 2);
         if (message.excerpt) wrap(message.excerpt, 10, font, MUTE, 3);
+        if (message.images.length) {
+          wrap(message.images.length === 1 ? "1 photo with this message" : `${message.images.length} photos with this message`, 10, font, MUTE, 2);
+          await thumbs(message.images);
+        }
       }
       if (issue.images.length) await thumbs(issue.images);
       y -= 4;
@@ -220,6 +225,8 @@ export async function renderPacket(model: PacketModel): Promise<Uint8Array> {
     for (const row of model.communications) {
       wrap(`${row.when} — ${row.direction} — ${row.subject}`, 10, bold, INK, 2);
       if (row.excerpt) wrap(row.excerpt, 10, font);
+      if (row.photoNote) wrap(row.photoNote, 10, font, MUTE, 2);
+      if (row.images.length) await thumbs(row.images);
     }
   }
   if (model.conditions.length || model.looseImages.length) {
