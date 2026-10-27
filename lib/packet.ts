@@ -250,7 +250,7 @@ export function buildPacket(input: {
 
   const used = new Set(issues.flatMap((issue) => [...issue.ids]));
   const otherNotes = logs
-    .filter((log) => log.type !== "repair" && !(log.id && used.has(log.id)) && log.description)
+    .filter((log) => log.type !== "repair" && log.type !== "issue_event" && !(log.id && used.has(log.id)) && log.description?.trim() && log.flags?.hidden !== true && !/^landlord used the response link:/i.test(log.description))
     .map((log) => `${when(log.createdAt || log.eventDate)} — ${log.description}`);
 
   const lines = formatAddressLines({

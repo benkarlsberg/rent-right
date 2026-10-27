@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { describe, expect, it } from "vitest";
 import { POST } from "@/app/api/email/inbound/route";
 import { getUser, insertMessage, listLogs, listMessages, listNotifications, listPhotos, primaryUnit } from "@/lib/db";
-import { logEntryForReply, recordLandlordChatReply, respondProviderId, settleQuotedInbound } from "@/lib/inbound-reply";
+import { landlordWords, logEntryForReply, recordLandlordChatReply, respondNote, respondProviderId, settleQuotedInbound } from "@/lib/inbound-reply";
 import { startSampleTenancy } from "@/lib/seed";
 import { relayAddress } from "@/lib/text";
 
@@ -31,12 +31,14 @@ describe("landlord replies in the tenant chat", () => {
     });
     expect(await logEntryForReply(unit!.id, "Quoted link https://app.example/r/tokenvalue1")).toBe(leak!.id);
 
+    expect(respondNote("acknowledge", "Tuesday")).toBe("Landlord acknowledged your request\n\nTuesday");
+    expect(landlordWords("email", "Sure, I'll get to it tomorrow.")).toBe("Landlord replied: Sure, I'll get to it tomorrow.");
     const providerId = respondProviderId("tokenvalue1", "acknowledge", "Tuesday");
     expect(await recordLandlordChatReply({
       unit: unit!,
       fromEmail: unit!.landlordEmail,
       subject: "Re: Kitchen sink",
-      body: "Acknowledged\n\nTuesday",
+      body: respondNote("acknowledge", "Tuesday"),
       providerId,
       logEntryId: leak!.id,
     })).toBe("stored");
@@ -44,7 +46,7 @@ describe("landlord replies in the tenant chat", () => {
       unit: unit!,
       fromEmail: unit!.landlordEmail,
       subject: "Re: Kitchen sink",
-      body: "Acknowledged\n\nTuesday",
+      body: respondNote("acknowledge", "Tuesday"),
       providerId,
       logEntryId: leak!.id,
     })).toBe("duplicate");
@@ -80,7 +82,7 @@ describe("landlord replies in the tenant chat", () => {
     }
 
     const inbound = (await listMessages(id, unit!.id)).filter((message) => message.direction === "inbound");
-    expect(inbound.filter((message) => message.body.startsWith("Acknowledged"))).toHaveLength(1);
+    expect(inbound.filter((message) => message.body.startsWith("Landlord acknowledged your request"))).toHaveLength(1);
     const mailed = inbound.find((message) => message.body.startsWith("I can come Tuesday."));
     expect(mailed?.logEntryId).toBe(leak!.id);
     expect(mailed?.body).not.toMatch(/On Mon/);

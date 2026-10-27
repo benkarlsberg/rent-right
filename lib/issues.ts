@@ -9,7 +9,9 @@ import {
   listLogs,
   listMessages,
   setLinkedDeadlines,
+  setLogFlags,
   setLogTier,
+  updateDeadlineFacts,
   updateLogResolution,
   type Deadline,
   type LogEntry,
@@ -32,7 +34,8 @@ import {
 import { confirmedOutbound } from "@/lib/repair-draft";
 import { todayISO } from "@/lib/rules/dates";
 import { repairReminder } from "@/lib/rules/engine";
-import { asRepairSeverity, escalationNote, isHabitability, isIssueTier, shouldEscalate, tierForSeverity, tierLabel, violationFlag, type IssueTier } from "@/lib/triage";
+import { landlordBubble, landlordWords } from "@/lib/inbound-reply";
+import { asRepairSeverity, escalationNote, isHabitability, isIssueTier, reminderPace, shouldEscalate, tierForSeverity, tierShort, violationFlag, type IssueTier } from "@/lib/triage";
 import { tx } from "@/lib/text";
 
 function fail(locale: Locale, en: string, es: string): never {
@@ -221,7 +224,7 @@ export async function issueHistory(user: User, issueId: string): Promise<History
       title: reply
         ? tx(user.locale, "Reply from the landlord", "Respuesta del propietario")
         : tx(user.locale, "Message to the landlord", "Mensaje al propietario"),
-      body: `${formatTimestamp(message.createdAt, user.locale)}\n${message.subject}\n${message.body}`,
+      body: `${formatTimestamp(message.createdAt, user.locale)}\n${message.subject}\n${reply ? landlordBubble(message.body, user.locale) : message.body}`,
     });
   }
   for (const deadline of deadlines.filter((item) => item.sourceId === entry.id)) {
@@ -238,11 +241,19 @@ export async function issueHistory(user: User, issueId: string): Promise<History
       ].filter(Boolean).join("\n"),
     });
   }
+  const inbound = linkedMessages.filter((message) => message.direction === "inbound");
   for (const response of responses.filter((item) => item.message_id && messageIds.has(item.message_id))) {
+    const note = (response.note || "").trim();
+    const covered = inbound.some((message) => {
+      const provider = message.providerId || "";
+      if (provider.startsWith("respond:") || provider.startsWith("refile:")) return true;
+      return Boolean(note && message.body.includes(note));
+    });
+    if (covered) continue;
     rows.push({
       at: response.created_at,
-      title: tx(user.locale, "Landlord response link", "Enlace de respuesta del propietario"),
-      body: `${response.action}${response.note ? `\n${response.note}` : ""}`,
+      title: tx(user.locale, "Reply from the landlord", "Respuesta del propietario"),
+      body: landlordWords(response.action, note, user.locale),
     });
   }
   for (const log of logs) {
@@ -301,7 +312,7 @@ export async function refreshIssueTiers(user: User, unit: Unit, logs: LogEntry[]
   const responses = await listLandlordResponses(user.id, unit.id);
   let changed = false;
   for (const log of logs) {
-    if (log.flags?.removed === true || log.flags?.tierManual === true) continue;
+    if (log.flags?.removed === true) continue;
     const entry = log.flags?.entry as { atLeast24?: boolean; explanation?: string; explanationEs?: string } | undefined;
     const retaliation = log.flags?.retaliation as { flagged?: boolean; explanation?: string; explanationEs?: string } | undefined;
     const failed = entry?.atLeast24 === false || retaliation?.flagged === true;
@@ -320,6 +331,7 @@ export async function refreshIssueTiers(user: User, unit: Unit, logs: LogEntry[]
       changed = true;
       continue;
     }
+    if (log.flags?.tierManual === true) continue;
     if (!openRepair(log) || log.flags?.escalatedAt) continue;
     const tier = log.tier && isIssueTier(log.tier) ? log.tier : tierForSeverity(log.severity);
     const due = deadlines.find((item) => item.kind === "repair" && item.sourceId === log.id && item.dueDate)?.dueDate
@@ -364,12 +376,67 @@ export async function setIssueTier(user: User, unit: Unit, id: string, tier: Iss
   const log = await getLog(user.id, id);
   if (log.unitId !== unit.id) throw new Error(tx(user.locale, "That request was not found.", "No se encontró esa solicitud."));
   if (log.flags?.removed === true) throw new Error(tx(user.locale, "That request was removed.", "Esa solicitud se eliminó."));
+  const current = log.tier && isIssueTier(log.tier) ? log.tier : tierForSeverity(log.severity);
+  if (current === tier) return;
   await setLogTier(user.id, id, tier, { ...log.flags, tierManual: true });
   await noteTier(user, unit, id, tx(
     user.locale,
-    `The tenant set this request to ${tierLabel(tier, "en")}.`,
-    `El inquilino marcó esta solicitud como ${tierLabel(tier, "es")}.`,
+    `Tier changed from ${tierShort(current, "en")} to ${tierShort(tier, "en")} by tenant`,
+    `El nivel cambió de ${tierShort(current, "es")} a ${tierShort(tier, "es")} por el inquilino`,
   ));
+  const anchor = (log.eventDate || todayISO()).slice(0, 10);
+  const reminder = repairReminder(anchor, asRepairSeverity(log.severity), reminderPace(tier, log.severity));
+  const open = (await listDeadlines(user.id, unit.id)).find((item) => item.kind === "repair" && item.sourceId === id && item.status === "open");
+  if (!open) return;
+  await updateDeadlineFacts(open.id, {
+    ruleId: reminder.ruleId,
+    dueDate: reminder.dueDate,
+    explanation: reminder.explanation,
+    explanationEs: reminder.explanationEs,
+    computation: reminder.computation,
+    unsure: reminder.unsure,
+  });
+}
+
+function noteLog(user: User, entry: LogEntry) {
+  if (entry.unitId && entry.type === "repair") fail(user.locale, "That is not a note.", "Eso no es una nota.");
+  if (entry.type === "issue_event" || entry.type === "repair") fail(user.locale, "That is not a note.", "Eso no es una nota.");
+  if (/^landlord used the response link:/i.test(entry.description)) {
+    fail(user.locale, "A landlord reply stays in the landlord chat.", "La respuesta del propietario se queda en el chat del propietario.");
+  }
+}
+
+/** A note stays in the hash chain. Hide removes it from the list. */
+export async function hideNote(user: User, id: string): Promise<void> {
+  const entry = await getLog(user.id, id);
+  noteLog(user, entry);
+  if (entry.flags?.hidden === true) return;
+  await setLogFlags(user.id, id, { ...entry.flags, hidden: true });
+  await insertLog({
+    unitId: entry.unitId,
+    userId: user.id,
+    type: "issue_event",
+    description: tx(user.locale, "Tenant hid this note. The timestamped record stays.", "El inquilino ocultó esta nota. El registro con fecha se queda."),
+    eventDate: todayISO(),
+    flags: { event: "note_hidden", logId: entry.id },
+  });
+}
+
+export async function restoreNote(user: User, id: string): Promise<void> {
+  const entry = await getLog(user.id, id);
+  noteLog(user, entry);
+  if (entry.flags?.hidden !== true) return;
+  const next = { ...entry.flags };
+  delete next.hidden;
+  await setLogFlags(user.id, id, next);
+  await insertLog({
+    unitId: entry.unitId,
+    userId: user.id,
+    type: "issue_event",
+    description: tx(user.locale, "Tenant showed this note again.", "El inquilino volvió a mostrar esta nota."),
+    eventDate: todayISO(),
+    flags: { event: "note_shown", logId: entry.id },
+  });
 }
 
 export async function recordRulesIssue(user: User, unit: Unit, input: {

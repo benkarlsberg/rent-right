@@ -2,7 +2,7 @@ import { formatAddressPlain, type AddressParts } from "@/lib/address-format";
 import { cardAfterSend, flagCard, serializeCard, type CardKind, type ChatCard } from "@/lib/chat-card";
 import { aiConfigured } from "@/lib/ai";
 import { answerFromConversation } from "@/lib/chat-answer";
-import { fold, planFromIntent, planTurn, repairFacts, resolveIntent, type TurnPlan } from "@/lib/chat-intent";
+import { fold, isDraftDiscard, planFromIntent, planTurn, repairFacts, resolveIntent, type TurnPlan } from "@/lib/chat-intent";
 import { chatContext } from "@/lib/chat-text";
 import {
   addAssistantMessage,
@@ -18,6 +18,7 @@ import {
   listDeadlines,
   listLeaseReviews,
   listLogs,
+  listMessages,
   openChatDraft,
   openDraftForLog,
   recentConversationTurns,
@@ -37,15 +38,15 @@ import { detectPlace } from "@/lib/rules/detect";
 import { todayISO } from "@/lib/rules/dates";
 import { checkRentIncrease, depositReturnDeadline, repairReminder, type AreaKey, type RepairSeverity } from "@/lib/rules/engine";
 import { describeTenantMail, mailHeader } from "@/lib/tenant-mail";
-import { aidLinks, aidText, photoPrompt, safetySteps, tierForSeverity, timelinePointer, violationDetail, violationFlag } from "@/lib/triage";
+import { aidLinks, aidText, photoPrompt, reminderPace, safetySteps, tierForSeverity, timelinePointer, violationDetail, violationFlag } from "@/lib/triage";
 import { renderAnswer, selectRules } from "@/lib/rules/assistant";
 import { getRule } from "@/lib/rules/library";
 import { formatMoney, percentLabel } from "@/lib/format";
 import { tx } from "@/lib/text";
-import { findResolutionTarget, recordRulesIssue, resolveRepair } from "@/lib/issues";
+import { findResolutionTarget, hideIssue, recordRulesIssue, resolveRepair } from "@/lib/issues";
 import { issueTitle } from "@/lib/resolution";
 import { addLandlordLabel, landlordPrompt, landlordReady } from "@/lib/landlord";
-import { ensureRepairDeadline, ensureRepairDrafts } from "@/lib/repair-draft";
+import { confirmedOutbound, ensureRepairDeadline, ensureRepairDrafts } from "@/lib/repair-draft";
 import { CHAT_MONTHLY_CAP, emailLandlord, extractPdfOrText, recordLog, runLeaseReview, saveDepositAndDeadline } from "@/lib/workflow";
 
 const AREAS = new Set<AreaKey>(["los_angeles_orange", "riverside_san_bernardino", "san_diego", "san_francisco_bay", "other_ca"]);
@@ -228,6 +229,9 @@ export async function runChatTurn(user: User, unit: Unit | null, input: {
   action?: string;
   draftId?: string;
   attachment?: { name: string; mime: string; base64: string } | null;
+  summary?: string;
+  description?: string;
+  tier?: string;
 }): Promise<void> {
   let text = (input.text || "").trim();
   const action = (input.action || "").trim();
@@ -272,6 +276,28 @@ export async function runChatTurn(user: User, unit: Unit | null, input: {
     await reviewAttachment(user, unit, input.attachment);
     return;
   }
+  if (action.startsWith("repair-save:")) {
+    await saveConfirmedRepair(user, unit, action.slice("repair-save:".length), input);
+    return;
+  }
+  if (action.startsWith("repair-cancel:")) {
+    await cancelRepairDraft(user, unit, action.slice("repair-cancel:".length));
+    return;
+  }
+  if (action.startsWith("repair-undo:")) {
+    await undoSavedRepair(user, unit, action.slice("repair-undo:".length));
+    return;
+  }
+  if (action.startsWith("repair-keep:")) {
+    await say(user, unit, {
+      headline: tx(user.locale, "Kept", "Se queda"),
+      status: tx(user.locale, "Saved", "Guardado"),
+      action: null,
+      detail: tx(user.locale, "It stays in Records.", "Se queda en Registros."),
+      ruleId: null,
+    });
+    return;
+  }
   if (!text && !input.attachment) throw new Error(tx(user.locale, "Say what you need.", "Diga qué necesita."));
   await asked(user, unit, text || input.attachment?.name || tx(user.locale, "Attachment", "Archivo"));
   if (input.attachment && looksLikeLease(text, input.attachment)) {
@@ -280,6 +306,18 @@ export async function runChatTurn(user: User, unit: Unit | null, input: {
   }
 
   const pending = await openChatDraft(user.id);
+  if (pending && pending.unitId === unit.id && isDraftDiscard(text)) {
+    if (pending.kind === "repair_confirm" || pending.kind === "repair_add") {
+      await closeChatDraft(user.id, pending.id, "cancelled");
+      await say(user, unit, discardedCard(user));
+      return;
+    }
+    if (pending.kind === "repair") {
+      const logId = typeof pending.payload.logId === "string" ? pending.payload.logId : "";
+      await offerUndo(user, unit, logId);
+      return;
+    }
+  }
   const pendingKind = pending && pending.unitId === unit.id && (pending.kind === "repair" || pending.kind === "rent_date" || pending.kind === "deposit_date" || pending.kind === "letter")
     ? pending.kind
     : null;
@@ -752,6 +790,20 @@ function mailHeaderText(user: User, unit: Unit): string {
   return mail.ready ? mailHeader(mail) : mail.missing;
 }
 
+function discardedCard(user: User): ChatCard {
+  return {
+    headline: tx(user.locale, "OK, I didn’t save it.", "Está bien, no lo guardé."),
+    status: tx(user.locale, "Nothing saved", "Nada guardado"),
+    action: null,
+    detail: tx(user.locale, "No issue or reminder was saved.", "No se guardó ningún problema ni recordatorio."),
+    ruleId: null,
+  };
+}
+
+function chosenTier(value: string | undefined, fallback: "routine" | "urgent"): "routine" | "urgent" {
+  return value === "routine" || value === "urgent" ? value : fallback;
+}
+
 async function logRepair(user: User, unit: Unit, summary: string, severity: RepairSeverity, room: string | null, attachment: { name: string; mime: string; base64: string } | null, forceNew = false) {
   const kind = severity || repairFacts(summary).severity;
   if (!forceNew) {
@@ -765,13 +817,146 @@ async function logRepair(user: User, unit: Unit, summary: string, severity: Repa
   if (attachment?.mime.startsWith("image/")) {
     photoFileId = await saveFile(user.id, unit.id, attachment.name || "repair.jpg", attachment.mime, Buffer.from(attachment.base64, "base64"));
   }
-  const facts = repairFacts(summary);
+  const suggested = tierForSeverity(kind) === "urgent" ? "urgent" : "routine";
+  const safety = safetySteps(kind, user.locale);
+  const draft = await createChatDraft(user.id, unit.id, "repair_confirm", {
+    summary,
+    description: summary,
+    room,
+    severity: kind,
+    tier: suggested,
+    suggestedTier: suggested,
+    photoFileId,
+  });
+  await say(user, unit, {
+    headline: tx(user.locale, "Save this issue?", "¿Guardar este problema?"),
+    status: suggested === "urgent"
+      ? tx(user.locale, "Looks urgent, change if not.", "Parece urgente, cámbielo si no.")
+      : tx(user.locale, "Looks routine, change if not.", "Parece de rutina, cámbielo si no."),
+    action: { id: `repair-save:${draft.id}`, label: tx(user.locale, "Save issue", "Guardar problema") },
+    actions: [
+      { id: `repair-save:${draft.id}`, label: tx(user.locale, "Save issue", "Guardar problema") },
+      { id: `repair-edit:${draft.id}`, label: tx(user.locale, "Edit", "Editar") },
+      { id: `repair-cancel:${draft.id}`, label: tx(user.locale, "Cancel", "Cancelar") },
+    ],
+    ...(safety ? { safety } : {}),
+    form: { summary, description: summary, room, tier: suggested, suggested },
+    detail: tx(user.locale, "Nothing is saved until you tap Save issue.", "No se guarda nada hasta que toque Guardar problema."),
+    ruleId: null,
+  });
+}
+
+async function saveConfirmedRepair(user: User, unit: Unit, draftId: string, input: { summary?: string; description?: string; tier?: string }) {
+  const draft = await openChatDraft(user.id);
+  if (!draft || draft.kind !== "repair_confirm" || draft.id !== draftId || draft.unitId !== unit.id) {
+    await say(user, unit, {
+      headline: tx(user.locale, "Nothing to save", "Nada para guardar"),
+      status: tx(user.locale, "Nothing saved", "Nada guardado"),
+      action: null,
+      detail: tx(user.locale, "There is no issue waiting. Nothing was saved.", "No hay un problema en espera. No se guardó nada."),
+      ruleId: null,
+    });
+    return;
+  }
+  const summary = (input.summary || (typeof draft.payload.summary === "string" ? draft.payload.summary : "")).trim();
+  const description = (input.description || (typeof draft.payload.description === "string" ? draft.payload.description : summary)).trim();
+  const severity = ((typeof draft.payload.severity === "string" ? draft.payload.severity : "other") || "other") as RepairSeverity;
+  const room = typeof draft.payload.room === "string" ? draft.payload.room : null;
+  const suggested = draft.payload.suggestedTier === "routine" || draft.payload.suggestedTier === "urgent"
+    ? draft.payload.suggestedTier
+    : tierForSeverity(severity) === "urgent" ? "urgent" : "routine";
+  const tier = chosenTier(input.tier, suggested);
+  const photoFileId = typeof draft.payload.photoFileId === "string" ? draft.payload.photoFileId : null;
+  if (!summary) {
+    await say(user, unit, {
+      headline: tx(user.locale, "Need a summary", "Falta un resumen"),
+      status: tx(user.locale, "Nothing saved", "Nada guardado"),
+      action: null,
+      detail: tx(user.locale, "Add a short summary, then tap Save issue. Nothing was saved.", "Agregue un resumen breve y toque Guardar problema. No se guardó nada."),
+      ruleId: null,
+    });
+    return;
+  }
+  await closeChatDraft(user.id, draft.id, "done");
+  await commitRepair(user, unit, summary, description, severity, room, photoFileId, tier, tier !== suggested);
+}
+
+async function cancelRepairDraft(user: User, unit: Unit, draftId: string) {
+  const draft = await openChatDraft(user.id);
+  if (!draft || draft.kind !== "repair_confirm" || draft.id !== draftId || draft.unitId !== unit.id) {
+    await say(user, unit, discardedCard(user));
+    return;
+  }
+  await closeChatDraft(user.id, draft.id, "cancelled");
+  await say(user, unit, discardedCard(user));
+}
+
+async function offerUndo(user: User, unit: Unit, logId: string) {
+  const entry = logId ? await getLog(user.id, logId).catch(() => null) : null;
+  if (!entry || entry.type !== "repair" || entry.flags?.removed === true) {
+    await say(user, unit, {
+      headline: tx(user.locale, "Nothing to undo", "Nada para deshacer"),
+      status: tx(user.locale, "Nothing changed", "Nada cambió"),
+      action: null,
+      detail: tx(user.locale, "There is no saved issue to undo.", "No hay un problema guardado para deshacer."),
+      ruleId: null,
+    });
+    return;
+  }
+  const sent = (await listMessages(user.id, unit.id)).some((message) => message.logEntryId === entry.id && message.direction === "outbound" && confirmedOutbound(message.deliveryStatus));
+  if (sent) {
+    await say(user, unit, {
+      headline: tx(user.locale, "This stays", "Esto se queda"),
+      status: tx(user.locale, "Already sent", "Ya enviado"),
+      action: null,
+      detail: tx(user.locale, "A message was already sent, so the issue stays in Records.", "Ya se envió un mensaje, así que el problema se queda en Registros."),
+      ruleId: null,
+    });
+    return;
+  }
+  await say(user, unit, {
+    headline: tx(user.locale, "Undo this issue?", "¿Deshacer este problema?"),
+    status: tx(user.locale, "Not removed", "No se quitó"),
+    action: { id: `repair-undo:${entry.id}`, label: tx(user.locale, "Undo", "Deshacer") },
+    actions: [
+      { id: `repair-undo:${entry.id}`, label: tx(user.locale, "Undo", "Deshacer") },
+      { id: `repair-keep:${entry.id}`, label: tx(user.locale, "Keep", "Conservar") },
+    ],
+    detail: tx(user.locale, "Nothing is removed until you tap Undo.", "No se quita nada hasta que toque Deshacer."),
+    ruleId: null,
+  });
+}
+
+async function undoSavedRepair(user: User, unit: Unit, logId: string) {
+  try {
+    const result = await hideIssue(user, logId);
+    await say(user, unit, result.sentKept
+      ? {
+          headline: tx(user.locale, "Removed from the list", "Quitado de la lista"),
+          status: tx(user.locale, "Sent messages stay", "Los mensajes enviados se quedan"),
+          action: null,
+          detail: tx(user.locale, "The issue left Records. Messages already sent stay in the landlord history.", "El problema salió de Registros. Los mensajes ya enviados se quedan en el historial del propietario."),
+          ruleId: null,
+        }
+      : discardedCard(user));
+  } catch (error) {
+    await say(user, unit, {
+      headline: tx(user.locale, "Not removed", "No se quitó"),
+      status: tx(user.locale, "Nothing changed", "Nada cambió"),
+      action: null,
+      detail: error instanceof Error ? error.message : tx(user.locale, "The issue was not changed.", "El problema no cambió."),
+      ruleId: null,
+    });
+  }
+}
+
+async function commitRepair(user: User, unit: Unit, summary: string, description: string, severity: RepairSeverity, room: string | null, photoFileId: string | null, tier: "routine" | "urgent", tierManual: boolean) {
   const entry = await recordLog({
     user,
     unit,
     type: "repair",
     noticeKind: null,
-    severity: severity || facts.severity,
+    severity,
     room,
     description: summary,
     eventDate: todayISO(),
@@ -780,8 +965,21 @@ async function logRepair(user: User, unit: Unit, summary: string, severity: Repa
     subject: "",
     entryAt: null,
     noticeAt: null,
+    tier,
+    tierManual,
+    notes: description !== summary ? description : null,
   });
-  const reminder = repairReminder(todayISO(), severity);
+  if (photoFileId) {
+    await insertPhoto(user.id, unit.id, {
+      fileId: photoFileId,
+      room: room || "",
+      caption: summary.slice(0, 200),
+      link: "issue",
+      logId: entry.id,
+      reportId: null,
+    });
+  }
+  const reminder = repairReminder(todayISO(), severity, reminderPace(tier, severity));
   const pending = await ensureRepairDrafts(user, unit, [entry], []);
   const letter = pending[0];
   const draft = await createChatDraft(user.id, unit.id, "repair", {
@@ -789,14 +987,17 @@ async function logRepair(user: User, unit: Unit, summary: string, severity: Repa
     subject: letter?.subject || tx(user.locale, `${room || "Home"} repair`, `Reparación: ${room || "vivienda"}`),
     text: letter?.body || summary,
   });
-  const urgent = tierForSeverity(severity) === "urgent";
+  const urgent = tier === "urgent";
+  const undo = { id: `repair-undo:${entry.id}`, label: tx(user.locale, "Undo", "Deshacer") };
+  const send = landlordReady(unit)
+    ? { id: `send:${draft.id}`, label: tx(user.locale, "Send to landlord", "Enviar al propietario") }
+    : { id: "add-landlord", label: addLandlordLabel(user.locale) };
   const messageId = await say(user, unit, {
     headline: tx(user.locale, "Repair logged", "Reparación anotada"),
     status: tx(user.locale, "Not sent", "No enviado"),
     badge: urgent ? "urgent" : undefined,
-    action: landlordReady(unit)
-      ? { id: `send:${draft.id}`, label: tx(user.locale, "Send to landlord", "Enviar al propietario") }
-      : { id: "add-landlord", label: addLandlordLabel(user.locale) },
+    action: send,
+    actions: [send, undo],
     sender: mailHeaderText(user, unit),
     detail: [
       safetySteps(severity, user.locale),

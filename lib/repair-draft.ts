@@ -13,7 +13,7 @@ import {
 import { formatDate } from "@/lib/format";
 import { repairReminder } from "@/lib/rules/engine";
 import { relayAddress, tx } from "@/lib/text";
-import { asRepairSeverity, tierForSeverity, urgentLetterLead } from "@/lib/triage";
+import { asRepairSeverity, reminderPace, tierForSeverity, urgentLetterLead } from "@/lib/triage";
 
 export function confirmedOutbound(status: string): boolean {
   return status === "sent" || status === "delivered" || status === "local_only" || status === "blocked";
@@ -30,12 +30,14 @@ export function repairDraftLetter(input: {
   eventDate: string;
   address: string;
   severity: string | null;
+  tier?: string | null;
 }): { subject: string; body: string; ruleId: string; dueDate: string | null } {
   const locale = input.locale;
   const day = input.eventDate.slice(0, 10);
   const severity = severityOf(input.severity);
-  const reminder = repairReminder(day, severity);
-  const urgent = tierForSeverity(severity) === "urgent";
+  const pace = input.tier ? reminderPace(input.tier, input.severity) : undefined;
+  const reminder = repairReminder(day, severity, pace);
+  const urgent = input.tier ? input.tier === "urgent" : tierForSeverity(severity) === "urgent";
   const issue = input.description.replace(/\s+/g, " ").trim();
   const short = issue.length > 80 ? `${issue.slice(0, 77).trim()}…` : issue;
   const subject = tx(locale, `Repair request: ${short}`, `Solicitud de reparación: ${short}`);
@@ -81,6 +83,7 @@ export async function ensureRepairDrafts(user: User, unit: Unit, logs: LogEntry[
       eventDate: log.eventDate,
       address: unitAddress(unit),
       severity: log.severity,
+      tier: log.tier,
     });
     try {
       const row = await insertMessage({
@@ -115,7 +118,8 @@ export async function ensureRepairDeadline(user: User, unit: Unit, log: LogEntry
   const existing = (await listDeadlines(user.id, unit.id)).find((item) => item.kind === "repair" && item.sourceId === log.id);
   if (existing) return;
   const day = log.eventDate.slice(0, 10);
-  const reminder = repairReminder(day, severityOf(log.severity));
+  const pace = log.flags?.tierManual === true ? reminderPace(log.tier, log.severity) : undefined;
+  const reminder = repairReminder(day, severityOf(log.severity), pace);
   await insertDeadline({
     unitId: unit.id,
     ruleId: reminder.ruleId,

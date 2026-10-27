@@ -35,6 +35,7 @@ import {
   type RstpoTier,
 } from "@/lib/rules/engine";
 import { relayAddress, tx } from "@/lib/text";
+import { reminderPace } from "@/lib/triage";
 
 const SEVERITIES = new Set<RepairSeverity>(["no_heat", "no_water", "no_electricity", "gas_leak", "leak", "mold", "pests", "other"]);
 
@@ -317,7 +318,8 @@ async function refreshOpenDeadlines(userId: string, unitId: string) {
       const severity = log?.severity;
       const anchor = (log?.eventDate ? String(log.eventDate).slice(0, 10) : null) || item.anchorDate;
       if (severity && anchor && SEVERITIES.has(severity as RepairSeverity)) {
-        next = repairReminder(anchor, severity as RepairSeverity);
+        const pace = log?.flags?.tierManual === true ? reminderPace(log.tier, severity) : undefined;
+        next = repairReminder(anchor, severity as RepairSeverity, pace);
       }
     } else if (item.kind === "deposit" && item.anchorDate) {
       next = depositReturnDeadline(item.anchorDate);

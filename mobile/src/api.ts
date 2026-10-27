@@ -40,6 +40,7 @@ export async function api<T = Record<string, unknown>>(path: string, options?: {
       headers,
       body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
       signal: options?.signal,
+      cache: "no-store",
     });
   } catch (error) {
     if (options?.signal?.aborted) throw error;

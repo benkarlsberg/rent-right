@@ -39,6 +39,13 @@ describe("tab store", () => {
     expect(readSlice(alice, "thread")).toBeNull();
   });
 
+  it("drops a bootstrap that started before a newer slice", () => {
+    const started = tabGeneration();
+    rememberSlice(alice, "records", { tier: "routine" }, 6_000);
+    expect(applyBootstrap(alice, { thread: {}, chat: {}, records: { tier: "urgent" } }, started, 7_000)).toBe(false);
+    expect(readSlice(alice, "records")).toEqual({ tier: "routine" });
+  });
+
   it("keeps a patched slice on that account until the other slices arrive", () => {
     rememberSlice(alice, "chat", { items: ["draft"] }, 5_000);
     expect(readSlice(alice, "chat")).toEqual({ items: ["draft"] });

@@ -58,6 +58,7 @@ export function needsBootstrap(token: string, now = Date.now()): boolean {
 }
 
 export function rememberSlice(token: string, path: TabPath, data: unknown, now = Date.now()) {
+  generation += 1;
   const userId = userIdFromToken(token);
   if (!memory || memory.userId !== userId) memory = { userId, slots: {} };
   memory.slots[path] = { data, at: now };

@@ -123,6 +123,13 @@ export function tierLabel(tier: IssueTier, locale: Locale): string {
   return tx(locale, "Routine", "Rutina");
 }
 
+/** Short name for a timeline line. Rules stays one word, not the long violation sentence. */
+export function tierShort(tier: IssueTier, locale: Locale): string {
+  if (tier === "urgent") return urgentLabel(locale);
+  if (tier === "possible_violation") return tx(locale, "Rules", "Reglas");
+  return tx(locale, "Routine", "Rutina");
+}
+
 export type AidLink = { name: string; url: string };
 
 export const STATEWIDE_AID: AidLink[] = [

@@ -27,6 +27,8 @@ export type LogInput = {
   createdAt: string;
   status?: string;
   removed?: boolean;
+  hidden?: boolean;
+  noticeKind?: string | null;
 };
 
 export type MessageInput = {
@@ -63,6 +65,8 @@ export type LogCard = {
   when: string;
   issue: string;
   message: string | null;
+  preview: string;
+  hidden: boolean;
 };
 
 export type StepAction = "wait" | "followup" | "send" | "export" | "small_claims";
@@ -243,6 +247,34 @@ function logTitle(type: string, locale: Locale): string {
   return tx(locale, "Record", "Registro");
 }
 
+function firstSentence(text: string): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return "";
+  const sentence = (clean.split(/(?<=[.!?])\s/)[0] || clean).replace(/[.!?]+$/, "").trim();
+  if (sentence.length <= 80) return sentence;
+  return `${sentence.slice(0, 77).trim()}…`;
+}
+
+export function cardPreview(text: string): string {
+  const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean).slice(0, 2);
+  const joined = lines.join("\n");
+  if (joined.length <= 180) return joined;
+  return `${joined.slice(0, 177).trim()}…`;
+}
+
+function noteTitle(log: LogInput, locale: Locale): string {
+  const kind = log.noticeKind || "";
+  if (log.type === "notice_received") {
+    if (kind === "rent_increase") return tx(locale, "Rent increase notice", "Aviso de aumento de renta");
+    if (kind === "eviction") return tx(locale, "Eviction notice", "Aviso de desalojo");
+    if (kind === "pay_or_quit_3day") return tx(locale, "3-day notice", "Aviso de 3 días");
+    if (kind === "deposit") return tx(locale, "Deposit notice", "Aviso de depósito");
+  }
+  const sentence = firstSentence(log.description);
+  if (sentence && sentence.toLowerCase() !== "note" && sentence.toLowerCase() !== "nota") return sentence;
+  return logTitle(log.type, locale);
+}
+
 export function logCards(logs: LogInput[], messages: MessageInput[], locale: Locale): LogCard[] {
   return logs.map((log) => {
     const related = messages
@@ -263,7 +295,7 @@ export function logCards(logs: LogInput[], messages: MessageInput[], locale: Loc
     if (inbound?.subject) {
       parts.push(tx(locale, `Reply: “${inbound.subject}”`, `Respuesta: “${inbound.subject}”`));
     }
-    const title = logTitle(log.type, locale);
+    const title = log.type === "conversation" || log.type === "notice_received" ? noteTitle(log, locale) : logTitle(log.type, locale);
     return {
       id: log.id,
       line: `${title} · ${status}`,
@@ -272,6 +304,8 @@ export function logCards(logs: LogInput[], messages: MessageInput[], locale: Loc
       when: formatTimestamp(log.createdAt, locale),
       issue: log.description,
       message: parts.join(" ") || null,
+      preview: cardPreview(log.description),
+      hidden: log.hidden === true,
     };
   });
 }

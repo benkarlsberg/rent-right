@@ -17,7 +17,6 @@ import {
   deleteUserAccount,
   getLog,
   insertCondition,
-  insertLog,
   messageByToken,
   peekUnit,
   reportAbuse,
@@ -496,29 +495,10 @@ export async function landlordReply(form: FormData) {
     } else if (action === "fixed") {
       await addLandlordResponse(message.unitId, message.id, action, note);
       const unit = await peekUnit(message.unitId);
-      const noted = unit ? await landlordSaysFixed(unit.createdBy, unit, message.logEntryId, note) : false;
-      if (unit && !noted) {
-        await insertLog({
-          unitId: unit.id,
-          userId: unit.createdBy,
-          type: "conversation",
-          description: `Landlord used the response link: fixed.${note ? ` Note: ${note}` : ""}`,
-          eventDate: new Date().toISOString().slice(0, 10),
-        });
-      }
+      if (unit) await landlordSaysFixed(unit.createdBy, unit, message.logEntryId, note);
       await rememberRespond(message, token, action, note);
     } else if (["acknowledge", "schedule", "dispute"].includes(action)) {
       await addLandlordResponse(message.unitId, message.id, action, note);
-      const unit = await peekUnit(message.unitId);
-      if (unit) {
-        await insertLog({
-          unitId: unit.id,
-          userId: unit.createdBy,
-          type: "conversation",
-          description: `Landlord used the response link: ${action}.${note ? ` Note: ${note}` : ""}`,
-          eventDate: new Date().toISOString().slice(0, 10),
-        });
-      }
       await rememberRespond(message, token, action, note);
     } else {
       throw new Error("Choose a response.");

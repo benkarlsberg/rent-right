@@ -74,7 +74,10 @@ describe("a home with no landlord", () => {
     const repair = await api("POST", "thread", { text: "The sink is leaking under the cabinet" }, token);
     expect(repair.status).toBe(200);
     expect(repair.json?.needsLandlord).toBe(true);
-    const card = (repair.json?.items as { action?: { id: string; label: string } | null; detail?: string }[]).find((item) => item.action?.id === "add-landlord");
+    const saveId = ((repair.json?.items as { actions?: { id: string }[] }[]) || []).flatMap((item) => item.actions || []).find((action) => action.id.startsWith("repair-save:"))?.id;
+    const savedRepair = await api("POST", "thread", { action: saveId, summary: "The sink is leaking under the cabinet", description: "The sink is leaking under the cabinet" }, token);
+    expect(savedRepair.status).toBe(200);
+    const card = (savedRepair.json?.items as { action?: { id: string; label: string } | null; detail?: string }[]).find((item) => item.action?.id === "add-landlord");
     expect(card?.action?.label).toBe("Agregar propietario");
     expect(card?.detail).toContain("Agregue el nombre y el correo del propietario para enviar un mensaje.");
 

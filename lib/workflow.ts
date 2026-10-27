@@ -35,7 +35,7 @@ import { mailHeader, outboundSubject, REPLY_LINE, requireTenantMail } from "@/li
 import { photoFilename, rejectPhotoSet } from "@/lib/message-photos";
 import { messageParagraphs, renderMail } from "@/lib/email-template";
 import { LIBRARY_VERSION, type Locale } from "@/lib/disclaimer";
-import { tierForSeverity } from "@/lib/triage";
+import { isIssueTier, reminderPace, tierForSeverity } from "@/lib/triage";
 import { LEASE_REVIEW_MONTHLY_CAP, mergeModelFindings, redactPii, reviewLease, type ModelFinding } from "@/lib/lease/review";
 import { RULES } from "@/lib/rules/library";
 import {
@@ -79,6 +79,9 @@ export async function recordLog(input: {
   entryAt: string | null;
   noticeAt: string | null;
   createdAt?: string;
+  tier?: string | null;
+  tierManual?: boolean;
+  notes?: string | null;
 }) {
   assertWritable(input.unit, input.user.locale);
   const flags: Record<string, unknown> = {};
@@ -101,12 +104,13 @@ export async function recordLog(input: {
   const entryCheck = flags.entry as { atLeast24?: boolean } | undefined;
   const retaliation = flags.retaliation as { flagged?: boolean } | undefined;
   const failedCheck = entryCheck?.atLeast24 === false || retaliation?.flagged === true;
-  const tier = failedCheck
-    ? "possible_violation"
-    : input.type === "repair"
-      ? tierForSeverity(input.severity)
-      : null;
+  const chosen = input.type === "repair"
+    ? (input.tier && isIssueTier(input.tier) ? input.tier : tierForSeverity(input.severity))
+    : null;
+  const tier = failedCheck ? "possible_violation" : chosen;
   if (failedCheck) flags.unsure = true;
+  if (input.tierManual) flags.tierManual = true;
+  if (input.notes?.trim()) flags.notes = input.notes.trim();
   const entry = await insertLog({
     unitId: input.unit.id,
     userId: input.user.id,
@@ -123,7 +127,7 @@ export async function recordLog(input: {
   });
 
   if (input.type === "repair" && input.severity) {
-    const reminder = repairReminder(input.eventDate, input.severity as RepairSeverity);
+    const reminder = repairReminder(input.eventDate, input.severity as RepairSeverity, reminderPace(tier, input.severity));
     await insertDeadline({
       unitId: input.unit.id,
       ruleId: reminder.ruleId,

@@ -38,6 +38,25 @@ async function api(method: string, path: string, body?: unknown, token = "") {
   return { status: response.status, json: text ? JSON.parse(text) as Record<string, unknown> : null };
 }
 
+function repairSaveAction(payload: Record<string, unknown> | null): string {
+  const items = (payload?.items as { action?: { id?: string } | null; actions?: { id: string }[] }[]) || [];
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    const id = item?.actions?.find((action) => action.id.startsWith("repair-save:"))?.id || item?.action?.id;
+    if (id?.startsWith("repair-save:")) return id;
+  }
+  return "";
+}
+
+async function saveRepair(token: string, text: string, tier?: "routine" | "urgent") {
+  const opened = await api("POST", "thread", { text }, token);
+  const action = repairSaveAction(opened.json);
+  const saved = action
+    ? await api("POST", "thread", { action, summary: text, description: text, ...(tier ? { tier } : {}) }, token)
+    : opened;
+  return { opened, saved };
+}
+
 describe("renter workflows", () => {
   it("signs up, reviews a lease, and emails the landlord only after confirmation", async () => {
     expect(process.env.GEMINI_API_KEY).toBeUndefined();
@@ -84,9 +103,9 @@ describe("renter workflows", () => {
     const saved = await api("GET", "lease", undefined, token);
     expect(JSON.stringify(saved.json)).toContain(findings[0].ruleId || "Unsure");
 
-    const repair = await api("POST", "thread", { text: "The kitchen sink is leaking under the cabinet" }, token);
-    expect(repair.status).toBe(200);
-    const items = repair.json?.items as { status?: string; action?: { id: string } | null; headline?: string }[];
+    const repair = await saveRepair(token, "The kitchen sink is leaking under the cabinet");
+    expect(repair.saved.status).toBe(200);
+    const items = repair.saved.json?.items as { status?: string; action?: { id: string } | null; headline?: string }[];
     const waiting = items.find((item) => item.action?.id.startsWith("send:"));
     expect(waiting?.status).toBe("Not sent");
     const draftId = waiting!.action!.id.slice("send:".length);
@@ -178,7 +197,12 @@ describe("renter workflows", () => {
 
     const logged = await api("POST", "thread", { text: "The sink is leaking" }, token);
     expect(logged.status).toBe(200);
-    expect(JSON.stringify(logged.json)).toMatch(/Repair logged/i);
+    expect(JSON.stringify(logged.json)).toMatch(/Save this issue/i);
+    const beforeSave = await api("GET", "records", undefined, token);
+    expect((beforeSave.json?.issues as unknown[]).length).toBe(0);
+    const savedIssue = await api("POST", "thread", { action: repairSaveAction(logged.json), summary: "The sink is leaking", description: "The sink is leaking" }, token);
+    expect(savedIssue.status).toBe(200);
+    expect(JSON.stringify(savedIssue.json)).toMatch(/Repair logged/i);
 
     const vague = await api("POST", "thread", { text: "purple balloons on the ceiling" }, token);
     expect((vague.json?.steps as { items: unknown[] }).items).toEqual([]);
@@ -309,9 +333,9 @@ describe("renter workflows", () => {
       landlordEmail: "pat@example.com",
       rent: "2000",
     }, token);
-    const logged = await api("POST", "thread", { text: "My sink is leaking" }, token);
-    expect(logged.status).toBe(200);
-    const threadSteps = (logged.json?.steps as { items: { action: string }[] }).items.map((item) => item.action);
+    const logged = await saveRepair(token, "My sink is leaking");
+    expect(logged.saved.status).toBe(200);
+    const threadSteps = (logged.saved.json?.steps as { items: { action: string }[] }).items.map((item) => item.action);
     expect(threadSteps).toContain("send");
     expect(threadSteps).not.toContain("followup");
 
@@ -372,7 +396,7 @@ describe("renter workflows", () => {
       rent: "2000",
     }, token);
     const today = todayISO();
-    await api("POST", "thread", { text: "My sink is leaking" }, token);
+    await saveRepair(token, "My sink is leaking");
     await api("POST", "records/reminder/new", { label: "Call about the sink", date: today }, token);
     await api("POST", "deposit", { amount: "1500", moveOutDate: addDays(today, -21) }, token);
     await api("POST", "log", {
@@ -554,8 +578,8 @@ describe("renter workflows", () => {
     const still = await api("GET", "me", undefined, token);
     expect(JSON.stringify(still.json?.unit)).toContain("10 Main St");
 
-    const logged = await api("POST", "thread", { text: "My sink is leaking" }, token);
-    expect(logged.status).toBe(200);
+    const logged = await saveRepair(token, "My sink is leaking");
+    expect(logged.saved.status).toBe(200);
     const records = await api("GET", "records", undefined, token);
     const repair = (records.json?.deadlines as { id: string; kind: string }[]).find((item) => item.kind === "repair");
     expect(repair?.id).toBeTruthy();
@@ -782,9 +806,9 @@ describe("renter workflows", () => {
     }, token);
     expect(unit.status).toBe(200);
 
-    const repair = await api("POST", "thread", { text: "The kitchen sink is leaking under the cabinet" }, token);
-    expect(repair.status).toBe(200);
-    const planned = (repair.json?.steps as { items: { action: string; href: string | null; button: string }[] }).items;
+    const repair = await saveRepair(token, "The kitchen sink is leaking under the cabinet");
+    expect(repair.saved.status).toBe(200);
+    const planned = (repair.saved.json?.steps as { items: { action: string; href: string | null; button: string }[] }).items;
     expect(planned[0]?.action).toBe("send");
     expect(planned[0]?.button).toBe("Review before sending");
     expect(planned[0]?.href).toMatch(/^\/landlord\?draft=/);
@@ -869,9 +893,9 @@ describe("renter workflows", () => {
 
     const spanish = await api("POST", "settings", { locale: "es", name: "Ada Tenant" }, token);
     expect(spanish.status).toBe(200);
-    const otra = await api("POST", "thread", { text: "Hay moho en el baño" }, token);
-    expect(otra.status).toBe(200);
-    const paso = (otra.json?.steps as { items: { action: string; button: string; href: string | null }[] }).items[0];
+    const otra = await saveRepair(token, "Hay moho en el baño");
+    expect(otra.saved.status).toBe(200);
+    const paso = (otra.saved.json?.steps as { items: { action: string; button: string; href: string | null }[] }).items[0];
     expect(paso?.action).toBe("send");
     expect(paso?.button).toBe("Revisar antes de enviar");
     const esId = String(paso?.href).split("draft=")[1];
@@ -900,7 +924,7 @@ describe("renter workflows", () => {
       rent: "2400",
     }, token);
     const unitId = String((unit.json?.unit as { id?: string } | undefined)?.id);
-    await api("POST", "thread", { text: "My sink is leaking" }, token);
+    await saveRepair(token, "My sink is leaking");
     const mail = await api("GET", "chat", undefined, token);
     const draft = (mail.json?.items as { id: string; draft?: boolean; text: string }[]).find((item) => item.draft);
     const draftId = String(draft?.id || "");
@@ -939,8 +963,8 @@ describe("renter workflows", () => {
       rent: "2000",
     }, token);
     const unitId = String((unit.json?.unit as { id?: string } | undefined)?.id);
-    const first = await api("POST", "thread", { text: "my sink is leaking" }, token);
-    expect(first.status).toBe(200);
+    const first = await saveRepair(token, "my sink is leaking");
+    expect(first.saved.status).toBe(200);
     const before = await getSql()<{ n: number }[]>`select count(*)::int as n from log_entries where unit_id = ${unitId} and type = 'repair'`;
     expect(before[0]?.n).toBe(1);
     const second = await api("POST", "thread", { text: "Fix my sink" }, token);
@@ -972,12 +996,17 @@ describe("renter workflows", () => {
       landlordEmail: "john@example.com",
       rent: "2000",
     }, freshToken);
-    await api("POST", "thread", { text: "my sink is leaking" }, freshToken);
+    await saveRepair(freshToken, "my sink is leaking");
     const duplicate = await api("POST", "thread", { text: "Fix my sink" }, freshToken);
     const choice = (duplicate.json?.items as { actions?: { id: string }[] }[]).at(-1);
     const saved = await api("POST", "thread", { action: "repair-new" }, freshToken);
     expect(saved.status).toBe(200);
     expect(choice?.actions?.some((item) => item.id === "repair-new")).toBe(true);
+    expect(JSON.stringify(saved.json)).toMatch(/Save this issue/i);
+    const stillOne = await api("GET", "records", undefined, freshToken);
+    expect((stillOne.json?.issues as unknown[]).length).toBe(1);
+    const kept = await api("POST", "thread", { action: repairSaveAction(saved.json), summary: "Fix my sink", description: "Fix my sink" }, freshToken);
+    expect(kept.status).toBe(200);
     const two = await api("GET", "records", undefined, freshToken);
     expect((two.json?.issues as unknown[]).length).toBe(2);
   });
@@ -1000,7 +1029,7 @@ describe("renter workflows", () => {
     const unitId = String((unit.json?.unit as { id?: string } | undefined)?.id);
     const home = await api("GET", "records", undefined, token);
     expect(home.json?.address).toBe("12588 Carmel Creek Rd, Unit 25\nSan Diego, CA 92130");
-    await api("POST", "thread", { text: "My sink is leaking" }, token);
+    await saveRepair(token, "My sink is leaking");
     const mail = await api("GET", "chat", undefined, token);
     const draft = (mail.json?.items as { id: string; draft?: boolean }[]).find((item) => item.draft);
     const messageId = String(draft?.id || "");
@@ -1029,6 +1058,106 @@ describe("renter workflows", () => {
     const listed = await api("GET", "chat", undefined, token);
     expect((listed.json?.items as { id: string }[]).some((item) => item.id === messageId)).toBe(true);
   });
+
+  it("waits to save an issue, discards nevermind, and recalculates the reminder both ways", async () => {
+    const email = `draft-issue-${Date.now()}@example.com`;
+    const magic = await api("POST", "auth/magic", { email });
+    const session = await api("POST", "auth/verify", { token: magic.json?.devToken });
+    const token = String(session.json?.token);
+    const unit = await api("POST", "unit", {
+      name: "Ada Tenant",
+      street: "10 Main St",
+      city: "Los Angeles",
+      postalCode: "90026",
+      landlordName: "Pat Landlord",
+      landlordEmail: "pat@example.com",
+      rent: "2000",
+    }, token);
+    const unitId = String((unit.json?.unit as { id?: string } | undefined)?.id);
+    const draft = await api("POST", "thread", { text: "No hot water" }, token);
+    expect(draft.status).toBe(200);
+    expect(JSON.stringify(draft.json)).toMatch(/Save this issue/i);
+    expect(JSON.stringify(draft.json)).toMatch(/Looks urgent, change if not/i);
+    expect(JSON.stringify(draft.json)).toMatch(/Save issue/);
+    const empty = await api("GET", "records", undefined, token);
+    expect((empty.json?.issues as unknown[]) || []).toHaveLength(0);
+    expect(((empty.json?.deadlines as { kind: string }[]) || []).some((item) => item.kind === "repair")).toBe(false);
+    const repairs = await getSql()<{ n: number }[]>`select count(*)::int as n from log_entries where unit_id = ${unitId} and type = 'repair'`;
+    expect(repairs[0]?.n).toBe(0);
+
+    const dropped = await api("POST", "thread", { text: "nevermind" }, token);
+    expect(dropped.status).toBe(200);
+    expect(JSON.stringify(dropped.json)).toMatch(/didn’t save it|didn't save it/i);
+    const stillEmpty = await getSql()<{ n: number }[]>`select count(*)::int as n from log_entries where unit_id = ${unitId} and type = 'repair'`;
+    expect(stillEmpty[0]?.n).toBe(0);
+
+    const again = await api("POST", "thread", { text: "No hot water in the kitchen" }, token);
+    const saved = await api("POST", "thread", {
+      action: repairSaveAction(again.json),
+      summary: "No hot water in the kitchen",
+      description: "The kitchen tap runs cold.",
+      tier: "urgent",
+    }, token);
+    expect(saved.status).toBe(200);
+    expect(JSON.stringify(saved.json)).toMatch(/Repair logged/i);
+    const open = await api("GET", "records", undefined, token);
+    const issue = (open.json?.issues as { id: string; tier?: string }[])[0];
+    expect(issue?.tier).toBe("urgent");
+    const urgentDue = await getSql()<{ due: string }[]>`select due_date::text as due from deadlines where unit_id = ${unitId} and kind = 'repair' and status = 'open'`;
+    expect(urgentDue[0]?.due).toBeTruthy();
+
+    const routine = await api("POST", "records/tier", { id: issue.id, tier: "routine" }, token);
+    expect(routine.status).toBe(200);
+    expect((routine.json?.issues as { tier?: string }[])[0]?.tier).toBe("routine");
+    const routineDue = await getSql()<{ due: string }[]>`select due_date::text as due from deadlines where unit_id = ${unitId} and kind = 'repair' and status = 'open'`;
+    expect(routineDue[0]?.due > urgentDue[0]?.due).toBe(true);
+    const history = await api("GET", `log/${issue.id}`, undefined, token);
+    expect(JSON.stringify(history.json)).toMatch(/Tier changed from Urgent to Routine by tenant/);
+
+    const back = await api("POST", "records/tier", { id: issue.id, tier: "urgent" }, token);
+    expect((back.json?.issues as { tier?: string }[])[0]?.tier).toBe("urgent");
+    const urgentAgain = await getSql()<{ due: string }[]>`select due_date::text as due from deadlines where unit_id = ${unitId} and kind = 'repair' and status = 'open'`;
+    expect(urgentAgain[0]?.due).toBe(urgentDue[0]?.due);
+    const historyAgain = await api("GET", `log/${issue.id}`, undefined, token);
+    expect(JSON.stringify(historyAgain.json)).toMatch(/Tier changed from Routine to Urgent by tenant/);
+
+    const gas = await api("POST", "thread", { text: "I smell gas in the kitchen" }, token);
+    const gasCard = (gas.json?.items as { safety?: string; legal?: boolean; headline?: string }[] | undefined)?.at(-1);
+    expect(gasCard?.headline).toMatch(/Save this issue/i);
+    expect(gasCard?.safety).toMatch(/Leave the home now/);
+    expect(gasCard?.legal).toBe(false);
+    const gasCount = await getSql()<{ n: number }[]>`select count(*)::int as n from log_entries where unit_id = ${unitId} and type = 'repair'`;
+    expect(gasCount[0]?.n).toBe(1);
+
+    const noted = await api("POST", "log", {
+      type: "conversation",
+      description: "Called the office about the leak. They said next week.",
+    }, token);
+    expect(noted.status).toBe(200);
+    const withNote = await api("GET", "records", undefined, token);
+    const note = (withNote.json?.notes as { id: string; title: string; preview?: string }[]).find((item) => /office/i.test(item.preview || item.title));
+    expect(note?.title).toBe("Called the office about the leak");
+    expect(note?.preview).toMatch(/next week/);
+    expect(note?.title).not.toBe("Note");
+    const hidden = await api("POST", "records/note/hide", { id: note?.id }, token);
+    expect(hidden.status).toBe(200);
+    expect((hidden.json?.notes as { id: string }[]).some((item) => item.id === note?.id)).toBe(false);
+    expect((hidden.json?.hiddenNotes as { id: string }[]).some((item) => item.id === note?.id)).toBe(true);
+    const restored = await api("POST", "records/note/restore", { id: note?.id }, token);
+    expect((restored.json?.notes as { id: string }[]).some((item) => item.id === note?.id)).toBe(true);
+
+    const misfiled = await api("POST", "log", {
+      type: "conversation",
+      description: "Landlord used the response link: acknowledge. Note: Sure I'll get to it tomorrow",
+    }, token);
+    expect(misfiled.status).toBe(200);
+    const filed = await api("GET", "records", undefined, token);
+    expect(filed.status).toBe(200);
+    expect(JSON.stringify(filed.json?.notes)).not.toMatch(/response link/i);
+    const chat = await api("GET", "chat", undefined, token);
+    expect(JSON.stringify(chat.json)).toMatch(/Landlord acknowledged your request/);
+    expect(JSON.stringify(chat.json)).toMatch(/Sure I'll get to it tomorrow/);
+  }, 20000);
 
   it("loads the synthetic Los Angeles sample tenancy", async () => {
     const id = await startSampleTenancy();

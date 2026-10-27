@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SvgXml } from "react-native-svg";
@@ -16,6 +16,7 @@ import { TabLoading } from "@/typing-dots";
 import { colors } from "@/theme";
 import { PhotoThumb } from "@/photo-thumb";
 import { Button, ErrorLine, clipX, wrapText } from "@/ui";
+import { rememberSlice } from "@/tab-store";
 import { useLoad } from "@/use-load";
 
 type Segment = "issues" | "documents" | "evidence";
@@ -48,7 +49,8 @@ export type Records = {
     deletable?: boolean;
     legalNote?: string | null;
   }[];
-  notes: { id: string; line: string; title: string; status: string; when: string; issue: string; message: string | null }[];
+  notes: { id: string; line: string; title: string; status: string; when: string; issue: string; message: string | null; preview?: string }[];
+  hiddenNotes?: { id: string; line: string; title: string; status: string; when: string; issue: string; message: string | null; preview?: string }[];
   issues?: {
     id: string;
     title: string;
@@ -157,6 +159,9 @@ export default function Records() {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [openIssue, setOpenIssue] = useState<string | null>(null);
   const [confirmIssue, setConfirmIssue] = useState<string | null>(null);
+  const [confirmNote, setConfirmNote] = useState<string | null>(null);
+  const [showHidden, setShowHidden] = useState(false);
+  const tierLock = useRef(false);
   const [removedNote, setRemovedNote] = useState("");
   const [openNote, setOpenNote] = useState<string | null>(null);
   const [openArchive, setOpenArchive] = useState<string | null>(null);
@@ -211,13 +216,47 @@ export default function Records() {
   }
 
   async function setTier(id: string, tier: "routine" | "urgent" | "possible_violation") {
-    if (!token || busy || !data || data.archived) return;
+    if (!token || !data || data.archived || tierLock.current) return;
+    const previous = data;
+    const tierLabel = tier === "urgent" ? (es ? "Urgente" : "Urgent") : tier === "possible_violation" ? (es ? "Reglas" : "Rules") : (es ? "Rutina" : "Routine");
+    try {
+      tierLock.current = true;
+      setError("");
+      rememberSlice(token, "records", {
+        ...data,
+        issues: (data.issues || []).map((issue) => issue.id === id ? { ...issue, tier, tierLabel } : issue),
+      });
+      await reload(await api<Records>("records/tier", { token, body: { id, tier } }));
+    } catch (err) {
+      rememberSlice(token, "records", previous);
+      setError(err instanceof Error ? err.message : "Could not change the label.");
+    } finally {
+      tierLock.current = false;
+    }
+  }
+
+  async function hideNote(id: string) {
+    if (!token || !data) return;
     try {
       setBusy(true);
       setError("");
-      await reload(await api<Records>("records/tier", { token, body: { id, tier } }));
+      await reload(await api<Records>("records/note/hide", { token, body: { id } }));
+      setConfirmNote(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not change the label.");
+      setError(err instanceof Error ? err.message : "Could not hide the note.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function restoreNote(id: string) {
+    if (!token || !data) return;
+    try {
+      setBusy(true);
+      setError("");
+      await reload(await api<Records>("records/note/restore", { token, body: { id } }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not show the note.");
     } finally {
       setBusy(false);
     }
@@ -404,7 +443,6 @@ export default function Records() {
                               accessibilityRole="button"
                               accessibilityLabel={label}
                               accessibilityState={{ selected: issue.tier === tier }}
-                              disabled={busy}
                               onPress={() => void setTier(issue.id, tier)}
                             >
                               <Text style={[styles.tierText, tier === "urgent" && styles.urgentText]}>{label}</Text>
@@ -545,13 +583,19 @@ export default function Records() {
                 <Text style={styles.chevron}>›</Text>
               </View>
             </Pressable>
-            {notes.length ? <Text style={styles.section}>{labels?.notes || (es ? "Notas" : "Notes")}</Text> : null}
+            {notes.length || (data?.hiddenNotes || []).length ? <Text style={styles.section}>{labels?.notes || (es ? "Notas" : "Notes")}</Text> : null}
+            {(data?.hiddenNotes || []).length ? (
+              <Pressable style={styles.linkHit} accessibilityRole="button" accessibilityLabel={es ? "Mostrar ocultas" : "Show hidden"} onPress={() => setShowHidden((open) => !open)}>
+                <Text style={styles.link}>{showHidden ? (es ? "Ocultar las notas ocultas" : "Hide hidden notes") : (es ? "Mostrar ocultas" : "Show hidden")}</Text>
+              </Pressable>
+            ) : null}
             {notes.map((note) => {
               const open = openNote === note.id;
               return (
                 <View key={note.id} style={styles.card}>
                   <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={note.title} onPress={() => setOpenNote(open ? null : note.id)}>
                     <Text style={styles.cardTitle}>{note.title}</Text>
+                    {note.preview ? <Text style={styles.body} numberOfLines={2}>{note.preview}</Text> : null}
                     <Text style={styles.meta}>{note.status}</Text>
                     <Text style={styles.meta}>{note.when}</Text>
                   </Pressable>
@@ -561,9 +605,34 @@ export default function Records() {
                       {note.message ? <Text style={styles.body}>{note.message}</Text> : null}
                     </View>
                   ) : null}
+                  {!data?.archived ? (
+                    confirmNote === note.id ? (
+                      <View accessibilityRole="alert">
+                        <Text style={styles.confirm}>{es ? "¿Ocultar esta nota? Esta nota es parte de su registro con fecha, así que se queda. Ocultar la quita de esta lista. Mostrar ocultas la trae de vuelta." : "Hide this note? This note is part of your timestamped record, so it stays. Hide removes it from this list. Show hidden brings it back."}</Text>
+                        <Pressable style={styles.danger} accessibilityRole="button" accessibilityLabel={es ? "Ocultar" : "Hide"} onPress={() => void hideNote(note.id)}>
+                          <Text style={styles.dangerText}>{es ? "Ocultar" : "Hide"}</Text>
+                        </Pressable>
+                        <Button label={es ? "Cancelar" : "Cancel"} ghost onPress={() => setConfirmNote(null)} />
+                      </View>
+                    ) : (
+                      <Pressable style={styles.linkHit} accessibilityRole="button" accessibilityLabel={es ? "Eliminar" : "Delete"} onPress={() => setConfirmNote(note.id)}>
+                        <Text style={styles.deleteText}>{es ? "Eliminar" : "Delete"}</Text>
+                      </Pressable>
+                    )
+                  ) : null}
                 </View>
               );
             })}
+            {showHidden ? (data?.hiddenNotes || []).map((note) => (
+              <View key={note.id} style={styles.card}>
+                <Text style={styles.cardTitle}>{note.title}</Text>
+                {note.preview ? <Text style={styles.body} numberOfLines={2}>{note.preview}</Text> : null}
+                <Text style={styles.meta}>{es ? "Oculta" : "Hidden"}</Text>
+                <Pressable style={styles.linkHit} accessibilityRole="button" accessibilityLabel={es ? "Mostrar" : "Show"} onPress={() => void restoreNote(note.id)}>
+                  <Text style={styles.link}>{es ? "Mostrar" : "Show"}</Text>
+                </Pressable>
+              </View>
+            )) : null}
           </View>
         ) : null}
         {section === "evidence" && labels ? (
@@ -645,7 +714,7 @@ const styles = StyleSheet.create({
   chipTextUrgent: { color: colors.bad },
   flag: { ...wrapText, color: colors.ink, fontSize: 15, lineHeight: 21, fontWeight: "700", marginBottom: 6 },
   tiers: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
-  tierButton: { minHeight: 36, borderRadius: 999, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 12, justifyContent: "center", backgroundColor: colors.card },
+  tierButton: { minHeight: 44, borderRadius: 999, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 12, justifyContent: "center", backgroundColor: colors.card },
   tierOn: { borderColor: colors.pine, backgroundColor: "#E7F3F1" },
   tierText: { color: colors.ink, fontSize: 13, fontWeight: "700" },
   urgentText: { color: colors.bad },

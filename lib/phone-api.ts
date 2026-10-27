@@ -92,12 +92,12 @@ import { userFromAppleIdToken } from "@/lib/supabase-auth";
 import { appUrl, relayAddress, tx } from "@/lib/text";
 import { chatTurnShowsSteps, parseCard, replyShowsNotice } from "@/lib/chat-card";
 import { inboundDisplay, EMPTY_REPLY } from "@/email/plain";
-import { settleQuotedInbound } from "@/lib/inbound-reply";
+import { isResponseNote, landlordBubble, refileResponseNotes, settleQuotedInbound } from "@/lib/inbound-reply";
 import { describeTenantMail, outboundSubject, senderForCard } from "@/lib/tenant-mail";
 import { runChatTurn } from "@/lib/chat-turn";
 import { drainRoundTrips, withActor } from "@/lib/pg";
 import { archivedNote, previewResidence, residencePayload, saveResidence, selectResidence } from "@/lib/residence";
-import { hideIssue, issueHistory, issueSummary, recordRulesIssue, refreshIssueTiers, reopenRepair, resolveRepair, setIssueTier } from "@/lib/issues";
+import { hideIssue, hideNote, issueHistory, issueSummary, recordRulesIssue, refreshIssueTiers, reopenRepair, resolveRepair, restoreNote, setIssueTier } from "@/lib/issues";
 import { deleteReminder, dismissReminder, restoreReminder } from "@/lib/reminders";
 import { confirmedOutbound, ensureRepairDeadline, ensureRepairDrafts } from "@/lib/repair-draft";
 import { photoFilename, rejectPhotoSet } from "@/lib/message-photos";
@@ -110,6 +110,7 @@ function json(data: unknown, status = 200) {
       "access-control-allow-origin": "*",
       "access-control-allow-headers": "authorization, content-type",
       "access-control-allow-methods": "GET, POST, OPTIONS",
+      "cache-control": "private, no-store",
     },
   });
 }
@@ -462,6 +463,8 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "POST" && key === "records/tier") return json(await tierPosted(await readBody(request)));
   if (method === "POST" && key === "records/reopen") return json(await reopenPosted(await readBody(request)));
   if (method === "POST" && key === "records/issue/delete") return json(await deletePostedIssue(await readBody(request)));
+  if (method === "POST" && key === "records/note/hide") return json(await hidePostedNote(await readBody(request)));
+  if (method === "POST" && key === "records/note/restore") return json(await restorePostedNote(await readBody(request)));
   if (method === "POST" && key === "thread") return json(await postThread(await readBody(request)));
   if (method === "GET" && key === "records") return json(await recordsPayload());
   if (method === "GET" && key === "ledger") return json(await ledgerPayload());
@@ -758,7 +761,7 @@ function presentChat(user: User, unit: Unit, messages: ListedMessage[], photos: 
       return {
         id: message.id,
         side: messageSide(message.direction),
-        text: draft ? message.body : shown ? emptyReply(shown.text, locale) : preview.text,
+        text: draft ? message.body : shown ? landlordBubble(emptyReply(shown.text, locale), locale) : preview.text,
         detail: draft || shown ? null : preview.detail,
         original: shown?.original || null,
         subject: draft && described.ready ? outboundSubject(message.subject, described) : message.subject,
@@ -779,7 +782,9 @@ function emptyReply(text: string, locale: Locale): string {
 
 async function visibleMessages(user: User, unit: Unit) {
   const [logs, messages] = await Promise.all([listLogs(user.id, unit.id), listMessages(user.id, unit.id)]);
-  const settled = await settleQuotedInbound(messages);
+  const refiled = await refileResponseNotes(user, unit, logs);
+  const current = refiled ? await listMessages(user.id, unit.id) : messages;
+  const settled = await settleQuotedInbound(current);
   const created = await ensureRepairDrafts(user, unit, logs, settled);
   return [...settled, ...created].filter((message) => message.deliveryStatus !== "discarded");
 }
@@ -1241,6 +1246,9 @@ async function postThread(input: Record<string, unknown>) {
     action: text(input.action),
     draftId: text(input.draftId),
     attachment: attachment?.base64 ? attachment : null,
+    summary: text(input.summary),
+    description: text(input.description),
+    tier: text(input.tier),
   });
   return threadPayload();
 }
@@ -1253,9 +1261,12 @@ async function loadHomeRows(user: User, unit: Unit, options?: { reviews?: boolea
     options?.reviews === false ? Promise.resolve([] as ListedReview[]) : listLeaseReviews(user.id, unit.id),
     options?.assistant === false ? Promise.resolve([] as ListedAssistant[]) : listAssistant(user.id, "visible"),
   ]);
-  const changed = await refreshIssueTiers(user, unit, firstLogs, storedMessages, deadlines);
-  const logs = changed ? await listLogs(user.id, unit.id) : firstLogs;
-  const settled = await settleQuotedInbound(storedMessages);
+  const refiled = await refileResponseNotes(user, unit, firstLogs);
+  const filedLogs = refiled ? await listLogs(user.id, unit.id) : firstLogs;
+  const filedMessages = refiled ? await listMessages(user.id, unit.id) : storedMessages;
+  const changed = await refreshIssueTiers(user, unit, filedLogs, filedMessages, deadlines);
+  const logs = changed || refiled ? await listLogs(user.id, unit.id) : filedLogs;
+  const settled = await settleQuotedInbound(filedMessages);
   const createdDrafts = await ensureRepairDrafts(user, unit, logs, settled);
   const messages = [...settled, ...createdDrafts].filter((message) => message.deliveryStatus !== "discarded");
   return { deadlines, logs, messages, reviews, assistant };
@@ -1291,6 +1302,8 @@ function presentRecords(user: User, unit: Unit, loaded: HomeRows, photos: Awaite
     createdAt: item.createdAt,
     status: item.status,
     removed: item.flags?.removed === true,
+    hidden: item.flags?.hidden === true,
+    noticeKind: item.noticeKind,
   }));
   const board = issueBoard({
     locale,
@@ -1332,7 +1345,8 @@ function presentRecords(user: User, unit: Unit, loaded: HomeRows, photos: Awaite
       locale,
       today,
     ),
-    notes: logCards(logInput.filter((item) => item.type !== "repair" && item.type !== "issue_event"), messageInput, locale).slice(0, 20),
+    notes: logCards(logInput.filter((item) => item.type !== "repair" && item.type !== "issue_event" && item.description.trim() && !item.hidden && !isResponseNote(item.description)), messageInput, locale).filter((card) => card.preview).slice(0, 20),
+    hiddenNotes: logCards(logInput.filter((item) => item.type !== "repair" && item.type !== "issue_event" && item.description.trim() && item.hidden && !isResponseNote(item.description)), messageInput, locale).filter((card) => card.preview),
     issues: board.open.map((issue) => ({
       ...issue,
       aid: issue.tier === "possible_violation" ? aidFor(unit) : [],
@@ -1413,6 +1427,7 @@ function emptyRecords(user: User) {
     notice: notice(locale),
     deadlines: [],
     notes: [],
+    hiddenNotes: [],
     issues: [],
     archive: [],
     steps: { title: tx(locale, "Your next steps", "Sus próximos pasos"), held: tx(locale, "Nothing was sent.", "No se envió nada."), items: [] },
@@ -1446,6 +1461,7 @@ function presentRecordsPayload(user: User, unit: Unit, bundle: ReturnType<typeof
     notice: notice(locale),
     deadlines: bundle.deadlines,
     notes: bundle.notes,
+    hiddenNotes: bundle.hiddenNotes,
     issues: bundle.issues,
     archive: bundle.archive,
     steps: bundle.steps,
@@ -1500,6 +1516,22 @@ async function bootstrapPayload() {
     ),
     records: presentRecordsPayload(user, unit, recordsBundleView),
   };
+}
+
+async function hidePostedNote(input: Record<string, unknown>) {
+  const { user } = await withUnit();
+  const id = text(input.id);
+  if (!id) throw new Error(tx(user.locale, "Choose a note.", "Elija una nota."));
+  await hideNote(user, id);
+  return recordsPayload();
+}
+
+async function restorePostedNote(input: Record<string, unknown>) {
+  const { user } = await withUnit();
+  const id = text(input.id);
+  if (!id) throw new Error(tx(user.locale, "Choose a note.", "Elija una nota."));
+  await restoreNote(user, id);
+  return recordsPayload();
 }
 
 async function tierPosted(input: Record<string, unknown>) {

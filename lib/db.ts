@@ -968,6 +968,13 @@ export async function updateLogResolution(userId: string, id: string, patch: {
   return await getLog(userId, id);
 }
 
+export async function setLogFlags(userId: string, id: string, flags: Record<string, unknown>): Promise<LogEntry> {
+  const current = await getLog(userId, id);
+  await requireWritable(userId, current.unitId);
+  await run("update log_entries set flags = ? where id = ?", [JSON.stringify(flags), id]);
+  return await getLog(userId, id);
+}
+
 export async function setLogTier(userId: string, id: string, tier: string, flags: Record<string, unknown>): Promise<LogEntry> {
   const current = await getLog(userId, id);
   await requireWritable(userId, current.unitId);

@@ -17,9 +17,10 @@ import { asksForName, NamePrompt } from "@/name-prompt";
 import * as ImagePicker from "expo-image-picker";
 
 type Action = { id: string; label: string };
+type RepairForm = { summary: string; description: string; room: string | null; tier: "routine" | "urgent"; suggested: "routine" | "urgent" };
 type Item =
   | { role: "user"; text: string }
-  | { role: "card"; headline: string; status: string; action: Action | null; actions?: Action[]; detail: string; ruleId: string | null; legal?: boolean; notice?: Notice; badge?: "urgent" | "violation"; sender?: string; address?: { street?: string; unit?: string; city?: string; region?: string; postalCode?: string } | null };
+  | { role: "card"; headline: string; status: string; action: Action | null; actions?: Action[]; detail: string; ruleId: string | null; legal?: boolean; notice?: Notice; badge?: "urgent" | "violation"; sender?: string; safety?: string; form?: RepairForm; address?: { street?: string; unit?: string; city?: string; region?: string; postalCode?: string } | null };
 type Thread = {
   landlord: string;
   needsUnit?: boolean;
@@ -68,7 +69,7 @@ export default function AssistantChat() {
     return () => clearTimeout(timer);
   }, [pending]);
 
-  async function send(text: string, extra?: { action?: string; draftId?: string; attachment?: Attachment | null }) {
+  async function send(text: string, extra?: { action?: string; draftId?: string; attachment?: Attachment | null; summary?: string; description?: string; tier?: string }) {
     const body = text.trim();
     const attachment = extra && "attachment" in extra ? extra.attachment ?? null : file;
     if (!token || lock.current || busy) return;
@@ -79,7 +80,7 @@ export default function AssistantChat() {
       setPending(body);
       setRetryNote("");
       setError("");
-      await reload(await api<Thread>("thread", { token, body: { text: body, action: extra?.action, draftId: extra?.draftId, attachment } }));
+      await reload(await api<Thread>("thread", { token, body: { text: body, action: extra?.action, draftId: extra?.draftId, attachment, summary: extra?.summary, description: extra?.description, tier: extra?.tier } }));
       setDraft("");
       setFile(null);
       setLinkIssue(null);
@@ -132,7 +133,7 @@ export default function AssistantChat() {
     else void send(draft);
   }
 
-  async function onAction(action: Action) {
+  async function onAction(action: Action, form?: { summary: string; description: string; tier: string }) {
     if (action.id === "add-unit") {
       router.push("/setup");
       return;
@@ -171,7 +172,11 @@ export default function AssistantChat() {
       await send("", { action: "send", draftId: action.id.slice(5) });
       return;
     }
-    if (action.id.startsWith("resolve:") || action.id.startsWith("merge:") || action.id === "repair-new") {
+    if (action.id.startsWith("repair-save:")) {
+      await send("", { action: action.id, summary: form?.summary, description: form?.description, tier: form?.tier });
+      return;
+    }
+    if (action.id.startsWith("repair-cancel:") || action.id.startsWith("repair-undo:") || action.id.startsWith("repair-keep:") || action.id.startsWith("resolve:") || action.id.startsWith("merge:") || action.id === "repair-new") {
       await send("", { action: action.id });
     }
   }
@@ -416,30 +421,71 @@ export default function AssistantChat() {
   );
 }
 
-function CardView({ item, spanish, busy, onAction, onNameSaved }: { item: Extract<Item, { role: "card" }>; spanish: boolean; busy: boolean; onAction: (action: Action) => void; onNameSaved: () => void }) {
+function CardView({ item, spanish, busy, onAction, onNameSaved }: { item: Extract<Item, { role: "card" }>; spanish: boolean; busy: boolean; onAction: (action: Action, form?: { summary: string; description: string; tier: string }) => void; onNameSaved: () => void }) {
   const [advice, setAdvice] = useState(false);
   const [details, setDetails] = useState(false);
+  const [summary, setSummary] = useState(item.form?.summary || "");
+  const [description, setDescription] = useState(item.form?.description || "");
+  const [tier, setTier] = useState<"routine" | "urgent">(item.form?.tier || "routine");
+  const summaryRef = useRef<TextInput>(null);
   const actions = item.actions?.length ? item.actions : item.action ? [item.action] : [];
   const picker = actions.some((action) => action.id === "reset" || action.id.startsWith("prompt:"));
+  const looks = tier === "urgent"
+    ? (spanish ? "Parece urgente, cámbielo si no." : "Looks urgent, change if not.")
+    : (spanish ? "Parece de rutina, cámbielo si no." : "Looks routine, change if not.");
   return (
     <View style={styles.card} {...wrapMarker()}>
       <Text style={styles.headline}>{item.headline}</Text>
+      {item.safety ? <Text style={styles.safety}>{item.safety}</Text> : null}
       {item.badge === "urgent" ? <Text style={styles.urgent}>{spanish ? "Urgente" : "Urgent"}</Text> : null}
       {item.badge === "violation" ? <Text style={styles.flag}>{spanish ? "Esto puede no seguir las reglas de California" : "This may not follow California rules"}</Text> : null}
-      {item.status ? <Text style={styles.status}>{item.status}</Text> : null}
+      {item.form ? <Text style={styles.status}>{looks}</Text> : item.status ? <Text style={styles.status}>{item.status}</Text> : null}
+      {item.form ? (
+        <View>
+          <Text style={styles.fieldLabel}>{spanish ? "Resumen" : "Summary"}</Text>
+          <TextInput ref={summaryRef} value={summary} onChangeText={setSummary} style={styles.field} accessibilityLabel={spanish ? "Resumen" : "Summary"} />
+          {item.form.room ? <Text style={styles.detail}>{item.form.room}</Text> : null}
+          <Text style={styles.fieldLabel}>{spanish ? "Descripción" : "Description"}</Text>
+          <TextInput value={description} onChangeText={setDescription} style={[styles.field, styles.fieldTall]} multiline accessibilityLabel={spanish ? "Descripción" : "Description"} />
+          <View style={styles.tiers}>
+            {([
+              ["routine", spanish ? "Rutina" : "Routine"],
+              ["urgent", spanish ? "Urgente" : "Urgent"],
+            ] as const).map(([value, label]) => (
+              <Pressable
+                key={value}
+                style={[styles.tierButton, tier === value && styles.tierOn]}
+                accessibilityRole="button"
+                accessibilityLabel={label}
+                accessibilityState={{ selected: tier === value }}
+                onPress={() => setTier(value)}
+              >
+                <Text style={[styles.tierText, value === "urgent" && styles.urgent]}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      ) : null}
       {item.sender && asksForName(item.sender) ? <NamePrompt message={item.sender} onSaved={onNameSaved} /> : item.sender ? <Text style={[styles.detail, wrapText]}>{item.sender}</Text> : null}
       {item.sender?.includes("\n") ? null : item.address?.street || item.address?.city ? (
         <Address street={item.address.street} unit={item.address.unit} city={item.address.city} region={item.address.region} postalCode={item.address.postalCode} style={styles.detail} />
       ) : null}
       {picker && item.detail ? <Text style={styles.detail}>{item.detail}</Text> : null}
       {actions.map((action) => {
-        const suggestion = action.id.startsWith("prompt:");
-        const reset = action.id === "reset";
+        const suggestion = action.id.startsWith("prompt:") || action.id.startsWith("repair-edit:");
+        const reset = action.id === "reset" || action.id.startsWith("repair-cancel:") || action.id.startsWith("repair-undo:") || action.id.startsWith("repair-keep:");
         return (
           <Pressable
             key={action.id}
             style={suggestion ? styles.suggest : reset ? styles.cancel : styles.action}
-            onPress={() => onAction(action)}
+            onPress={() => {
+              if (action.id.startsWith("repair-edit:")) {
+                summaryRef.current?.focus();
+                return;
+              }
+              if (action.id.startsWith("repair-save:")) onAction(action, { summary, description, tier });
+              else onAction(action);
+            }}
             disabled={busy}
             accessibilityRole="button"
             accessibilityLabel={action.label}
@@ -449,7 +495,8 @@ function CardView({ item, spanish, busy, onAction, onNameSaved }: { item: Extrac
           </Pressable>
         );
       })}
-      {!picker && item.detail ? (
+      {item.form && item.detail ? <Text style={styles.detail}>{item.detail}</Text> : null}
+      {!picker && !item.form && item.detail ? (
         <View>
           <Pressable onPress={() => setDetails((open) => !open)} accessibilityRole="button" accessibilityLabel={spanish ? "Detalles" : "Details"}>
             <Text style={styles.note}>{details ? (spanish ? "Ocultar" : "Hide") : (spanish ? "Detalles" : "Details")}</Text>
@@ -505,6 +552,14 @@ const styles = StyleSheet.create({
   flag: { ...wrapText, color: colors.ink, fontSize: 15, lineHeight: 20, fontWeight: "700", marginTop: 6 },
   note: { color: colors.pine, fontSize: 14, fontWeight: "700", marginTop: 12 },
   detail: { ...wrapText, color: colors.mute, fontSize: 14, lineHeight: 20, marginTop: 8 },
+  safety: { ...wrapText, color: colors.bad, fontSize: 16, lineHeight: 22, fontWeight: "700", marginTop: 8 },
+  fieldLabel: { color: colors.mute, fontSize: 13, fontWeight: "700", marginTop: 10 },
+  field: { marginTop: 4, minHeight: 44, borderWidth: 1, borderColor: colors.line, borderRadius: 12, backgroundColor: colors.paper, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, color: colors.ink },
+  fieldTall: { minHeight: 72, textAlignVertical: "top" },
+  tiers: { flexDirection: "row", gap: 8, marginTop: 10 },
+  tierButton: { minHeight: 44, borderRadius: 999, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 14, justifyContent: "center", backgroundColor: colors.paper },
+  tierOn: { borderColor: colors.pine, backgroundColor: "#E7F3F1" },
+  tierText: { color: colors.ink, fontSize: 15, fontWeight: "700" },
   gap: { marginTop: 8 },
   file: { color: colors.pine, paddingHorizontal: 16, paddingBottom: 4 },
   menu: { flexDirection: "row", flexWrap: "wrap", gap: 10, paddingHorizontal: 16, paddingBottom: 8 },
