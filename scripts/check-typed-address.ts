@@ -176,10 +176,11 @@ async function main(): Promise<void> {
     const draft = ((chat.json?.items as { draft?: boolean; text?: string }[] | undefined) || []).find((item) => item.draft);
     const draftText = draft?.text || "";
     const displayOk = shown === expected && recordsAddress === expected && !shown.includes("DOVER");
-    const draftOk = draftText.includes(expected) && !draftText.includes("DOVER");
+    const draftOk = draftText.includes("Issue: The kitchen sink is leaking under the cabinet.") && !draftText.includes(keptStreet) && !draftText.includes("DOVER");
     console.log(`address_check in_california=true house_number_kept=${houseKept} suggestion_offered=${offered} suggestion_differs=${differs} unit_kept=${unitKept} address_display_ok=${displayOk} address_draft_ok=${draftOk}`);
     if (!houseKept || !unitKept) throw new Error("saved address did not keep the typed street and unit");
-    if (!displayOk || !draftOk) throw new Error("address display is not two lines");
+    if (!displayOk) throw new Error("address display is not two lines");
+    if (!draftOk) throw new Error("repair letter should name the issue without repeating the address");
   } finally {
     await deleteUserAccount(id).catch(() => {});
     await closeSql();

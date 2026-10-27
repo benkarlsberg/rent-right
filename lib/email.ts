@@ -1,3 +1,4 @@
+import { releaseReads } from "@/lib/pg";
 import { REPLY_LINE } from "@/lib/tenant-mail";
 import { relayAddress } from "@/lib/text";
 
@@ -64,12 +65,13 @@ export async function sendRelayEmail(input: {
   }
   const cc = cleanEmailAddress(input.cc);
   const from = process.env.RESEND_FROM || `Rent Right <${fromAddress}>`;
-  const attachments = (input.attachments || []).filter((item) => item.content).map((item) => ({
+  const   attachments = (input.attachments || []).filter((item) => item.content).map((item) => ({
     filename: item.filename,
     content: item.content,
     ...(item.contentType ? { content_type: item.contentType } : {}),
   }));
   try {
+    await releaseReads();
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -115,6 +117,7 @@ export async function lookupProviderDelivery(providerId: string): Promise<{ stat
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey || !/^[0-9a-f-]{36}$/i.test(providerId)) return null;
   try {
+    await releaseReads();
     const response = await fetch(`https://api.resend.com/emails/${providerId}`, {
       headers: { authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(4000),

@@ -371,6 +371,17 @@ function enqueue<T>(scope: Scope, job: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/** Commit any open read transaction before a slow outbound call.
+ *  The request keeps one Hyperdrive connection, and an idle transaction
+ *  on it is dropped while email is in flight. */
+export async function releaseReads(): Promise<void> {
+  const scope = actors.getStore();
+  if (!scope?.userId) return;
+  await enqueue(scope, async () => {
+    await finishShared(scope, true);
+  });
+}
+
 async function finishShared(scope: Scope, commit: boolean) {
   const release = scope.release;
   scope.release = undefined;
