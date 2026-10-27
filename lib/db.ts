@@ -1429,8 +1429,8 @@ async function placeInConversation(userId: string, role: string): Promise<{ conv
   return { conversationId, replyToId: reply?.id ?? null };
 }
 
-export async function addAssistantMessage(userId: string, unitId: string | null, role: string, answer: { locale: string; content: string; ruleIds: string[]; unsure: boolean; createdAt?: string }) {
-  const id = randomUUID();
+export async function addAssistantMessage(userId: string, unitId: string | null, role: string, answer: { locale: string; content: string; ruleIds: string[]; unsure: boolean; createdAt?: string; id?: string }) {
+  const id = answer.id || randomUUID();
   const placed = await placeInConversation(userId, role);
   await run(
     "insert into assistant_messages (id, user_id, unit_id, role, locale, content, rule_ids, unsure, created_at, conversation_id, reply_to_id) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1520,13 +1520,26 @@ export async function archiveChat(userId: string) {
   await run("update chat_drafts set status = 'cancelled' where user_id = ? and status = 'open'", [userId]);
 }
 
-export async function countAssistantThisMonth(userId: string, monthStart: string) {
+export async function countAssistantThisMonth(userId: string, monthStart: string, exceptId?: string) {
   const [start, end] = monthWindow(monthStart);
-  const row = await one<{ n: number }>(
-    "select count(*)::int as n from assistant_messages where user_id = ? and role = 'user' and created_at >= ? and created_at < ?",
-    [userId, start, end],
-  );
+  const row = exceptId
+    ? await one<{ n: number }>(
+      "select count(*)::int as n from assistant_messages where user_id = ? and role = 'user' and created_at >= ? and created_at < ? and id <> ?",
+      [userId, start, end, exceptId],
+    )
+    : await one<{ n: number }>(
+      "select count(*)::int as n from assistant_messages where user_id = ? and role = 'user' and created_at >= ? and created_at < ?",
+      [userId, start, end],
+    );
   return row?.n || 0;
+}
+
+export async function assistantReplyExists(userId: string, messageId: string) {
+  const row = await one<{ id: string }>(
+    "select id from assistant_messages where user_id = ? and reply_to_id = ? limit 1",
+    [userId, messageId],
+  );
+  return Boolean(row);
 }
 
 export async function createInvite(userId: string, unitId: string) {

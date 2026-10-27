@@ -93,7 +93,12 @@ describe("tab reads", () => {
     expect((bootstrap.json?.thread as { landlord?: string } | undefined)?.landlord).toBe("Elena Vasquez");
     expect(bootstrap.trips, `bootstrap queries ${bootstrap.trips}`).toBeLessThan(records.trips + thread.trips + chat.trips);
     expect(bootstrap.trips, `bootstrap queries ${bootstrap.trips}`).toBeLessThanOrEqual(16);
-    expect(readFileSync("lib/pg.ts", "utf8")).not.toContain(".reserve(");
+    const driver = readFileSync("lib/pg.ts", "utf8");
+    expect(driver).not.toContain(".reserve(");
+    expect(driver).not.toContain("prepare: hyperdrive ? false");
+    expect(driver).not.toContain("end({ timeout: 1 })");
+    expect(driver).toContain("if (sql) await sql.end().catch(() => {});");
+    expect(driver).toContain("{ prepare: true }");
     const deadlines = records.json?.deadlines as { id: string; closed?: boolean }[] | undefined;
     const open = deadlines?.find((item) => item.closed === false);
     if (open) {

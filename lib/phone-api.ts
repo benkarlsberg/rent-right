@@ -97,7 +97,7 @@ import { chatTurnShowsSteps, parseCard, replyShowsNotice } from "@/lib/chat-card
 import { inboundDisplay, EMPTY_REPLY } from "@/email/plain";
 import { isResponseNote, landlordBubble, refileResponseNotes, settleQuotedInbound } from "@/lib/inbound-reply";
 import { describeTenantMail, outboundSubject, REPLY_LINE, senderForCard } from "@/lib/tenant-mail";
-import { runChatTurn } from "@/lib/chat-turn";
+import { ChatTurnDone, runChatTurn } from "@/lib/chat-turn";
 import { drainRoundTrips, withActor } from "@/lib/pg";
 import { archivedNote, previewResidence, residencePayload, saveResidence, selectResidence } from "@/lib/residence";
 import { hideIssue, hideNote, issueHistory, issueSummary, recordRulesIssue, refreshIssueTiers, reopenRepair, resolveRepair, restoreNote, setIssueTier } from "@/lib/issues";
@@ -289,6 +289,9 @@ function publicFailure(error: unknown): { message: string; status: number } {
   if (raw === "Sign in required.") return { message: raw, status: 401 };
   if (/generativelanguage\.googleapis|api\.openai\.com|GEMINI_API|OPENAI_API/i.test(raw)) {
     return { message: "The answer service is temporarily unavailable. Try again in a moment.", status: 503 };
+  }
+  if (/network connection lost|CONNECTION_CLOSED|CONNECTION_DESTROYED|ECONNRESET|socket hang up/i.test(raw)) {
+    return { message: "The database connection closed before the query finished.", status: 503 };
   }
   if (raw && !/violates foreign key|violates check|syntax error at|ECONNREFUSED|password authentication failed|relation "|column "|duplicate key value|null value in column/i.test(raw)) {
     return { message: raw, status: 400 };
@@ -1215,11 +1218,12 @@ function chips(locale: Locale) {
 
 function threadItems(locale: Locale, rows: ListedAssistant[]) {
   return rows.map((row) => {
-    if (row.role === "user") return { role: "user" as const, text: row.content };
+    if (row.role === "user") return { role: "user" as const, id: row.id, text: row.content };
     const card = parseCard(row.content);
     if (!card) {
       return {
         role: "card" as const,
+        id: row.id,
         headline: tx(locale, "Note", "Nota"),
         status: tx(locale, "Saved", "Guardado"),
         action: null,
@@ -1229,7 +1233,7 @@ function threadItems(locale: Locale, rows: ListedAssistant[]) {
       };
     }
     const legal = replyShowsNotice(card);
-    return { role: "card" as const, ...card, legal, ...(legal ? { notice: notice(locale) } : {}) };
+    return { role: "card" as const, id: row.id, ...card, legal, ...(legal ? { notice: notice(locale) } : {}) };
   });
 }
 
@@ -1306,12 +1310,33 @@ function readDraftPhotos(value: unknown): { fileId?: string; photoId?: string; n
   });
 }
 
+const CLIENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function clientMessageId(value: unknown): string | undefined {
+  const id = text(value);
+  return CLIENT_ID.test(id) ? id : undefined;
+}
+
+async function clearedThread(user: User, unit: Unit) {
+  const locale = user.locale;
+  const photos = await listPhotos(user.id, unit.id);
+  return {
+    ...presentThread(user, unit, [], {
+      title: tx(locale, "Your next steps", "Sus próximos pasos"),
+      held: tx(locale, "Nothing was sent.", "No se envió nada."),
+      items: [],
+    }),
+    library: photos.map((photo) => ({ id: photo.id, fileId: photo.fileId, name: photo.name || photo.caption || "photo.jpg" })),
+  };
+}
+
 async function postThread(input: Record<string, unknown>) {
   const user = await actor();
   const unit = await primaryUnit(user.id);
-  if (!unit && text(input.action) === "clear") {
+  if (text(input.action) === "clear") {
     await archiveChat(user.id);
-    return emptyThread(user);
+    if (!unit) return emptyThread(user);
+    return clearedThread(user, unit);
   }
   const file = input.attachment;
   const attachment = file && typeof file === "object" && !Array.isArray(file)
@@ -1323,16 +1348,21 @@ async function postThread(input: Record<string, unknown>) {
     : null;
   if (attachment && attachment.base64.length > 8_000_000) throw new Error("That file is too large.");
   if (attachment && !attachment.base64) throw new Error("That file was empty.");
-  await runChatTurn(user, unit, {
-    text: text(input.text),
-    action: text(input.action),
-    draftId: text(input.draftId),
-    attachment: attachment?.base64 ? attachment : null,
-    summary: text(input.summary),
-    description: text(input.description),
-    tier: text(input.tier),
-    photos: readDraftPhotos(input.photos),
-  });
+  try {
+    await runChatTurn(user, unit, {
+      text: text(input.text),
+      action: text(input.action),
+      draftId: text(input.draftId),
+      attachment: attachment?.base64 ? attachment : null,
+      summary: text(input.summary),
+      description: text(input.description),
+      tier: text(input.tier),
+      photos: readDraftPhotos(input.photos),
+      clientId: clientMessageId(input.clientId),
+    });
+  } catch (error) {
+    if (!(error instanceof ChatTurnDone)) throw error;
+  }
   return threadPayload();
 }
 

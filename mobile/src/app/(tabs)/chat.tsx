@@ -22,8 +22,10 @@ type RepairPhoto = { key?: string; fileId?: string; photoId?: string; name: stri
 type RepairForm = { summary: string; description: string; room: string | null; tier: "routine" | "urgent"; suggested: "routine" | "urgent"; photos?: { fileId: string; name: string }[] };
 type LibraryPhoto = { id: string; fileId: string; name: string };
 type Item =
-  | { role: "user"; text: string }
-  | { role: "card"; headline: string; status: string; action: Action | null; actions?: Action[]; detail: string; ruleId: string | null; legal?: boolean; notice?: Notice; badge?: "urgent" | "violation"; sender?: string; safety?: string; form?: RepairForm; address?: { street?: string; unit?: string; city?: string; region?: string; postalCode?: string } | null };
+  | { role: "user"; id?: string; text: string }
+  | { role: "card"; id?: string; headline: string; status: string; action: Action | null; actions?: Action[]; detail: string; ruleId: string | null; legal?: boolean; notice?: Notice; badge?: "urgent" | "violation"; sender?: string; safety?: string; form?: RepairForm; address?: { street?: string; unit?: string; city?: string; region?: string; postalCode?: string } | null };
+type SendExtra = { action?: string; draftId?: string; attachment?: Attachment | null; summary?: string; description?: string; tier?: string; photos?: RepairPhoto[] };
+type PendingSend = { id: string; text: string; extra?: SendExtra };
 type Thread = {
   landlord: string;
   needsUnit?: boolean;
@@ -45,6 +47,49 @@ function offlineReply(error: unknown): boolean {
   return /could not reach rent right|failed to fetch|network request failed|load failed|network error|timeout|timed out|the operation was aborted/i.test(error.message);
 }
 
+function connectionClosed(error: unknown): boolean {
+  return error instanceof Error && /database connection closed|network connection lost/i.test(error.message);
+}
+
+function newId(): string {
+  const cryptoObj = globalThis.crypto;
+  if (cryptoObj?.randomUUID) return cryptoObj.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const rand = Math.floor(Math.random() * 16);
+    const value = char === "x" ? rand : (rand & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
+function starterChips(spanish: boolean): { label: string; text: string }[] {
+  return spanish
+    ? [
+        { label: "Solicitar una reparación", text: "Quiero solicitar una reparacion" },
+        { label: "Revisar mi contrato de arrendamiento", text: "Revisar mi contrato" },
+        { label: "¿Es legal mi aumento de renta?", text: "Es legal mi aumento de renta?" },
+        { label: "Recuperar mi depósito", text: "Como recupero mi deposito?" },
+      ]
+    : [
+        { label: "Request a repair", text: "I need to request a repair" },
+        { label: "Review my lease agreement", text: "Review my lease agreement" },
+        { label: "Is my rent increase legal?", text: "Is my rent increase legal?" },
+        { label: "Get my deposit back", text: "How do I get my deposit back?" },
+      ];
+}
+
+function blankThread(current: Thread, spanish: boolean): Thread {
+  return {
+    ...current,
+    items: [],
+    chips: starterChips(spanish),
+    steps: {
+      title: current.steps?.title || (spanish ? "Sus próximos pasos" : "Your next steps"),
+      held: current.steps?.held || (spanish ? "No se envió nada." : "Nothing was sent."),
+      items: [],
+    },
+  };
+}
+
 export default function AssistantChat() {
   const { data, error, loading, reload, setError, token } = useLoad<Thread>("thread");
   const { me, signOut } = useSession();
@@ -58,7 +103,7 @@ export default function AssistantChat() {
   const [account, setAccount] = useState(false);
   const [confirm, setConfirm] = useState<"new" | "clear" | null>(null);
   const [held, setHeld] = useState("");
-  const [pending, setPending] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingSend | null>(null);
   const [retryNote, setRetryNote] = useState("");
   const lock = useRef(false);
   const shiftHeld = useRef(false);
@@ -73,18 +118,29 @@ export default function AssistantChat() {
     return () => clearTimeout(timer);
   }, [pending]);
 
-  async function send(text: string, extra?: { action?: string; draftId?: string; attachment?: Attachment | null; summary?: string; description?: string; tier?: string; photos?: RepairPhoto[] }) {
+  async function send(text: string, extra?: SendExtra, clientId?: string) {
     const body = text.trim();
     const attachment = extra && "attachment" in extra ? extra.attachment ?? null : file;
     if (!token || lock.current || busy) return;
     if (!body && !extra?.action && !attachment) return;
+    const id = clientId || (pending && pending.text === body ? pending.id : newId());
+    const outbound: PendingSend = { id, text: body, extra };
     try {
       lock.current = true;
       setBusy(true);
-      setPending(body);
+      setPending(outbound);
       setRetryNote("");
       setError("");
-      await reload(await api<Thread>("thread", { token, body: { text: body, action: extra?.action, draftId: extra?.draftId, attachment, summary: extra?.summary, description: extra?.description, tier: extra?.tier, photos: extra?.photos } }));
+      const payload = { text: body, action: extra?.action, draftId: extra?.draftId, attachment, summary: extra?.summary, description: extra?.description, tier: extra?.tier, photos: extra?.photos, clientId: id };
+      const post = () => api<Thread>("thread", { token, body: payload });
+      let next: Thread;
+      try {
+        next = await post();
+      } catch (err) {
+        if (!connectionClosed(err)) throw err;
+        next = await post();
+      }
+      await reload(next);
       setDraft("");
       setFile(null);
       setLinkIssue(null);
@@ -92,7 +148,7 @@ export default function AssistantChat() {
       setMenu(false);
       setPending(null);
     } catch (err) {
-      setPending(null);
+      setPending(outbound);
       if (offlineReply(err)) {
         setRetryNote(retryCopy);
         setError("");
@@ -107,22 +163,25 @@ export default function AssistantChat() {
   }
 
   async function clearChat() {
-    if (!token || lock.current) return;
+    if (!token || lock.current || !data) return;
+    const previous = data;
     try {
       lock.current = true;
-      setBusy(true);
       setError("");
-      await reload(await api<Thread>("thread", { token, body: { action: "clear" } }));
-      setDraft("");
-      setFile(null);
+      setPending(null);
+      setConfirm(null);
       setMenu(false);
       setAccount(false);
-      setConfirm(null);
+      setDraft("");
+      setFile(null);
+      await reload(blankThread(previous, spanish));
+      const next = await api<Thread>("thread", { token, body: { action: "clear" } });
+      await reload(next);
     } catch (err) {
+      await reload(previous);
       setError(err instanceof Error ? err.message : "Could not clear the chat.");
     } finally {
       lock.current = false;
-      setBusy(false);
     }
   }
 
@@ -273,7 +332,7 @@ export default function AssistantChat() {
           ref={listRef}
           style={clipX}
           data={items}
-          keyExtractor={(_, index) => String(index)}
+          keyExtractor={(item) => item.id || `${item.role}:${item.role === "user" ? item.text : item.headline}`}
           contentContainerStyle={styles.list}
           ListHeaderComponent={data?.archivedNote || (me?.needsUnit && items.length === 0) ? (
             <View style={styles.place}>
@@ -299,14 +358,14 @@ export default function AssistantChat() {
           )}
           ListFooterComponent={(
             <View>
-              {pending !== null ? (
+              {pending && !items.some((item) => item.id === pending.id) ? (
                 <View>
-                  {pending ? (
+                  {pending.text ? (
                     <View style={styles.userRow}>
-                      <View style={styles.userBubble}><Text style={styles.userText}>{pending}</Text></View>
+                      <View style={styles.userBubble}><Text style={styles.userText}>{pending.text}</Text></View>
                     </View>
                   ) : null}
-                  <TypingBubble label={spanish ? "Respondiendo" : "Replying"} />
+                  {error ? null : <TypingBubble label={spanish ? "Respondiendo" : "Replying"} />}
                 </View>
               ) : null}
               {retryNote ? (
@@ -349,6 +408,11 @@ export default function AssistantChat() {
           )}
         />
         <ErrorLine message={error} />
+        {error && pending ? (
+          <Pressable style={styles.headerButton} onPress={() => void send(pending.text, pending.extra, pending.id)} disabled={busy} accessibilityRole="button" accessibilityLabel={spanish ? "Intentar de nuevo" : "Try again"}>
+            <Text style={styles.headerButtonText}>{spanish ? "Intentar de nuevo" : "Try again"}</Text>
+          </Pressable>
+        ) : null}
         {file ? <Text style={styles.file}>{file.name}{linkIssue ? ` · ${(data?.issues || []).find((issue) => issue.id === linkIssue)?.title || ""}` : ""}</Text> : null}
         {menu ? (
           <View style={styles.menu}>

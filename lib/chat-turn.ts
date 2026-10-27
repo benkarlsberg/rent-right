@@ -10,6 +10,7 @@ import {
   assertWritable,
   assistantMessageContent,
   closeChatDraft,
+  assistantReplyExists,
   countAssistantThisMonth,
   createChatDraft,
   getDeposit,
@@ -80,15 +81,33 @@ async function sayTo(user: User, unitId: string | null, card: ChatCard, kind: Ca
   return await remember(user, unitId, "assistant", serializeCard(flagged), flagged.ruleId, flagged.status.toLowerCase().includes("unsure") || flagged.headline.toLowerCase().includes("not sure"));
 }
 
-async function asked(user: User, unit: Unit | null, text: string) {
-  if (await countAssistantThisMonth(user.id, monthPrefix()) >= CHAT_MONTHLY_CAP) {
+export class ChatTurnDone extends Error {
+  constructor() {
+    super("CHAT_TURN_DONE");
+    this.name = "ChatTurnDone";
+  }
+}
+
+function duplicateKey(error: unknown): boolean {
+  const code = typeof error === "object" && error && "code" in error ? String((error as { code?: unknown }).code || "") : "";
+  if (code === "23505") return true;
+  return error instanceof Error && /duplicate key value/i.test(error.message);
+}
+
+async function asked(user: User, unit: Unit | null, text: string, clientId?: string) {
+  if (await countAssistantThisMonth(user.id, monthPrefix(), clientId) >= CHAT_MONTHLY_CAP) {
     throw new Error(tx(
       user.locale,
       `This free account has used its ${CHAT_MONTHLY_CAP} questions for this month. Try again next month.`,
       `Esta cuenta gratuita usó sus ${CHAT_MONTHLY_CAP} preguntas de este mes. Intente de nuevo el próximo mes.`,
     ));
   }
-  await addAssistantMessage(user.id, unit?.id ?? null, "user", { locale: user.locale, content: text, ruleIds: [], unsure: false });
+  try {
+    await addAssistantMessage(user.id, unit?.id ?? null, "user", { locale: user.locale, content: text, ruleIds: [], unsure: false, id: clientId });
+  } catch (error) {
+    if (!clientId || !duplicateKey(error)) throw error;
+    if (await assistantReplyExists(user.id, clientId)) throw new ChatTurnDone();
+  }
 }
 
 const PLACE_NAMES = placeNames();
@@ -190,7 +209,7 @@ async function answerStatewide(user: User, question: string) {
   }, "cited");
 }
 
-async function runWithoutPlace(user: User, text: string, action: string, attachment: { name: string; mime: string; base64: string } | null) {
+async function runWithoutPlace(user: User, text: string, action: string, attachment: { name: string; mime: string; base64: string } | null, clientId?: string) {
   const sending = action === "send" || action === "letter" || action.startsWith("resolve:");
   if (!text && !attachment && !sending) throw new Error(tx(user.locale, "Say what you need.", "Diga qué necesita."));
   const label = text || attachment?.name || (
@@ -200,7 +219,7 @@ async function runWithoutPlace(user: User, text: string, action: string, attachm
         ? tx(user.locale, "Send to landlord", "Enviar al propietario")
         : tx(user.locale, "Attachment", "Archivo")
   );
-  await asked(user, null, label);
+  await asked(user, null, label, clientId);
   if (sending) {
     await sayTo(user, null, placeCard(user, "send"));
     return;
@@ -234,6 +253,7 @@ export async function runChatTurn(user: User, unit: Unit | null, input: {
   description?: string;
   tier?: string;
   photos?: { fileId?: string; photoId?: string; name?: string; mime?: string; base64?: string }[];
+  clientId?: string;
 }): Promise<void> {
   let text = (input.text || "").trim();
   const action = (input.action || "").trim();
@@ -243,7 +263,7 @@ export async function runChatTurn(user: User, unit: Unit | null, input: {
   }
   if (action.startsWith("prompt:")) text = action.slice("prompt:".length).trim();
   if (!unit) {
-    await runWithoutPlace(user, text, action, input.attachment || null);
+    await runWithoutPlace(user, text, action, input.attachment || null, input.clientId);
     return;
   }
   assertWritable(unit, user.locale);
@@ -260,17 +280,17 @@ export async function runChatTurn(user: User, unit: Unit | null, input: {
     return;
   }
   if (action === "letter") {
-    await asked(user, unit, text || tx(user.locale, "Draft a letter", "Redactar una carta"));
+    await asked(user, unit, text || tx(user.locale, "Draft a letter", "Redactar una carta"), input.clientId);
     await askForLetter(user, unit);
     return;
   }
   if (action.startsWith("photo-link:")) {
-    await asked(user, unit, input.attachment?.name || text || tx(user.locale, "Issue photo", "Foto del problema"));
+    await asked(user, unit, input.attachment?.name || text || tx(user.locale, "Issue photo", "Foto del problema"), input.clientId);
     await linkChatPhoto(user, unit, action.slice("photo-link:".length), input.attachment || null, text);
     return;
   }
   if (action === "upload-lease") {
-    await asked(user, unit, input.attachment?.name || tx(user.locale, "Lease", "Contrato"));
+    await asked(user, unit, input.attachment?.name || tx(user.locale, "Lease", "Contrato"), input.clientId);
     if (!input.attachment) {
       await say(user, unit, leaseCard(user));
       return;
@@ -286,7 +306,7 @@ export async function runChatTurn(user: User, unit: Unit | null, input: {
     const open = await openChatDraft(user.id);
     const logId = open && typeof open.payload.logId === "string" ? open.payload.logId : "";
     if (open && open.unitId === unit.id && open.kind === "repair" && open.payload.awaitingPhoto === true && logId) {
-      await asked(user, unit, text || input.attachment.name || tx(user.locale, "Issue photo", "Foto del problema"));
+      await asked(user, unit, text || input.attachment.name || tx(user.locale, "Issue photo", "Foto del problema"), input.clientId);
       await linkChatPhoto(user, unit, logId, input.attachment, text);
       await setChatDraftPayload(user.id, open.id, { ...open.payload, awaitingPhoto: false });
       return;
@@ -311,7 +331,7 @@ export async function runChatTurn(user: User, unit: Unit | null, input: {
     return;
   }
   if (!text && !input.attachment) throw new Error(tx(user.locale, "Say what you need.", "Diga qué necesita."));
-  await asked(user, unit, text || input.attachment?.name || tx(user.locale, "Attachment", "Archivo"));
+  await asked(user, unit, text || input.attachment?.name || tx(user.locale, "Attachment", "Archivo"), input.clientId);
   if (input.attachment && looksLikeLease(text, input.attachment)) {
     await reviewAttachment(user, unit, input.attachment);
     return;

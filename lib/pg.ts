@@ -81,11 +81,17 @@ function createSql(url: string, hyperdrive: boolean): Sql {
   const parsed = new URL(url);
   const transactionPool = !hyperdrive && (parsed.port === "6543" || parsed.searchParams.get("pgbouncer") === "true");
   return postgres(url, {
+    // One connection for a Worker request. Hyperdrive keeps the upstream pool.
     max: hyperdrive ? 1 : 8,
-    idle_timeout: 20,
+    // A per-request client is closed in withActor. An idle timer would drop
+    // that socket while a model call is in flight.
+    idle_timeout: hyperdrive ? 0 : 20,
     connect_timeout: hyperdrive ? 10 : 20,
     fetch_types: !hyperdrive,
-    prepare: hyperdrive ? false : !transactionPool,
+    // Hyperdrive's transaction pool rejects the extra Describe message that
+    // Postgres.js sends when prepare is false, and the socket closes with
+    // "Network connection lost." Prepared statements are the supported path.
+    prepare: !transactionPool,
     ...(hyperdrive ? { ssl: false as const } : {}),
     onnotice: () => {},
     types: {
@@ -312,9 +318,13 @@ export function adoptActor(userId: string | null) {
   actors.enterWith({ userId });
 }
 
+function prepared(params: unknown[]) {
+  return params.length ? { prepare: true as const } : undefined;
+}
+
 async function applyRole(tx: Tx, userId: string | null) {
   noteRoundTrip();
-  await tx.unsafe("select set_config('request.jwt.claim.sub', $1, true)", [userId ?? ""]);
+  await tx.unsafe("select set_config('request.jwt.claim.sub', $1, true)", [userId ?? ""], { prepare: true });
   if (userId) {
     noteRoundTrip();
     await tx.unsafe("set local role authenticated");
@@ -334,14 +344,20 @@ export async function withActor<T>(userId: string | null, fn: () => Promise<T>):
   try {
     return await actors.run(scope, fn);
   } finally {
+    // Reads already returned. Closing the leftover read transaction, or the
+    // socket, must not replace a finished response with a connection error.
     try {
       await scope.tail?.catch(() => {});
       await finishShared(scope, true);
+    } catch {
+      // The statements for this request already finished.
     } finally {
       const sql = scope.sql;
       scope.sql = undefined;
       scope.opening = undefined;
-      if (sql) await sql.end({ timeout: 1 }).catch(() => {});
+      // Wait for a graceful close. A short timeout destroys the socket and
+      // Hyperdrive then hands the next request a dead connection.
+      if (sql) await sql.end().catch(() => {});
     }
   }
 }
@@ -421,7 +437,7 @@ async function statementExecute(db: Sql, userId: string, text: string, params: u
   return await (db.begin(async (tx) => {
     await applyRole(tx, userId);
     noteRoundTrip();
-    return readResult(await tx.unsafe(text, params as never[]));
+    return readResult(await tx.unsafe(text, params as never[], prepared(params)));
   }) as Promise<{ rows: Record<string, unknown>[]; count: number }>);
 }
 
@@ -434,7 +450,7 @@ async function executeAuthed(scope: Scope, userId: string, text: string, params:
   const tx = await ensureShared(scope, db, userId);
   try {
     noteRoundTrip();
-    return readResult(await tx.unsafe(text, params as never[]));
+    return readResult(await tx.unsafe(text, params as never[], prepared(params)));
   } catch (error) {
     await finishShared(scope, false);
     throw error;
@@ -450,9 +466,9 @@ async function execute(sql: string, params: unknown[]): Promise<{ rows: Record<s
     const transient = cloudflareRuntime() && !scope;
     try {
       noteRoundTrip();
-      return readResult(await db.unsafe(text, params as never[]));
+      return readResult(await db.unsafe(text, params as never[], prepared(params)));
     } finally {
-      if (transient) await db.end({ timeout: 1 }).catch(() => {});
+      if (transient) await db.end().catch(() => {});
     }
   }
   return enqueue(scope, () => executeAuthed(scope, userId, text, params));

@@ -65,6 +65,18 @@ export function rememberSlice(token: string, path: TabPath, data: unknown, now =
   emit();
 }
 
+/** Write one tab from the response that just finished, and let the other tabs refresh the next time they are opened. */
+export function publishSlice(token: string, path: TabPath, data: unknown, now = Date.now()) {
+  rememberSlice(token, path, data, now);
+  if (!memory || memory.userId !== userIdFromToken(token)) return;
+  for (const other of TAB_PATHS) {
+    if (other === path) continue;
+    const slot = memory.slots[other];
+    if (slot) slot.at = 0;
+  }
+  emit();
+}
+
 export function applyBootstrap(token: string, body: BootstrapBody, startedGeneration = generation, now = Date.now()): boolean {
   if (startedGeneration !== generation) return false;
   memory = {

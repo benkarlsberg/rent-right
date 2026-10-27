@@ -4,7 +4,7 @@ import { citeFromConversation } from "@/lib/chat-answer";
 import { privacyDocument } from "@/lib/legal-html";
 import { auditChat, backfillChat } from "@/lib/chat-backfill";
 import { CHAT_HISTORY_CHARS, formatChatHistory, isCiphertext, readChatText } from "@/lib/chat-text";
-import { runChatTurn } from "@/lib/chat-turn";
+import { ChatTurnDone, runChatTurn } from "@/lib/chat-turn";
 import {
   addAssistantMessage,
   archiveChat,
@@ -257,5 +257,18 @@ describe("short chat context", () => {
     expect(prompts.all.join("\n")).not.toContain("OLDEST-MARKER");
     expect(privacyDocument).toContain("chat messages");
     expect(privacyDocument).toContain("encrypted before they are stored");
+  });
+
+  it("stores one user message when the same send is retried", async () => {
+    const user = await createNamedUser(`chat-retry-${Date.now()}@example.com`, "Maya Chen");
+    const unit = await createUnit(user.id, unitInput(`${Date.now()} Echo Park Ave`));
+    const clientId = randomUUID();
+    await runChatTurn(user, unit, { text: "The kitchen tap is dripping.", clientId });
+    await expect(runChatTurn(user, unit, { text: "The kitchen tap is dripping.", clientId })).rejects.toBeInstanceOf(ChatTurnDone);
+    const rows = await listAssistant(user.id, "visible");
+    const mine = rows.filter((row) => row.role === "user" && row.content === "The kitchen tap is dripping.");
+    expect(mine).toHaveLength(1);
+    expect(mine[0]?.id).toBe(clientId);
+    expect(rows.filter((row) => row.role === "assistant" && row.reply_to_id === clientId)).toHaveLength(1);
   });
 });

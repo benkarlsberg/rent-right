@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { Platform } from "react-native";
 import { useSession } from "@/session";
 import { cachedTab, fetchTab, refreshBootstrap } from "@/tab-cache";
-import { needsBootstrap, readSlice, rememberSlice, subscribeTabStore, tabPath, type TabPath } from "@/tab-store";
+import { needsBootstrap, publishSlice, readSlice, subscribeTabStore, tabPath, type TabPath } from "@/tab-store";
 
 export { clearTabCache, prefetchTabs, refreshBootstrap } from "@/tab-cache";
 
@@ -59,7 +59,12 @@ export function useLoad<T>(path: string) {
     const current = tokenRef.current;
     if (!current) return Promise.resolve();
     if (tab) {
-      if (patch !== undefined) rememberSlice(current, tab, patch);
+      if (patch !== undefined) {
+        publishSlice(current, tab, patch);
+        setTabFailed(false);
+        setError("");
+        return Promise.resolve();
+      }
       setTabFailed(false);
       setError("");
       return refreshBootstrap(current, true).catch((err: unknown) => {
