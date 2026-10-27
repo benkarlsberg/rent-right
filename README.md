@@ -12,51 +12,76 @@ The short line on a result is “General information, not legal advice.”
 
 Phone-width pictures of the current app. Sign-in, privacy, and terms are [the live app](https://app.rentrightportal.com). The signed-in screens are the sample Los Angeles tenancy only: Maya Chen, 1842 N Echo Park Ave, Unit 3, landlord Elena Vasquez. The bar has four tabs. The open tab is highlighted.
 
-![Centered sign-in card](docs/images/sign-in.webp)
-
-The welcome screen is a centered card: the house mark, **Log in or sign up**, the tagline, an email field, **Email me a sign-in link**, and **Continue with Google**. Terms of use and Privacy policy sit under the form, with English / Español and the short disclaimer.
-
-![Where do you rent](docs/images/onboarding.webp)
-
-A new account starts at **Where do you rent?** Step 1 of 5 asks for a California street, city, and ZIP. **Do this later** skips the rest. Nothing is emailed while you fill this in.
-
-![Chat for the sample tenancy](docs/images/chat.webp)
-
-Chat is the home tab. The sample thread covers a sink leak, a rent increase, and a deposit date. **Your next steps** sits at the end of the conversation. A repair note stays a draft until you confirm it on the Landlord tab.
-
-![Typing dots while a reply is on the way](docs/images/chat-typing.webp)
-
-While a reply is in progress, the thread shows three dots in a bubble. The accessible name is **Replying**.
-
-![Landlord drafts](docs/images/landlord.webp)
-
-The Landlord tab is the thread with Elena Vasquez. A saved repair appears as **Draft, not sent yet**, with the full text and **Send**, **Edit**, and **Discard**. Opening the tab leaves the draft unsent. **Send** is the confirmation that emails the landlord, and only when mail delivery is configured.
-
-![Reminders](docs/images/reminders.webp)
-
-Reminders holds **Your next steps**, then the dates in groups. A repair follow-up is titled **Reminder: follow up on** the issue. The deposit card can be titled **Landlord's deadline**. **+ Add reminder** adds one from scratch. Open a card for what started it, who owes what, **Learn more**, and **Edit reminder date**. That saved day is the tenant’s own nudge. The computed date stays as the rules engine wrote it.
-
-![Records, sectioned](docs/images/records.webp)
-
-Records opens on the address, with **Issues**, **Documents**, and **Evidence**. **Your next steps are on Reminders**. An open request shows its status, here **Sent to landlord**.
-
-![Resolve a request](docs/images/records-resolve.webp)
-
-Opening a request shows the note and **Mark as resolved**, with an optional note and a resolution date. The screenshot stops on that form. Resolving is a separate tap.
-
-![Export my evidence packet](docs/images/records-export.webp)
-
-The Evidence section offers **Export my evidence packet**. The download is a timestamped PDF of the requests, notices, replies, and dates. The packet says it is a record of communications, not legal advice and not a court filing. The footer points to the California courts small-claims self-help page.
-
-![Records in Spanish](docs/images/records-spanish.webp)
-
-The same screen in Spanish: **Solicitudes**, **Documentos**, **Evidencia**. Words the tenant typed stay as they were written. Language is also on the welcome screen, and again under **Language** in the Records account menu.
-
-![Privacy policy](docs/images/privacy.webp)
-
-![Terms of use](docs/images/terms.webp)
-
-Privacy and terms are pages of their own: [app.rentrightportal.com/privacy](https://app.rentrightportal.com/privacy) and [app.rentrightportal.com/terms](https://app.rentrightportal.com/terms).
+<table>
+<tr>
+<td align="center" width="240">
+<img src="docs/images/sign-in.webp" alt="Centered sign-in card" width="240" />
+<br />
+The welcome screen is a centered card: the house mark, <strong>Log in or sign up</strong>, the tagline, an email field, <strong>Email me a sign-in link</strong>, and <strong>Continue with Google</strong>. Terms of use and Privacy policy sit under the form, with English / Español and the short disclaimer.
+</td>
+<td align="center" width="240">
+<img src="docs/images/onboarding.webp" alt="Where do you rent" width="240" />
+<br />
+A new account starts at <strong>Where do you rent?</strong> Step 1 of 5 asks for a California street, city, and ZIP. <strong>Do this later</strong> skips the rest. Nothing is emailed while you fill this in.
+</td>
+<td align="center" width="240">
+<img src="docs/images/chat.webp" alt="Chat for the sample tenancy" width="240" />
+<br />
+Chat is the home tab. The sample thread covers a sink leak, a rent increase, and a deposit date. <strong>Your next steps</strong> sits at the end of the conversation. A repair note stays a draft until you confirm it on the Landlord tab.
+</td>
+</tr>
+<tr>
+<td align="center" width="240">
+<img src="docs/images/chat-typing.webp" alt="Typing dots while a reply is on the way" width="240" />
+<br />
+While a reply is in progress, the thread shows three dots in a bubble. The accessible name is <strong>Replying</strong>.
+</td>
+<td align="center" width="240">
+<img src="docs/images/landlord.webp" alt="Landlord drafts" width="240" />
+<br />
+The Landlord tab is the thread with Elena Vasquez. A saved repair appears as <strong>Draft, not sent yet</strong>, with the full text and <strong>Send</strong>, <strong>Edit</strong>, and <strong>Discard</strong>. Opening the tab leaves the draft unsent. <strong>Send</strong> is the confirmation that emails the landlord, and only when mail delivery is configured.
+</td>
+<td align="center" width="240">
+<img src="docs/images/reminders.webp" alt="Reminders" width="240" />
+<br />
+Reminders holds <strong>Your next steps</strong>, then the dates in groups. A repair follow-up is titled <strong>Reminder: follow up on</strong> the issue. The deposit card can be titled <strong>Landlord's deadline</strong>. <strong>+ Add reminder</strong> adds one from scratch. Open a card for what started it, who owes what, <strong>Learn more</strong>, and <strong>Edit reminder date</strong>. That saved day is the tenant’s own nudge. The computed date stays as the rules engine wrote it.
+</td>
+</tr>
+<tr>
+<td align="center" width="240">
+<img src="docs/images/records.webp" alt="Records, sectioned" width="240" />
+<br />
+Records opens on the address, with <strong>Issues</strong>, <strong>Documents</strong>, and <strong>Evidence</strong>. <strong>Your next steps are on Reminders</strong>. An open request shows its status, here <strong>Sent to landlord</strong>.
+</td>
+<td align="center" width="240">
+<img src="docs/images/records-resolve.webp" alt="Resolve a request" width="240" />
+<br />
+Opening a request shows the note and <strong>Mark as resolved</strong>, with an optional note and a resolution date. The screenshot stops on that form. Resolving is a separate tap.
+</td>
+<td align="center" width="240">
+<img src="docs/images/records-export.webp" alt="Export my evidence packet" width="240" />
+<br />
+The Evidence section offers <strong>Export my evidence packet</strong>. The download is a timestamped PDF of the requests, notices, replies, and dates. The packet says it is a record of communications, not legal advice and not a court filing. The footer points to the California courts small-claims self-help page.
+</td>
+</tr>
+<tr>
+<td align="center" width="240">
+<img src="docs/images/records-spanish.webp" alt="Records in Spanish" width="240" />
+<br />
+The same screen in Spanish: <strong>Solicitudes</strong>, <strong>Documentos</strong>, <strong>Evidencia</strong>. Words the tenant typed stay as they were written. Language is also on the welcome screen, and again under <strong>Language</strong> in the Records account menu.
+</td>
+<td align="center" width="240">
+<img src="docs/images/privacy.webp" alt="Privacy policy" width="240" />
+<br />
+Privacy is its own page: <a href="https://app.rentrightportal.com/privacy">app.rentrightportal.com/privacy</a>.
+</td>
+<td align="center" width="240">
+<img src="docs/images/terms.webp" alt="Terms of use" width="240" />
+<br />
+Terms are their own page: <a href="https://app.rentrightportal.com/terms">app.rentrightportal.com/terms</a>.
+</td>
+</tr>
+</table>
 
 ## Architecture
 
