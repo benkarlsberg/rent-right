@@ -36,6 +36,7 @@ import { ORDINANCES } from "@/lib/rules/cities/catalog";
 import { detectPlace } from "@/lib/rules/detect";
 import { todayISO } from "@/lib/rules/dates";
 import { checkRentIncrease, depositReturnDeadline, repairReminder, type AreaKey, type RepairSeverity } from "@/lib/rules/engine";
+import { describeTenantMail, mailHeader } from "@/lib/tenant-mail";
 import { aidLinks, aidText, photoPrompt, safetySteps, tierForSeverity, timelinePointer, violationDetail, violationFlag } from "@/lib/triage";
 import { renderAnswer, selectRules } from "@/lib/rules/assistant";
 import { getRule } from "@/lib/rules/library";
@@ -336,16 +337,30 @@ async function confirmSend(user: User, unit: Unit, draftId: string) {
   const pending = logId ? await openDraftForLog(user.id, unit.id, logId) : null;
   const subject = String(pending?.subject || draft.payload.subject || "Repair");
   const body = String(pending?.body || draft.payload.text || "");
-  const status = await emailLandlord({ user, unit, logEntryId: logId, existingId: pending?.id, subject, tenantText: body });
+  let status: string;
+  try {
+    status = await emailLandlord({ user, unit, logEntryId: logId, existingId: pending?.id, subject, tenantText: body });
+  } catch (error) {
+    await say(user, unit, {
+      headline: tx(user.locale, "Not sent", "No enviado"),
+      status: tx(user.locale, "Nothing was emailed", "No se envió ningún correo"),
+      action: null,
+      detail: error instanceof Error ? error.message : tx(user.locale, "The message was not sent.", "El mensaje no se envió."),
+      ruleId: null,
+    });
+    return;
+  }
   if (logId) {
     const entry = await getLog(user.id, logId);
     await ensureRepairDeadline(user, unit, entry);
   }
+  const header = mailHeaderText(user, unit);
   const confirmed = flagCard({
     headline: tx(user.locale, "Landlord email", "Correo al propietario"),
     status: deliveryLabel(status, false, user.locale),
     action: { id: "open-landlord", label: tx(user.locale, "Open landlord", "Abrir propietario") },
-    detail: tx(user.locale, `You confirmed this send.\n\n${body}`, `Usted confirmó este envío.\n\n${body}`),
+    sender: header,
+    detail: tx(user.locale, `You confirmed this send.\n\n${header}\n\n${body}`, `Usted confirmó este envío.\n\n${header}\n\n${body}`),
     ruleId: null,
   }, "issue");
   const messageId = typeof draft.payload.cardMessageId === "string" ? draft.payload.cardMessageId : "";
@@ -732,6 +747,11 @@ async function applyRepairChoice(user: User, unit: Unit, action: string) {
   }, "issue");
 }
 
+function mailHeaderText(user: User, unit: Unit): string {
+  const mail = describeTenantMail(user, unit);
+  return mail.ready ? mailHeader(mail) : mail.missing;
+}
+
 async function logRepair(user: User, unit: Unit, summary: string, severity: RepairSeverity, room: string | null, attachment: { name: string; mime: string; base64: string } | null, forceNew = false) {
   const kind = severity || repairFacts(summary).severity;
   if (!forceNew) {
@@ -777,6 +797,7 @@ async function logRepair(user: User, unit: Unit, summary: string, severity: Repa
     action: landlordReady(unit)
       ? { id: `send:${draft.id}`, label: tx(user.locale, "Send to landlord", "Enviar al propietario") }
       : { id: "add-landlord", label: addLandlordLabel(user.locale) },
+    sender: mailHeaderText(user, unit),
     detail: [
       safetySteps(severity, user.locale),
       urgent ? photoPrompt(severity, user.locale) : "",

@@ -31,6 +31,7 @@ import {
   type User,
 } from "@/lib/db";
 import { landlordMessageBody, sendRelayEmail } from "@/lib/email";
+import { mailHeader, outboundSubject, REPLY_LINE, requireTenantMail } from "@/lib/tenant-mail";
 import { photoFilename, rejectPhotoSet } from "@/lib/message-photos";
 import { messageParagraphs, renderMail } from "@/lib/email-template";
 import { LIBRARY_VERSION, type Locale } from "@/lib/disclaimer";
@@ -261,6 +262,9 @@ export async function emailLandlord(input: {
   if (!input.unit.landlordEmail) {
     throw new Error("Add the landlord's email on your unit before sending.");
   }
+  const sender = requireTenantMail(input.user, input.unit);
+  const subject = outboundSubject(input.subject, sender);
+  const header = mailHeader(sender);
   const staged = input.existingId ? await stagedPhotos(input.user, input.existingId) : [];
   const photos = [...staged, ...(input.photos || []).filter((photo) => !photo.existingPhotoId || !staged.some((item) => item.existingPhotoId === photo.existingPhotoId))];
   const tooBig = rejectPhotoSet(photos.map((photo) => ({ mime: photo.mime, bytes: photo.bytes.length })));
@@ -270,7 +274,8 @@ export async function emailLandlord(input: {
   if (isSampleAccount(input.user.email)) {
     const messageId = await storeLandlordMail({
       ...input,
-      body: input.tenantText,
+      subject,
+      body: landlordMessageBody(input.tenantText, `${appUrl()}/r/sample`, header),
       deliveryStatus: "local_only",
       deliveryDetail: "This sample home does not email a landlord.",
     });
@@ -280,7 +285,8 @@ export async function emailLandlord(input: {
   if (await isBlocked(input.unit.id)) {
     const messageId = await storeLandlordMail({
       ...input,
-      body: input.tenantText,
+      subject,
+      body: landlordMessageBody(input.tenantText, `${appUrl()}/r/blocked`, header),
       deliveryStatus: "blocked",
       deliveryDetail: "The landlord blocked later mail. Print a letter and mail it yourself.",
     });
@@ -293,14 +299,15 @@ export async function emailLandlord(input: {
   }
   const token = randomToken();
   const responseUrl = `${appUrl()}/r/${token}`;
-  const body = landlordMessageBody(input.tenantText, responseUrl);
+  const body = landlordMessageBody(input.tenantText, responseUrl, header);
   const mail = renderMail({
-    subject: input.subject,
-    heading: "Message from your tenant",
+    subject,
+    heading: sender.name,
     paragraphs: [
+      `${sender.line1}\n${sender.line2}`,
       ...messageParagraphs(input.tenantText),
       photoLine,
-      "The tenant wrote this message. Rent Right only provides the mailbox.",
+      REPLY_LINE,
       "You can acknowledge, give a schedule, mark the issue fixed, dispute it, or block later non-essential mail.",
     ].filter(Boolean),
     button: { label: "Respond", href: responseUrl },
@@ -309,13 +316,14 @@ export async function emailLandlord(input: {
     relayLocal: input.unit.relayLocal,
     to: input.unit.landlordEmail,
     cc: input.user.email,
-    subject: input.subject,
+    subject,
     text: mail.text,
     html: mail.html,
     attachments,
   });
   const messageId = await storeLandlordMail({
     ...input,
+    subject,
     body,
     deliveryStatus: sent.status,
     deliveryDetail: sent.detail,

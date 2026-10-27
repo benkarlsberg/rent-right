@@ -1,8 +1,7 @@
-import { getUser, insertMessage, unitByRelay, unitMemberUserIds, addNotification } from "@/lib/db";
-import { sendTenantEmail } from "@/lib/email";
-import { renderMail } from "@/lib/email-template";
+import { logEntryForReply, recordLandlordChatReply, emailProviderId, type InboundPhoto } from "@/lib/inbound-reply";
+import { stripQuotedReply } from "@/email/plain";
+import { unitByRelay } from "@/lib/db";
 import { withActor } from "@/lib/pg";
-import { appUrl, relayAddress } from "@/lib/text";
 
 export async function POST(request: Request) {
   const secret = process.env.EMAIL_WEBHOOK_SECRET;
@@ -14,39 +13,38 @@ export async function POST(request: Request) {
     to?: string | string[];
     subject?: string;
     text?: string;
+    rawText?: string;
+    messageId?: string;
+    attachments?: { name?: string; mime?: string; base64?: string }[];
   } | null;
   if (!body?.to) return new Response("Missing recipient", { status: 400 });
   const to = Array.isArray(body.to) ? body.to.join(",") : body.to;
   const match = to.match(/u-[a-z0-9]+/i);
   if (!match) return new Response("No relay address", { status: 202 });
   return withActor(null, async () => {
-  const unit = await unitByRelay(match[0].toLowerCase());
-  if (!unit) return new Response("Unknown unit", { status: 202 });
-  await insertMessage({
-    unitId: unit.id,
-    userId: null,
-    direction: "inbound",
-    fromEmail: body.from || "unknown",
-    toEmail: relayAddress(unit.relayLocal),
-    subject: body.subject || "(no subject)",
-    body: body.text || "",
-    deliveryStatus: "received",
-    deliveryDetail: "Inbound relay message.",
-  });
-  for (const userId of await unitMemberUserIds(unit.id)) {
-    const user = await getUser(userId);
-    await addNotification(userId, "Landlord reply", body.subject || "New reply in your log", "/messages");
-    if (user) {
-      const note = body.text || "A reply was logged. Open the app to read it.";
-      const mail = renderMail({
-        subject: "Rent Right: a reply was logged",
-        heading: "A reply was logged",
-        paragraphs: [note],
-        button: { label: "Open Rent Right", href: appUrl() },
+    const unit = await unitByRelay(match[0].toLowerCase());
+    if (!unit) return new Response("Unknown unit", { status: 202 });
+    const raw = body.rawText || body.text || "";
+    const display = stripQuotedReply(body.text || raw) || "The reply had no new text.";
+    const photos: InboundPhoto[] = [];
+    for (const item of body.attachments || []) {
+      const base64 = typeof item.base64 === "string" ? item.base64 : "";
+      if (!base64) continue;
+      photos.push({
+        name: item.name || "photo",
+        mime: item.mime || "image/jpeg",
+        bytes: Buffer.from(base64, "base64"),
       });
-      await sendTenantEmail(user.email, mail.subject, mail.text, mail.html);
     }
-  }
-  return new Response("ok");
+    await recordLandlordChatReply({
+      unit,
+      fromEmail: body.from || unit.landlordEmail || "landlord",
+      subject: body.subject || "(no subject)",
+      body: display,
+      providerId: emailProviderId(body.messageId || "", raw || display),
+      logEntryId: await logEntryForReply(unit.id, raw),
+      photos,
+    });
+    return new Response("ok");
   });
 }

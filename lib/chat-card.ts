@@ -16,6 +16,8 @@ export type ChatCard = {
   showSteps?: boolean;
   /** Urgent is a red label. A possible violation uses the neutral rules flag. */
   badge?: "urgent" | "violation";
+  /** Name and two-line address shown before a landlord email is sent. */
+  sender?: string;
 };
 
 export type CardKind = "prompt" | "cited" | "cited-quiet" | "cited-issue" | "issue";
@@ -87,6 +89,7 @@ export function parseCard(content: string): ChatCard | null {
       ...(typeof value.legal === "boolean" ? { legal: value.legal } : {}),
       ...(typeof value.showSteps === "boolean" ? { showSteps: value.showSteps } : {}),
       ...(value.badge === "urgent" || value.badge === "violation" ? { badge: value.badge } : {}),
+      ...(typeof value.sender === "string" && value.sender ? { sender: value.sender } : {}),
     };
   } catch {
     return null;

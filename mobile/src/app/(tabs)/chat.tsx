@@ -18,7 +18,7 @@ import * as ImagePicker from "expo-image-picker";
 type Action = { id: string; label: string };
 type Item =
   | { role: "user"; text: string }
-  | { role: "card"; headline: string; status: string; action: Action | null; actions?: Action[]; detail: string; ruleId: string | null; legal?: boolean; notice?: Notice; badge?: "urgent" | "violation"; address?: { street?: string; unit?: string; city?: string; region?: string; postalCode?: string } | null };
+  | { role: "card"; headline: string; status: string; action: Action | null; actions?: Action[]; detail: string; ruleId: string | null; legal?: boolean; notice?: Notice; badge?: "urgent" | "violation"; sender?: string; address?: { street?: string; unit?: string; city?: string; region?: string; postalCode?: string } | null };
 type Thread = {
   landlord: string;
   needsUnit?: boolean;
@@ -426,7 +426,8 @@ function CardView({ item, spanish, busy, onAction }: { item: Extract<Item, { rol
       {item.badge === "urgent" ? <Text style={styles.urgent}>{spanish ? "Urgente" : "Urgent"}</Text> : null}
       {item.badge === "violation" ? <Text style={styles.flag}>{spanish ? "Esto puede no seguir las reglas de California" : "This may not follow California rules"}</Text> : null}
       {item.status ? <Text style={styles.status}>{item.status}</Text> : null}
-      {item.address?.street || item.address?.city ? (
+      {item.sender ? <Text style={[styles.detail, wrapText]}>{item.sender}</Text> : null}
+      {item.sender?.includes("\n") ? null : item.address?.street || item.address?.city ? (
         <Address street={item.address.street} unit={item.address.unit} city={item.address.city} region={item.address.region} postalCode={item.address.postalCode} style={styles.detail} />
       ) : null}
       {picker && item.detail ? <Text style={styles.detail}>{item.detail}</Text> : null}

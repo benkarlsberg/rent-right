@@ -39,6 +39,15 @@ type ChatItem = {
   photos?: ChatPhoto[];
 };
 
+type MailPreview = {
+  ready: boolean;
+  missing: string;
+  name: string;
+  line1: string;
+  line2: string;
+  subject: string;
+};
+
 type ChatData = {
   landlord: string;
   archived?: boolean;
@@ -48,6 +57,7 @@ type ChatData = {
   needsLandlord?: boolean;
   prompt?: string;
   labels?: DraftLabels;
+  mail?: MailPreview;
   items: ChatItem[];
   issues?: { id: string; title: string }[];
   library?: LibraryPhoto[];
@@ -74,6 +84,7 @@ export default function Landlord() {
   const [pending, setPending] = useState<PendingPhoto[]>([]);
   const [pickingIssue, setPickingIssue] = useState<PendingPhoto | null>(null);
   const labels = data?.labels;
+  const identityBlocked = Boolean(data?.mail && !data.mail.ready);
   const needsPrompt = Boolean(data && (data.needsLandlord || data.needsUnit));
   const emptyTitle = spanish ? "Aún no hay propietario" : "No landlord added yet";
   const prompt = data?.prompt || (spanish ? "Agregue el nombre y el correo del propietario para enviar un mensaje." : "Add your landlord's name and email to send a message.");
@@ -98,7 +109,7 @@ export default function Landlord() {
 
   async function send() {
     const text = draft.trim();
-    if (!text || !token || sending || discarding || data?.archived) return;
+    if (!text || !token || sending || discarding || data?.archived || identityBlocked) return;
     try {
       setSending(true);
       setError("");
@@ -344,7 +355,7 @@ export default function Landlord() {
               return (
                 <View nativeID={`draft-${item.id}`} style={[styles.draft, highlighted && styles.draftOn]}>
                   <Text style={styles.draftLabel}>{item.status}</Text>
-                  {item.subject ? <Text style={styles.subject}>{labels?.subject || "Subject"}: {item.subject}</Text> : null}
+                  <MailPreviewBlock mail={data?.mail} subjectLabel={labels?.subject || "Subject"} subject={item.subject} />
                   {editing ? (
                     <TextInput
                       value={editBody}
@@ -401,7 +412,7 @@ export default function Landlord() {
                     <Pressable style={styles.plus} accessibilityRole="button" accessibilityLabel={spanish ? "Agregar una foto" : "Add a photo"} disabled={Boolean(sending || data?.archived)} onPress={() => setMenu((open) => open?.id === item.id && open.where === "draft" ? null : { where: "draft", id: item.id })}>
                       <Text style={styles.plusText}>+</Text>
                     </Pressable>
-                    <Pressable style={styles.primary} accessibilityRole="button" accessibilityLabel={labels?.send || "Send"} accessibilityState={{ disabled: Boolean(sending || discarding || data?.archived || data?.needsEmail) }} disabled={sending || discarding || data?.archived || data?.needsEmail} onPress={() => void sendDraftMessage(item.id, body)}>
+                    <Pressable style={styles.primary} accessibilityRole="button" accessibilityLabel={labels?.send || "Send"} accessibilityState={{ disabled: Boolean(sending || discarding || data?.archived || data?.needsEmail || identityBlocked) }} disabled={sending || discarding || data?.archived || data?.needsEmail || identityBlocked} onPress={() => void sendDraftMessage(item.id, body)}>
                       <Text style={styles.primaryText}>{labels?.send || "Send"}</Text>
                     </Pressable>
                     {editing ? (
@@ -492,16 +503,30 @@ export default function Landlord() {
             ))}
           </View>
         ) : null}
+        {data?.mail ? <MailPreviewBlock mail={data.mail} subjectLabel={labels?.subject || "Subject"} subject={data.mail.subject} /> : null}
         <View style={styles.composer}>
           <Pressable style={styles.plus} onPress={() => setMenu((open) => open?.where === "composer" ? null : { where: "composer" })} disabled={Boolean(data?.archived)} accessibilityRole="button" accessibilityLabel={spanish ? "Agregar una foto" : "Add a photo"}>
             <Text style={styles.plusText}>+</Text>
           </Pressable>
           <TextInput value={draft} onChangeText={setDraft} placeholder={spanish ? "Mensaje" : "Message"} placeholderTextColor={colors.mute} accessibilityLabel={spanish ? "Mensaje" : "Message"} editable={!data?.archived} style={styles.input} />
-          <Pressable onPress={send} disabled={Boolean(data?.archived) || sending} style={styles.send} accessibilityRole="button" accessibilityLabel={spanish ? "Enviar" : "Send"} accessibilityState={{ disabled: Boolean(data?.archived) || sending }}><Text style={styles.sendText}>{sending ? (spanish ? "Enviando" : "Sending") : (spanish ? "Enviar" : "Send")}</Text></Pressable>
+          <Pressable onPress={send} disabled={Boolean(data?.archived) || sending || identityBlocked} style={styles.send} accessibilityRole="button" accessibilityLabel={spanish ? "Enviar" : "Send"} accessibilityState={{ disabled: Boolean(data?.archived) || sending || identityBlocked }}><Text style={styles.sendText}>{sending ? (spanish ? "Enviando" : "Sending") : (spanish ? "Enviar" : "Send")}</Text></Pressable>
         </View>
       </KeyboardAvoidingView>
       )}
     </SafeAreaView>
+  );
+}
+
+function MailPreviewBlock({ mail, subjectLabel, subject }: { mail?: MailPreview; subjectLabel: string; subject?: string }) {
+  if (!mail) return null;
+  if (!mail.ready) return <Text style={styles.prompt}>{mail.missing}</Text>;
+  return (
+    <View style={styles.mailPreview}>
+      {subject ? <Text style={styles.subject}>{subjectLabel}: {subject}</Text> : null}
+      <Text style={styles.senderName}>{mail.name}</Text>
+      <Text style={styles.senderLine}>{mail.line1}</Text>
+      <Text style={styles.senderLine}>{mail.line2}</Text>
+    </View>
   );
 }
 
@@ -528,6 +553,9 @@ const styles = StyleSheet.create({
   draftBody: { ...wrapText, color: colors.ink, fontSize: 15, lineHeight: 22, marginTop: 8 },
   editor: { marginTop: 8, minHeight: 160, borderWidth: 1, borderColor: colors.line, borderRadius: 12, padding: 12, fontSize: 15, lineHeight: 22, color: colors.ink, backgroundColor: colors.card, textAlignVertical: "top" },
   prompt: { ...wrapText, color: colors.ink, fontSize: 15, lineHeight: 21, marginTop: 10 },
+  mailPreview: { paddingHorizontal: 8, paddingBottom: 8 },
+  senderName: { ...wrapText, color: colors.ink, fontSize: 16, lineHeight: 22, fontWeight: "700", marginTop: 8 },
+  senderLine: { ...wrapText, color: colors.ink, fontSize: 15, lineHeight: 22 },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
   primary: { backgroundColor: colors.pine, borderRadius: 12, minHeight: 44, justifyContent: "center", paddingHorizontal: 14, marginTop: 8 },
   primaryText: { color: "white", fontSize: 15, fontWeight: "700" },

@@ -22,6 +22,5 @@ export const EMAIL_FOOTER = [
   "",
   "---",
   "Sent with Rent Right, free for renters.",
-  "The tenant wrote this message. Rent Right only provides the mailbox.",
   "General information, not legal advice. Rent Right does not send legal demands.",
 ].join("\n");

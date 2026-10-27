@@ -37,6 +37,10 @@ const mailWorker = {
           to: message.to,
           subject: parsed.subject,
           text: parsed.text,
+          rawText: parsed.rawText,
+          messageId: parsed.messageId,
+          inReplyTo: parsed.inReplyTo,
+          attachments: parsed.attachments,
         }),
       });
     } catch {

@@ -795,6 +795,13 @@ export async function unitByRelay(local: string): Promise<Unit | null> {
   return mapUnit(row, "owner");
 }
 
+export async function messageByProviderId(providerId: string): Promise<Message | null> {
+  if (!providerId) return null;
+  if (hasUserActor()) return withActor(null, () => messageByProviderId(providerId));
+  const row = await one<MessageRow>("select * from messages where provider_id = ? limit 1", [providerId]);
+  return row ? mapMessage(row) : null;
+}
+
 export async function messageByToken(token: string): Promise<Message | null> {
   if (hasUserActor()) return withActor(null, () => messageByToken(token));
   const row = await one<MessageRow>("select * from messages where response_token = ?", [token]);

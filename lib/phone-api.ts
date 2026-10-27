@@ -91,6 +91,7 @@ import { DEMO_EMAIL, startSampleTenancy } from "@/lib/seed";
 import { userFromAppleIdToken } from "@/lib/supabase-auth";
 import { appUrl, relayAddress, tx } from "@/lib/text";
 import { chatTurnShowsSteps, parseCard, replyShowsNotice } from "@/lib/chat-card";
+import { describeTenantMail, outboundSubject } from "@/lib/tenant-mail";
 import { runChatTurn } from "@/lib/chat-turn";
 import { drainRoundTrips, withActor } from "@/lib/pg";
 import { archivedNote, previewResidence, residencePayload, saveResidence, selectResidence } from "@/lib/residence";
@@ -722,11 +723,16 @@ function emptyChat(user: User) {
 
 function presentChat(user: User, unit: Unit, messages: ListedMessage[], photos: Awaited<ReturnType<typeof listPhotos>> = [], issues: { id: string; title: string }[] = []) {
   const locale = user.locale;
+  const described = describeTenantMail(user, unit);
+  const mail = described.ready
+    ? { ready: true as const, name: described.name, line1: described.line1, line2: described.line2, subject: described.subject, missing: "" }
+    : { ready: false as const, name: "", line1: "", line2: "", subject: "", missing: described.missing };
   const thumbs = (messageId: string) => photos.filter((photo) => photo.messageId === messageId).map((photo) => ({
     id: photo.id,
     fileId: photo.fileId,
   }));
   return {
+    mail,
     landlord: landlordReady(unit) ? unit.landlordName || unit.landlordEmail : "",
     needsUnit: false,
     needsLandlord: !landlordReady(unit),
@@ -750,7 +756,7 @@ function presentChat(user: User, unit: Unit, messages: ListedMessage[], photos: 
         side: messageSide(message.direction),
         text: draft ? message.body : preview.text,
         detail: draft ? null : preview.detail,
-        subject: message.subject,
+        subject: draft && described.ready ? outboundSubject(message.subject, described) : message.subject,
         time: formatTimestamp(message.createdAt, locale),
         status: draft ? draftLabels(locale).draft : deliveryLabel(message.deliveryStatus, message.openIndicative, locale),
         draft,

@@ -1,3 +1,4 @@
+import { REPLY_LINE } from "@/lib/tenant-mail";
 import { EMAIL_FOOTER, relayAddress } from "@/lib/text";
 
 export type SendResult = {
@@ -6,14 +7,18 @@ export type SendResult = {
   providerId: string | null;
 };
 
-export function landlordMessageBody(tenantText: string, responseUrl: string): string {
+export function landlordMessageBody(tenantText: string, responseUrl: string, header = ""): string {
   return [
+    header.trim(),
+    header.trim() ? "" : null,
     tenantText.trim(),
+    "",
+    REPLY_LINE,
     "",
     `Respond without an account: ${responseUrl}`,
     "You can acknowledge, give a schedule, mark the issue fixed, dispute it, or block later non-essential mail.",
     EMAIL_FOOTER,
-  ].join("\n");
+  ].filter((line) => line !== null).join("\n");
 }
 
 export async function sendRelayEmail(input: {

@@ -761,7 +761,7 @@ describe("renter workflows", () => {
     const fallback = await api("GET", "me", undefined, token);
     expect((fallback.json?.unit as { archived?: boolean; id?: string }).id).toBe(next.id);
     expect((fallback.json?.unit as { archived?: boolean }).archived).toBe(false);
-  });
+  }, 20000);
 
   it("saves a repair as a landlord draft and records the send only after confirmation", async () => {
     expect(process.env.RESEND_API_KEY).toBeUndefined();

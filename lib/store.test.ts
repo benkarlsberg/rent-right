@@ -1,11 +1,12 @@
 import { randomUUID } from "crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { signSession } from "@/lib/crypto";
-import { createNamedUser, createUnit, deleteUserAccount, getUser, insertMessage, primaryUnit, type UnitInput } from "@/lib/db";
+import { createNamedUser, createUnit, deleteUserAccount, getUser, insertMessage, listMessages, primaryUnit, type UnitInput } from "@/lib/db";
 import { handlePhone } from "@/lib/phone-api";
 import { getSql } from "@/lib/pg";
 import { DEMO_EMAIL, startSampleTenancy } from "@/lib/seed";
 import { emailLandlord } from "@/lib/workflow";
+import { chatPreview } from "@/lib/phone";
 
 const auth = vi.hoisted(() => ({ authorization: "" }));
 
@@ -163,8 +164,77 @@ describe("account deletion and reviewer sign-in", () => {
       });
       expect(status).toBe("local_only");
       expect(spy.mock.calls.some((call) => String(call[0]).includes("resend.com"))).toBe(false);
+      await expect(emailLandlord({
+        user: { ...user!, name: "" },
+        unit: unit!,
+        logEntryId: null,
+        subject: "Message from your tenant",
+        tenantText: "Hello",
+      })).rejects.toThrow(/Settings/);
+      const named = await emailLandlord({
+        user: user!,
+        unit: unit!,
+        logEntryId: null,
+        subject: "Message from your tenant",
+        tenantText: "Please fix the sink.",
+      });
+      expect(named).toBe("local_only");
+      const saved = (await listMessages(id, unit!.id)).find((message) => message.body.includes("Please fix the sink."));
+      expect(saved?.subject).toBe("Message from Maya Chen, 1842 N Echo Park Ave, Unit 3");
+      expect(saved?.body).toContain("Maya Chen\n1842 N Echo Park Ave, Unit 3\nLos Angeles, CA 90026");
+      expect(saved?.body).toContain("Reply to this email or tap Respond.");
+      expect(saved?.body).not.toMatch(/The tenant wrote|Message from your tenant/);
+      const preview = chatPreview(saved?.body || "");
+      expect(preview.text).toContain("Maya Chen");
+      expect(preview.text).toContain("Los Angeles, CA 90026");
+      expect(preview.text).not.toContain("Respond without an account");
+      expect(preview.detail).toContain("/r/sample");
     } finally {
       spy.mockRestore();
+    }
+  });
+
+  it("asks Resend to send the tenant header and the photo", async () => {
+    const suffix = randomUUID().slice(0, 8);
+    const user = await createNamedUser(`mail-${suffix}@example.com`, "jane doe");
+    const unit = await createUnit(user.id, {
+      ...unitInput("123 main st"),
+      unitNumber: "4",
+      city: "Oakland",
+      postalCode: "94612",
+      region: "CA",
+    });
+    process.env.RESEND_API_KEY = "re_test_key";
+    process.env.RESEND_FROM = "Rent Right <notices@rentrightportal.com>";
+    const gif = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ id: "email_1" }), { status: 200 }));
+    try {
+      const status = await emailLandlord({
+        user,
+        unit,
+        logEntryId: null,
+        subject: "Message from your tenant",
+        tenantText: "The sink leaks.",
+        photos: [{ name: "leak.gif", mime: "image/gif", bytes: gif, issueId: null, existingPhotoId: null }],
+      });
+      expect(status).toBe("sent");
+      const call = spy.mock.calls.find((item) => String(item[0]).includes("api.resend.com"));
+      expect(call).toBeTruthy();
+      const body = JSON.parse(String((call?.[1] as RequestInit).body)) as {
+        subject: string; text: string; reply_to: string; attachments: { filename: string; content: string }[];
+      };
+      expect(body.subject).toBe("Message from Jane Doe, 123 Main St, Unit 4");
+      expect(body.text).toContain("Jane Doe");
+      expect(body.text).toContain("123 Main St, Unit 4");
+      expect(body.text).toContain("Oakland, CA 94612");
+      expect(body.text).toContain("Reply to this email or tap Respond.");
+      expect(body.text).not.toMatch(/The tenant wrote|Message from your tenant/);
+      expect(body.reply_to).toMatch(/^u-[a-z0-9]+@/);
+      expect(body.attachments[0].filename).toBe("leak.gif");
+      expect(body.attachments[0].content).toBe(gif.toString("base64"));
+    } finally {
+      spy.mockRestore();
+      await deleteUserAccount(user.id);
     }
   });
 });

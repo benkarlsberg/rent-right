@@ -32,6 +32,7 @@ import {
   type UnitInput,
   type User,
 } from "@/lib/db";
+import { recordLandlordChatReply, respondNote, respondProviderId } from "@/lib/inbound-reply";
 import { landlordSaysFixed } from "@/lib/issues";
 import { centsField, dateField, emailValue, field, fileOf, must } from "@/lib/forms";
 import { demandLetter } from "@/lib/letters";
@@ -465,6 +466,19 @@ export async function markMailed(form: FormData) {
   });
 }
 
+async function rememberRespond(message: { unitId: string; logEntryId: string | null; subject: string }, token: string, action: string, note: string) {
+  const unit = await peekUnit(message.unitId);
+  if (!unit) return;
+  await recordLandlordChatReply({
+    unit,
+    fromEmail: unit.landlordEmail || "landlord",
+    subject: message.subject ? `Re: ${message.subject}` : "Reply",
+    body: respondNote(action, note),
+    providerId: respondProviderId(token, action, note),
+    logEntryId: message.logEntryId,
+  });
+}
+
 export async function landlordReply(form: FormData) {
   return withActor(null, async () => {
   const token = must(form, "token", "Link");
@@ -475,8 +489,10 @@ export async function landlordReply(form: FormData) {
   try {
     if (action === "block") {
       await blockLandlord(message.unitId, note || "Blocked from the response link.");
+      await rememberRespond(message, token, action, note);
     } else if (action === "abuse") {
       await reportAbuse(message.unitId, "landlord-link", note || "Abuse report from the response link.");
+      await rememberRespond(message, token, action, note);
     } else if (action === "fixed") {
       await addLandlordResponse(message.unitId, message.id, action, note);
       const unit = await peekUnit(message.unitId);
@@ -490,6 +506,7 @@ export async function landlordReply(form: FormData) {
           eventDate: new Date().toISOString().slice(0, 10),
         });
       }
+      await rememberRespond(message, token, action, note);
     } else if (["acknowledge", "schedule", "dispute"].includes(action)) {
       await addLandlordResponse(message.unitId, message.id, action, note);
       const unit = await peekUnit(message.unitId);
@@ -502,6 +519,7 @@ export async function landlordReply(form: FormData) {
           eventDate: new Date().toISOString().slice(0, 10),
         });
       }
+      await rememberRespond(message, token, action, note);
     } else {
       throw new Error("Choose a response.");
     }
