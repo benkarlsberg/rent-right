@@ -1,4 +1,4 @@
-import { Stack, router } from "expo-router";
+import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { api } from "@/api";
@@ -287,7 +287,6 @@ export default function ResidenceScreen() {
 
   return (
     <Page onRefresh={reload}>
-      <Stack.Screen options={{ title }} />
       <H1>{title}</H1>
       {labels ? <Muted>{labels.intro}</Muted> : null}
       <ErrorLine message={error} />

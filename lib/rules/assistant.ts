@@ -14,8 +14,8 @@ export type AssistantAnswer = {
 };
 
 const STOP = new Set(
-  `a an the of to and or for my your is are was were on in it this that with how what when does do did can landlord tenant i me we our us
-  el la los las de del y o para mi su es son en un una que cómo como cuando cual cuál mi su inquilino propietario`.split(/\s+/),
+  `a an the of to and or for my your is are was were on in it this that with how what when does do did can not no landlord tenant i me we our us
+  el la los las de del y o para mi su es son en un una que cómo como cuando cual cuál mi su no inquilino propietario`.split(/\s+/),
 );
 
 const HANDOFF =
@@ -31,14 +31,13 @@ function tokens(value: string): string[] {
 }
 
 function score(rule: Rule, queryTokens: string[], raw: string): number {
-  const hay = tokens(
-    [rule.titleEn, rule.titleEs, rule.summaryEn, rule.summaryEs, rule.topic, rule.topics.join(" "), rule.citation].join(" "),
-  );
-  const set = new Set(hay);
+  const anchor = tokens([rule.titleEn, rule.titleEs, rule.topic, rule.topics.join(" "), rule.citation].join(" "));
+  const set = new Set(anchor);
   let total = 0;
   for (const token of queryTokens) {
     if (set.has(token)) total += token.length >= 6 ? 2 : 1;
   }
+  if (total === 0) return 0;
   const lower = raw.toLowerCase();
   if (/san diego/.test(lower) && rule.jurisdiction === "CITY_SD") total += 3;
   if ((/los angeles|rso/.test(lower)) && rule.jurisdiction === "CITY_LA") total += 3;
@@ -47,7 +46,10 @@ function score(rule: Rule, queryTokens: string[], raw: string): number {
   if (/\b21\b/.test(raw) && rule.id === "CA-CC-1950.5") total += 2;
   if (/1482|rent cap|tope/.test(lower) && rule.id === "CA-CC-1947.12") total += 3;
   if (/\b(notice|aviso)\b/.test(lower) && /\b(rent increase|aumento de renta)\b/.test(lower) && rule.id === "CA-CC-827") total += 6;
-  if (rule.id === "CA-GUIDE-ORDINARY-RENT" && !/\b(clause|lease|monthly)\b/.test(lower)) total -= 8;
+  if (rule.id === "CA-GUIDE-ORDINARY-RENT") {
+    if (!/\b(clause|lease|monthly|renta mensual)\b/i.test(raw)) return 0;
+    total += 4;
+  }
   if (/just cause|causa justa/.test(lower) && rule.topic === "just-cause") total += 2;
   return total;
 }
@@ -56,7 +58,7 @@ export function selectRules(question: string): { rules: Rule[]; handoff: boolean
   const handoff = HANDOFF.test(question);
   const queryTokens = tokens(question);
   const ranked = RULES.map((rule) => ({ rule, score: score(rule, queryTokens, question) }))
-    .filter((item) => item.score >= 2)
+    .filter((item) => item.score >= 4)
     .sort((a, b) => b.score - a.score);
   return { rules: ranked.slice(0, 3).map((item) => item.rule), handoff };
 }
@@ -68,10 +70,15 @@ export function renderAnswer(question: string, locale: Locale, rules: Rule[], ha
       ? "El texto en español de la biblioteca está pendiente de revisión por voluntarios."
       : "Spanish library text is pending volunteer review.";
   if (rules.length === 0) {
+    const handoffLead = handoff
+      ? locale === "es"
+        ? "Rent Right no puede decirle qué hacer en un caso, ni cómo responder a un aviso de desalojo. Contacte a asistencia legal o a un abogado con licencia. "
+        : "Rent Right cannot tell you what to do in a case, or how to respond to an eviction notice. Contact legal aid or a licensed attorney. "
+      : "";
     const text =
       locale === "es"
-        ? `No se puede precisar. La biblioteca ${LIBRARY_VERSION} no tiene una regla que coincida con esta pregunta lo bastante como para citarla. Si se trata de un aviso de desalojo, papeles de la corte o plazos de su caso, contacte a asistencia legal. ${reviewNote}`
-        : `Unsure. Rules library ${LIBRARY_VERSION} does not contain a rule that matches this question closely enough to cite. If this is about an eviction notice, court papers, or a deadline in your case, contact legal aid. ${reviewNote}`;
+        ? `${handoffLead}No se puede precisar. La biblioteca ${LIBRARY_VERSION} no tiene una regla que coincida con esta pregunta lo bastante como para citarla. Si se trata de un aviso de desalojo, papeles de la corte o plazos de su caso, contacte a asistencia legal. ${reviewNote}`
+        : `${handoffLead}Unsure. Rules library ${LIBRARY_VERSION} does not contain a rule that matches this question closely enough to cite. If this is about an eviction notice, court papers, or a deadline in your case, contact legal aid. ${reviewNote}`;
     return {
       locale,
       unsure: true,

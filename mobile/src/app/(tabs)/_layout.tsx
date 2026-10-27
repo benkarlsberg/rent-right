@@ -77,6 +77,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="landlord" options={tabOptions("landlord", "/landlord", spanish ? "Propietario" : "Landlord", path)} />
       <Tabs.Screen name="reminders" options={tabOptions("reminders", "/reminders", spanish ? "Recordatorios" : "Reminders", path)} />
       <Tabs.Screen name="records" options={tabOptions("records", "/records", spanish ? "Registros" : "Records", path)} />
+      <Tabs.Screen name="photos" options={{ href: null, title: "Photos" }} />
     </Tabs>
   );
 }

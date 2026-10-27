@@ -3,8 +3,8 @@ import { DISCLAIMER_EN } from "@/lib/disclaimer";
 import { formatDate } from "@/lib/format";
 import type { Unit, User } from "@/lib/db";
 import { deadlineCards, duePhrase, logCards, nextSteps, recordsLabels, reminderNote } from "@/lib/records-view";
-import { packetLines } from "@/lib/packet";
-import { renderPdf } from "@/lib/pdf";
+import { buildPacket, packetLines } from "@/lib/packet";
+import { pdfText, renderPacket } from "@/lib/pdf";
 
 const today = "2026-10-23";
 
@@ -167,7 +167,7 @@ describe("records view", () => {
         explanation: "", explanationEs: "", computation: "", sourceId: "log1", status: "open", tenantReminderOn: null,
       }],
     });
-    expect(waiting.items.map((item) => item.action)).toEqual(["wait", "export", "small_claims"]);
+    expect(waiting.items.map((item) => item.action)).toEqual(["wait"]);
     expect(waiting.items[0].title).toBe("Waiting for landlord until Oct 30, 2026");
     expect(waiting.items[0].detail).toMatch(/does not mean the landlord must answer/);
     expect(waiting.items.every((item) => item.action !== "send" || item.detail.match(/confirm/))).toBe(true);
@@ -195,8 +195,8 @@ describe("records view", () => {
       deadlines: [],
     });
     expect(unsent.title).toBe("Sus próximos pasos");
-    expect(unsent.items.map((item) => item.action)).toEqual(["send", "export", "small_claims"]);
-    expect(unsent.items).toHaveLength(3);
+    expect(unsent.items.map((item) => item.action)).toEqual(["send"]);
+    expect(unsent.items).toHaveLength(1);
     expect(unsent.items[0].button).toBe("Revisar antes de enviar");
 
     const unsentFirst = nextSteps({
@@ -227,7 +227,7 @@ describe("records view", () => {
         explanation: "", explanationEs: "", computation: "", sourceId: "log1", status: "resolved", tenantReminderOn: null,
       }],
     });
-    expect(resolved.items.map((item) => item.action)).toEqual(["export", "small_claims"]);
+    expect(resolved.items.map((item) => item.action)).toEqual([]);
   });
 });
 
@@ -288,15 +288,56 @@ describe("evidence packet", () => {
     expect(text).toMatch(/record of communications/);
     expect(text).toMatch(/not legal advice and it is not a court filing/);
     expect(text).toMatch(/A photo is stored with this note/);
-    expect(text).toMatch(/Reply from the landlord/);
-    expect(text).toMatch(/Tenant reminder: 2026-10-28/);
-    expect(text).toMatch(/does not change the computed date/);
+    expect(text).toMatch(/Received/);
+    expect(text).toMatch(/Oct 28, 2026/);
+    expect(text).toMatch(/does not mean the landlord had to answer/);
     expect(text).toMatch(/Tenant waives the right to a jury/);
     expect(text).toMatch(/Small claims is a self-help option/);
     expect(text).toContain("https://selfhelp.courts.ca.gov/small-claims");
-    expect(text).toContain("1842 N Echo Park Ave, Unit 3\nLos Angeles, CA 90026");
+    expect(text).toContain("1842 N Echo Park Ave, Unit 3");
+    expect(text).toContain("Los Angeles, CA 90026");
+    expect(text).toContain("City of Los Angeles");
+    expect(text).not.toContain("city_la");
+    expect(text).not.toContain("Previous hash");
     expect(text).toContain(DISCLAIMER_EN);
-    const pdf = await renderPdf("Factual evidence packet", lines);
+    expect(text.indexOf(DISCLAIMER_EN)).toBe(text.lastIndexOf(DISCLAIMER_EN));
+    const model = buildPacket({
+      user: { name: "Maya Chen", email: "demo@rentright.local" } as User,
+      unit: {
+        street: "1842 N Echo Park Ave",
+        unitNumber: "3",
+        city: "Los Angeles",
+        postalCode: "90026",
+        jurisdiction: "city_la",
+        jurisdictionConfirmed: true,
+        landlordName: "Elena Vasquez",
+        landlordEmail: "elena@example.com",
+        relayLocal: "unit",
+        rentCents: 215000,
+      } as Unit,
+      logs: [{
+        id: "log-1",
+        eventDate: "2026-10-23",
+        createdAt: "2026-10-23T18:00:00.000Z",
+        type: "repair",
+        description: "Kitchen sink leak.",
+        contentHash: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+        prevHash: "def",
+        version: 1,
+        photoFileId: "photo-1",
+      }],
+      messages: [],
+      deadlines: [],
+      ledger: [],
+      deposit: null,
+      conditions: [],
+    });
+    expect(model.verification[0]?.code).toBe("abcdef123456");
+    expect(model.verification[0]?.code.length).toBe(12);
+    const pdf = await renderPacket(model);
     expect(Buffer.from(pdf.subarray(0, 5)).toString("utf8")).toBe("%PDF-");
+    expect(pdf.byteLength).toBeGreaterThan(1000);
+    expect(pdfText("“Follow-up”")).toBe('"Follow-up"');
+    expect(pdfText("Follow-up")).not.toContain("?");
   });
 });

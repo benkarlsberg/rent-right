@@ -218,7 +218,7 @@ export default function Reminders() {
         refreshControl={<RefreshControl refreshing={false} onRefresh={reload} tintColor={colors.pine} />}
       >
         {loading && !data ? <TabLoading label={es ? "Cargando" : "Loading"} /> : null}
-        {data?.steps ? (
+        {data?.steps?.items?.length ? (
           <NextSteps
             title={data.steps.title}
             steps={data.steps.items}

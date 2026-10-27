@@ -2,8 +2,11 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { Platform, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { captureLoadedPath } from "@/back-nav";
 import { SessionProvider } from "@/session";
 import { colors } from "@/theme";
+
+if (Platform.OS === "web" && typeof window !== "undefined") captureLoadedPath(window.location.pathname);
 
 function installWebViewport() {
   if (Platform.OS !== "web" || typeof document === "undefined") return;
@@ -30,29 +33,20 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <SessionProvider>
         <StatusBar style="dark" />
-        <Stack
-          screenOptions={{
-            headerStyle: { backgroundColor: colors.paper },
-            headerShadowVisible: false,
-            headerTintColor: colors.pine,
-            headerTitleStyle: { color: colors.ink, fontWeight: "600" },
-            contentStyle: { backgroundColor: colors.paper },
-          }}
-        >
-          <Stack.Screen name="index" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="setup" options={{ title: "Your place" }} />
-          <Stack.Screen name="lease" options={{ title: "Lease" }} />
-          <Stack.Screen name="deposit" options={{ title: "Deposit" }} />
-          <Stack.Screen name="increase" options={{ title: "Rent increase" }} />
-          <Stack.Screen name="assistant" options={{ title: "Rights" }} />
-          <Stack.Screen name="ledger" options={{ title: "Rent paid" }} />
-          <Stack.Screen name="photos" options={{ title: "Photos" }} />
-          <Stack.Screen name="packet" options={{ title: "Records" }} />
-          <Stack.Screen name="settings" options={{ title: "Settings" }} />
-          <Stack.Screen name="residence" options={{ title: "Residence" }} />
-          <Stack.Screen name="log-new" options={{ title: "New note" }} />
-          <Stack.Screen name="log/[id]" options={{ title: "Log" }} />
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.paper } }}>
+          <Stack.Screen name="index" />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="setup" />
+          <Stack.Screen name="lease" />
+          <Stack.Screen name="deposit" />
+          <Stack.Screen name="increase" />
+          <Stack.Screen name="assistant" />
+          <Stack.Screen name="ledger" />
+          <Stack.Screen name="packet" />
+          <Stack.Screen name="settings" />
+          <Stack.Screen name="residence" />
+          <Stack.Screen name="log-new" />
+          <Stack.Screen name="log/[id]" />
         </Stack>
       </SessionProvider>
     </SafeAreaProvider>

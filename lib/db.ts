@@ -1211,6 +1211,62 @@ export async function getCondition(userId: string, id: string) {
   return (await listConditions(userId, row.unit_id)).find((item) => item.id === id)!;
 }
 
+export type StoredPhoto = {
+  id: string;
+  fileId: string;
+  room: string;
+  caption: string;
+  link: string;
+  logId: string | null;
+  reportId: string | null;
+  createdAt: string;
+};
+
+export async function listPhotos(userId: string, unitId: string): Promise<StoredPhoto[]> {
+  await requireUnit(userId, unitId);
+  const rows = await all<{
+    id: string; file_id: string; room: string | null; caption: string | null; link: string;
+    log_id: string | null; report_id: string | null; created_at: string;
+  }>("select * from photos where unit_id = ? order by created_at desc", [unitId]);
+  return rows.map((row) => ({
+    id: row.id,
+    fileId: row.file_id,
+    room: row.room || "",
+    caption: row.caption || "",
+    link: row.link,
+    logId: row.log_id,
+    reportId: row.report_id,
+    createdAt: timeText(row.created_at) || new Date().toISOString(),
+  }));
+}
+
+export async function insertPhoto(userId: string, unitId: string, input: {
+  fileId: string; room: string; caption: string; link: string; logId: string | null; reportId: string | null;
+}) {
+  await requireWritable(userId, unitId);
+  const id = randomUUID();
+  await run(
+    `insert into photos (id, unit_id, user_id, file_id, room, caption, link, log_id, report_id, created_at)
+     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, unitId, userId, input.fileId, input.room, input.caption, input.link, input.logId, input.reportId, new Date().toISOString()],
+  );
+  return id;
+}
+
+export async function deleteEmptyConditions(userId: string, unitId: string) {
+  const reports = await listConditions(userId, unitId);
+  let photos: StoredPhoto[] = [];
+  try {
+    photos = await listPhotos(userId, unitId);
+  } catch {
+    photos = [];
+  }
+  for (const report of reports) {
+    const hasPhoto = report.rooms.some((room) => Boolean(room.photoFileId)) || photos.some((photo) => photo.reportId === report.id);
+    if (!hasPhoto) await run("delete from condition_reports where id = ?", [report.id]);
+  }
+}
+
 export async function insertCondition(userId: string, unitId: string, kind: string, rooms: ConditionRoom[], notes: string) {
   await requireWritable(userId, unitId);
   const id = randomUUID();
@@ -1458,6 +1514,7 @@ async function deleteUnit(unitId: string) {
   await run("delete from messages where unit_id = ?", [unitId]);
   await run("delete from log_entries where unit_id = ?", [unitId]);
   await run("delete from deadlines where unit_id = ?", [unitId]);
+  await run("delete from photos where unit_id = ?", [unitId]);
   await run("delete from condition_reports where unit_id = ?", [unitId]);
   await run("delete from deposits where unit_id = ?", [unitId]);
   await run("delete from ledger_entries where unit_id = ?", [unitId]);

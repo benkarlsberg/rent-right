@@ -103,9 +103,7 @@ describe("a home with no landlord", () => {
     expect(send?.button).toBe("Agregar propietario");
     expect(send?.href).toBe("/landlord");
     expect(send?.detail).toContain("La nota está guardada.");
-    const exported = items.find((item) => item.action === "export");
-    expect(exported?.href).toBe("/landlord");
-    expect(exported?.button).toBe("Agregar propietario");
+    expect(items.some((item) => item.action === "export")).toBe(false);
 
     const draftRow = await getSql()<{ id: string }[]>`select id from chat_drafts where unit_id = ${unitId} and status = 'open' limit 1`;
     const chatDraftId = String(draftRow[0]?.id || "");

@@ -204,6 +204,14 @@ async function runWithoutPlace(user: User, text: string, action: string, attachm
     return;
   }
   const plan = planTurn(text, null);
+  if (plan.type === "lease" || action === "upload-lease") {
+    await sayTo(user, null, leasePlaceCard(user));
+    return;
+  }
+  if (plan.type === "repair_prompt") {
+    await sayTo(user, null, repairPromptCard(user));
+    return;
+  }
   if (canAnswerWithoutPlace(plan, text)) {
     await answerStatewide(user, text);
     return;
@@ -244,6 +252,15 @@ export async function runChatTurn(user: User, unit: Unit | null, input: {
   if (action === "letter") {
     await asked(user, unit, text || tx(user.locale, "Draft a letter", "Redactar una carta"));
     await askForLetter(user, unit);
+    return;
+  }
+  if (action === "upload-lease") {
+    await asked(user, unit, input.attachment?.name || tx(user.locale, "Lease", "Contrato"));
+    if (!input.attachment) {
+      await say(user, unit, leaseCard(user));
+      return;
+    }
+    await reviewAttachment(user, unit, input.attachment);
     return;
   }
   if (!text && !input.attachment) throw new Error(tx(user.locale, "Say what you need.", "Diga qué necesita."));
@@ -341,7 +358,8 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: Awaited<
   if (plan.type === "continue_date" && pending?.kind === "rent_date") {
     const proposed = numberOrNull(pending.payload.proposedCents);
     const lowest = numberOrNull(pending.payload.lowestCents) ?? unit.rentCents;
-    await runRent(user, unit, lowest, proposed, resolveDay(plan.date));
+    const notice = typeof pending.payload.noticeDate === "string" ? pending.payload.noticeDate : null;
+    await runRent(user, unit, lowest, proposed, resolveDay(plan.date), notice);
     await closeChatDraft(user.id, pending.id, "done");
     return;
   }
@@ -359,48 +377,54 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: Awaited<
     await offerResolve(user, unit, plan.summary);
     return;
   }
+  if (plan.type === "repair_prompt") {
+    await say(user, unit, repairPromptCard(user));
+    return;
+  }
   if (plan.type === "repair") {
     await logRepair(user, unit, plan.summary, plan.severity, plan.room, attachment);
     return;
   }
   if (plan.type === "lease") {
-    await say(user, unit, {
-      headline: tx(user.locale, "Add your lease", "Agregue su contrato"),
-      status: tx(user.locale, "Not reviewed", "Sin revisión"),
-      action: null,
-      detail: tx(user.locale, "Use + to add a PDF or a photo of the lease. Nothing was reviewed yet.", "Use + para agregar un PDF o una foto del contrato. Aún no se revisó nada."),
-      ruleId: null,
-    });
+    await say(user, unit, leaseCard(user));
     return;
   }
   if (plan.type === "rent") {
     if (plan.proposedCents == null) {
       await say(user, unit, {
-        headline: tx(user.locale, "Need the new rent", "Falta la renta nueva"),
+        headline: tx(user.locale, "Need the rent amounts", "Faltan los montos"),
         status: tx(user.locale, "Not checked", "Sin revisión"),
         action: null,
-        detail: tx(user.locale, "Say the new amount, like $2,100. No cap was checked.", "Diga el monto nuevo, como $2,100. No se revisó un tope."),
+        detail: tx(
+          user.locale,
+          "Say your current rent, the new rent, and the date you got the notice, like $2,000 to $2,100, notice on 2026-10-01. Add the start date too if you know it, like starting 2026-11-01. No cap was checked.",
+          "Diga su renta actual, la renta nueva y la fecha en que recibió el aviso, como $2,000 a $2,100, aviso el 2026-10-01. Agregue la fecha de inicio si la sabe, como a partir del 2026-11-01. No se revisó un tope.",
+        ),
         ruleId: null,
       });
       return;
     }
     const lowest = plan.lowestCents ?? unit.rentCents;
     if (!plan.effectiveDate) {
-      const draft = await createChatDraft(user.id, unit.id, "rent_date", { proposedCents: plan.proposedCents, lowestCents: lowest });
+      await createChatDraft(user.id, unit.id, "rent_date", { proposedCents: plan.proposedCents, lowestCents: lowest, noticeDate: plan.noticeDate });
       await say(user, unit, {
         headline: tx(user.locale, "Need a start date", "Falta la fecha de inicio"),
         status: formatMoney(plan.proposedCents, user.locale),
         action: null,
         detail: tx(
           user.locale,
-          "Say the date the new rent would start, like 2026-11-01. No cap was checked yet.",
-          "Diga la fecha en que empezaría la renta nueva, como 2026-11-01. Aún no se revisó un tope.",
+          plan.noticeDate
+            ? "Say the date the new rent would start, like 2026-11-01. No cap was checked yet."
+            : "Say the date you got the notice and the date the new rent would start, like notice on 2026-10-01, starting 2026-11-01. No cap was checked yet.",
+          plan.noticeDate
+            ? "Diga la fecha en que empezaría la renta nueva, como 2026-11-01. Aún no se revisó un tope."
+            : "Diga la fecha del aviso y la fecha en que empezaría la renta nueva, como aviso el 2026-10-01, a partir del 2026-11-01. Aún no se revisó un tope.",
         ),
-        ruleId: draft.id ? null : null,
+        ruleId: null,
       });
       return;
     }
-    await runRent(user, unit, lowest, plan.proposedCents, resolveDay(plan.effectiveDate));
+    await runRent(user, unit, lowest, plan.proposedCents, resolveDay(plan.effectiveDate), plan.noticeDate);
     return;
   }
   if (plan.type === "deposit") {
@@ -462,6 +486,48 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: Awaited<
   await say(user, unit, suggestionCard(user));
 }
 
+function repairPromptCard(user: User): ChatCard {
+  return {
+    headline: tx(user.locale, "What's broken?", "¿Qué está descompuesto?"),
+    status: tx(user.locale, "Not saved", "Sin guardar"),
+    action: null,
+    detail: tx(
+      user.locale,
+      "Say what needs repair, like no hot water or a leaking sink. Nothing was saved yet.",
+      "Diga qué hay que reparar, como que no hay agua caliente o que se filtra el fregadero. Aún no se guardó nada.",
+    ),
+    ruleId: null,
+  };
+}
+
+function leaseCard(user: User): ChatCard {
+  return {
+    headline: tx(user.locale, "Add your lease", "Agregue su contrato"),
+    status: tx(user.locale, "Not reviewed", "Sin revisión"),
+    action: { id: "upload-lease", label: tx(user.locale, "Upload lease", "Subir contrato") },
+    detail: tx(
+      user.locale,
+      "Add a PDF or a photo of the lease. Nothing was reviewed yet.",
+      "Agregue un PDF o una foto del contrato. Aún no se revisó nada.",
+    ),
+    ruleId: null,
+  };
+}
+
+function leasePlaceCard(user: User): ChatCard {
+  return {
+    headline: tx(user.locale, "A place is required", "Se necesita una vivienda"),
+    status: tx(user.locale, "Not reviewed", "Sin revisión"),
+    action: { id: "add-unit", label: tx(user.locale, "Add your place", "Agregue su vivienda") },
+    detail: tx(
+      user.locale,
+      "A place is required before a lease can be reviewed. Add your place first. Nothing was reviewed.",
+      "Se necesita una vivienda antes de revisar un contrato. Agregue su vivienda primero. No se revisó nada.",
+    ),
+    ruleId: null,
+  };
+}
+
 function suggestionCard(user: User): ChatCard {
   const spanish = user.locale === "es";
   return {
@@ -470,17 +536,17 @@ function suggestionCard(user: User): ChatCard {
     action: null,
     actions: spanish
       ? [
-          { id: "prompt:Se filtra el fregadero", label: "Se filtra el fregadero" },
-          { id: "prompt:Revisar mi contrato", label: "Revisar mi contrato" },
-          { id: "prompt:Mi casero subio la renta a $2,100", label: "Revisar un aumento" },
-          { id: "prompt:Me mude, donde esta mi deposito?", label: "¿Dónde está mi depósito?" },
+          { id: "prompt:Quiero solicitar una reparacion", label: "Solicitar una reparación" },
+          { id: "prompt:Revisar mi contrato", label: "Revisar mi contrato de arrendamiento" },
+          { id: "prompt:Es legal mi aumento de renta?", label: "¿Es legal mi aumento de renta?" },
+          { id: "prompt:Como recupero mi deposito?", label: "Recuperar mi depósito" },
           { id: "reset", label: "Empezar de nuevo" },
         ]
       : [
-          { id: "prompt:My sink is leaking", label: "My sink is leaking" },
-          { id: "prompt:Check my lease", label: "Check my lease" },
-          { id: "prompt:My landlord raised rent to $2,100", label: "Check a rent increase" },
-          { id: "prompt:I moved out, where's my deposit?", label: "Where's my deposit?" },
+          { id: "prompt:I need to request a repair", label: "Request a repair" },
+          { id: "prompt:Review my lease agreement", label: "Review my lease agreement" },
+          { id: "prompt:Is my rent increase legal?", label: "Is my rent increase legal?" },
+          { id: "prompt:How do I get my deposit back?", label: "Get my deposit back" },
           { id: "reset", label: "Start over" },
         ],
     detail: tx(user.locale, "Pick one, or describe it in your own words.", "Elija una, o descríbala con sus palabras."),
@@ -696,7 +762,7 @@ async function logRepair(user: User, unit: Unit, summary: string, severity: Repa
   await setChatDraftPayload(user.id, draft.id, { ...draft.payload, cardMessageId: messageId });
 }
 
-async function runRent(user: User, unit: Unit, lowest: number | null, proposed: number | null, effectiveDate: string) {
+async function runRent(user: User, unit: Unit, lowest: number | null, proposed: number | null, effectiveDate: string, noticeDate: string | null = null) {
   if (lowest == null || proposed == null) {
     await say(user, unit, {
       headline: tx(user.locale, "Need both rents", "Faltan las dos rentas"),
@@ -716,7 +782,7 @@ async function runRent(user: User, unit: Unit, lowest: number | null, proposed: 
     localOrdinanceName: place.localOrdinance?.name ?? null,
     lowestRentCents: lowest,
     proposedRentCents: proposed,
-    noticeDate: todayISO(),
+    noticeDate: noticeDate || todayISO(),
     effectiveDate,
     lastIncreaseDate: null,
     claimsExemption: false,
@@ -730,7 +796,9 @@ async function runRent(user: User, unit: Unit, lowest: number | null, proposed: 
     detail: [
       user.locale === "es" ? result.applicable.reasonEs : result.applicable.reason,
       result.notice.computation,
-      tx(user.locale, "The notice date was not in the message, so the 30-day or 90-day count uses today.", "La fecha del aviso no estaba en el mensaje, así que el conteo de 30 o 90 días usa hoy."),
+      noticeDate
+        ? ""
+        : tx(user.locale, "The notice date was not in the message, so the 30-day or 90-day count uses today.", "La fecha del aviso no estaba en el mensaje, así que el conteo de 30 o 90 días usa hoy."),
       result.frequency.computation,
       user.locale === "es" ? result.jurisdictionNoteEs : result.jurisdictionNote,
     ].filter(Boolean).join("\n\n"),

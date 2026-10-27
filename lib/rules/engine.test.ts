@@ -392,6 +392,20 @@ describe("rights assistant", () => {
     expect(answer.text.toLowerCase()).not.toContain("withhold");
   });
 
+  it("does not cite an ordinary rent clause for a repair", () => {
+    for (const phrase of [
+      "my shower is not heating",
+      "no hot water",
+      "the heater is broken",
+      "there is mold in the bathroom",
+      "we have roaches",
+      "the lock is broken",
+    ]) {
+      expect(selectRules(phrase).rules.map((rule) => rule.id)).not.toContain("CA-GUIDE-ORDINARY-RENT");
+    }
+    expect(selectRules("my shower is not heating").rules).toEqual([]);
+  });
+
   it("says unsure when nothing matches", () => {
     const answer = answerQuestion("asdf qqq zzz", "en");
     expect(answer.unsure).toBe(true);

@@ -18,6 +18,9 @@ import {
   latestRentCheck,
   listAssistant,
   listConditions,
+  listPhotos,
+  insertPhoto,
+  deleteEmptyConditions,
   discardDraftMessage,
   insertCustomReminder,
   listDeadlines,
@@ -966,16 +969,16 @@ async function ask(input: Record<string, unknown>) {
 function chips(locale: Locale) {
   return locale === "es"
     ? [
-        { label: "Se filtra el fregadero", text: "Se filtra el fregadero" },
-        { label: "Revisar mi contrato", text: "Revisar mi contrato" },
-        { label: "Revisar un aumento", text: "Mi casero subio la renta a $2,100" },
-        { label: "Mi depósito", text: "Me mude, donde esta mi deposito?" },
+        { label: "Solicitar una reparación", text: "Quiero solicitar una reparacion" },
+        { label: "Revisar mi contrato de arrendamiento", text: "Revisar mi contrato" },
+        { label: "¿Es legal mi aumento de renta?", text: "Es legal mi aumento de renta?" },
+        { label: "Recuperar mi depósito", text: "Como recupero mi deposito?" },
       ]
     : [
-        { label: "My sink is leaking", text: "My sink is leaking" },
-        { label: "Check my lease", text: "Check my lease" },
-        { label: "Check a rent increase", text: "My landlord raised rent to $2,100" },
-        { label: "Where's my deposit?", text: "I moved out, where's my deposit?" },
+        { label: "Request a repair", text: "I need to request a repair" },
+        { label: "Review my lease agreement", text: "Review my lease agreement" },
+        { label: "Is my rent increase legal?", text: "Is my rent increase legal?" },
+        { label: "Get my deposit back", text: "How do I get my deposit back?" },
       ];
 }
 
@@ -1084,10 +1087,11 @@ async function loadHomeRows(user: User, unit: Unit, options?: { reviews?: boolea
 }
 
 async function recordsBundle(user: User, unit: NonNullable<Awaited<ReturnType<typeof primaryUnit>>>, options?: { reviews?: boolean }) {
-  return presentRecords(user, unit, await loadHomeRows(user, unit, { reviews: options?.reviews, assistant: false }));
+  const loaded = await loadHomeRows(user, unit, { reviews: options?.reviews, assistant: false });
+  return presentRecords(user, unit, loaded, await listPhotos(user.id, unit.id));
 }
 
-function presentRecords(user: User, unit: Unit, loaded: HomeRows) {
+function presentRecords(user: User, unit: Unit, loaded: HomeRows, photos: Awaited<ReturnType<typeof listPhotos>> = []) {
   const { deadlines, logs, messages, reviews } = loaded;
   const locale = user.locale;
   const today = todayISO();
@@ -1152,7 +1156,15 @@ function presentRecords(user: User, unit: Unit, loaded: HomeRows) {
       today,
     ),
     notes: logCards(logInput.filter((item) => item.type !== "repair" && item.type !== "issue_event"), messageInput, locale).slice(0, 20),
-    issues: board.open,
+    issues: board.open.map((issue) => ({
+      ...issue,
+      photos: photos.filter((photo) => photo.logId === issue.id).map((photo) => ({
+        id: photo.id,
+        fileId: photo.fileId,
+        room: photo.room,
+        caption: photo.caption,
+      })),
+    })),
     archive: board.archive,
     steps: (() => {
       const planned = nextSteps({
@@ -1281,8 +1293,9 @@ async function bootstrapPayload() {
   const unit = await primaryUnit(user.id);
   if (!unit) return { thread: emptyThread(user, await listAssistant(user.id, "visible")), chat: emptyChat(user), records: emptyRecords(user) };
   const loaded = await loadHomeRows(user, unit);
-  const recordsBundleView = presentRecords(user, unit, loaded);
-  const threadBundle = presentRecords(user, unit, { ...loaded, reviews: [] });
+  const photos = await listPhotos(user.id, unit.id);
+  const recordsBundleView = presentRecords(user, unit, loaded, photos);
+  const threadBundle = presentRecords(user, unit, { ...loaded, reviews: [] }, photos);
   return {
     thread: presentThread(user, unit, loaded.assistant, threadBundle.steps),
     chat: presentChat(user, unit, loaded.messages),
@@ -1401,44 +1414,135 @@ async function addPayment(input: Record<string, unknown>) {
   return ledgerPayload();
 }
 
-const ROOMS = ["Living room", "Kitchen", "Bedroom", "Bathroom", "Other"];
+function issueLabel(description: string): string {
+  const clean = description.replace(/\s+/g, " ").trim();
+  const sentence = clean.split(/(?<=[.!?])\s/)[0] || clean;
+  const trimmed = sentence.replace(/[.!?]+$/, "");
+  if (!trimmed) return "Request";
+  return trimmed.length <= 80 ? trimmed : `${trimmed.slice(0, 77).trim()}…`;
+}
 
 async function conditionPayload() {
   const { user, unit } = await withUnit();
   const locale = user.locale;
-  return {
-    rooms: ROOMS,
-    reports: (await listConditions(user.id, unit.id)).map((report) => ({
+  await deleteEmptyConditions(user.id, unit.id);
+  const photos = await listPhotos(user.id, unit.id);
+  const logs = await listLogs(user.id, unit.id);
+  const issues = logs
+    .filter((log) => log.type === "repair" && log.status !== "resolved" && log.flags?.removed !== true)
+    .map((log) => ({ id: log.id, title: issueLabel(log.description) }));
+  const reports = (await listConditions(user.id, unit.id)).map((report) => {
+    const linked = photos.filter((photo) => photo.reportId === report.id);
+    const fromRooms = report.rooms.filter((room) => room.photoFileId).map((room) => ({
+      id: room.photoFileId || "",
+      fileId: room.photoFileId || "",
+      room: room.room,
+      caption: room.notes,
+    }));
+    const shown = linked.length
+      ? linked.map((photo) => ({ id: photo.id, fileId: photo.fileId, room: photo.room, caption: photo.caption }))
+      : fromRooms;
+    return {
       id: report.id,
       kind: report.kind === "move_out" ? tx(locale, "Move-out", "Salida") : tx(locale, "Move-in", "Entrada"),
       when: formatTimestamp(report.createdAt, locale),
-      line: report.rooms.map((room) => room.room).slice(0, 3).join(" · "),
-      detail: report.rooms.map((room) => `${room.room}: ${room.condition}${room.notes ? ` — ${room.notes}` : ""}`).join("\n"),
-      acked: Boolean(report.acknowledgedAt),
-    })),
+      count: shown.length,
+      photos: shown,
+    };
+  }).filter((report) => report.count > 0);
+  const loose = photos.filter((photo) => !photo.reportId).map((photo) => ({
+    id: photo.id,
+    fileId: photo.fileId,
+    room: photo.room,
+    caption: photo.caption,
+    link: photo.link,
+    issueId: photo.logId,
+    issueTitle: issues.find((issue) => issue.id === photo.logId)?.title
+      || logs.find((log) => log.id === photo.logId)?.description
+      || "",
+  }));
+  return {
+    why: tx(
+      locale,
+      "Move-in and move-out photos show the condition of the place. They matter if there is a deposit dispute.",
+      "Las fotos de entrada y de salida muestran el estado de la vivienda. Importan si hay una disputa por el depósito.",
+    ),
+    issues,
+    reports,
+    loose,
   };
 }
 
 async function saveCondition(input: Record<string, unknown>) {
   const { user, unit } = await withUnit();
-  const roomsInput = Array.isArray(input.rooms) ? input.rooms : [];
-  const rooms = ROOMS.map((room) => {
-    const match = roomsInput.find((item) => item && typeof item === "object" && (item as { room?: string }).room === room) as { condition?: string; notes?: string; photoBase64?: string } | undefined;
-    return {
-      room,
-      condition: match?.condition || "good",
-      issues: [] as string[],
-      notes: match?.notes || "",
-      photoFileId: null as string | null,
-    };
-  });
-  for (const room of rooms) {
-    const match = roomsInput.find((item) => item && typeof item === "object" && (item as { room?: string }).room === room.room) as { photoBase64?: string } | undefined;
-    if (match?.photoBase64) {
-      room.photoFileId = await saveFile(user.id, unit.id, `${room.room}.jpg`, "image/jpeg", Buffer.from(match.photoBase64, "base64"));
+  type Incoming = { base64: string; mime: string; room: string; caption: string; link: "move_in" | "move_out" | "issue" | "none"; issueId: string };
+  const photos: Incoming[] = [];
+  const incoming = Array.isArray(input.photos) ? input.photos : [];
+  for (const item of incoming) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const base64 = text(row.base64);
+    if (!base64) continue;
+    const link = text(row.link);
+    photos.push({
+      base64,
+      mime: text(row.mime) || "image/jpeg",
+      room: text(row.room).slice(0, 80),
+      caption: text(row.caption).slice(0, 200),
+      link: link === "move_in" || link === "move_out" || link === "issue" ? link : "none",
+      issueId: text(row.issueId),
+    });
+  }
+  if (!photos.length && Array.isArray(input.rooms)) {
+    const kind = text(input.kind) === "move_out" ? "move_out" : "move_in";
+    for (const item of input.rooms) {
+      if (!item || typeof item !== "object") continue;
+      const row = item as { room?: string; notes?: string; photoBase64?: string };
+      if (!row.photoBase64) continue;
+      photos.push({
+        base64: row.photoBase64,
+        mime: "image/jpeg",
+        room: text(row.room),
+        caption: text(row.notes),
+        link: kind,
+        issueId: "",
+      });
     }
   }
-  await insertCondition(user.id, unit.id, text(input.kind) === "move_out" ? "move_out" : "move_in", rooms, text(input.notes));
+  if (!photos.length) throw new Error(tx(user.locale, "Add a photo first. Nothing was saved.", "Agregue una foto primero. No se guardó nada."));
+  const logs = await listLogs(user.id, unit.id);
+  const openIds = new Set(logs.filter((log) => log.type === "repair" && log.status !== "resolved" && log.flags?.removed !== true).map((log) => log.id));
+  for (const kind of ["move_in", "move_out"] as const) {
+    const group = photos.filter((photo) => photo.link === kind);
+    if (!group.length) continue;
+    const rooms = [];
+    const stored: { fileId: string; photo: Incoming }[] = [];
+    for (const photo of group) {
+      const fileId = await saveFile(user.id, unit.id, `${photo.room || kind}.jpg`, photo.mime, Buffer.from(photo.base64, "base64"));
+      stored.push({ fileId, photo });
+      rooms.push({ room: photo.room || "Photo", condition: "noted", issues: [] as string[], notes: photo.caption, photoFileId: fileId });
+    }
+    const reportId = await insertCondition(user.id, unit.id, kind, rooms, "");
+    for (const item of stored) {
+      await insertPhoto(user.id, unit.id, {
+        fileId: item.fileId, room: item.photo.room, caption: item.photo.caption, link: kind, logId: null, reportId,
+      });
+    }
+  }
+  for (const photo of photos.filter((item) => item.link === "issue" || item.link === "none")) {
+    if (photo.link === "issue" && !openIds.has(photo.issueId)) {
+      throw new Error(tx(user.locale, "Choose an open request, or choose None.", "Elija una solicitud abierta, o elija Ninguna."));
+    }
+    const fileId = await saveFile(user.id, unit.id, `${photo.room || "photo"}.jpg`, photo.mime, Buffer.from(photo.base64, "base64"));
+    await insertPhoto(user.id, unit.id, {
+      fileId,
+      room: photo.room,
+      caption: photo.caption,
+      link: photo.link,
+      logId: photo.link === "issue" ? photo.issueId : null,
+      reportId: null,
+    });
+  }
   return conditionPayload();
 }
 

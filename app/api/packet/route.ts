@@ -1,7 +1,7 @@
-import { getDeposit, listConditions, listDeadlines, listLeaseReviews, listLedger, listLogHistory, listMessages, primaryUnit } from "@/lib/db";
+import { getDeposit, listConditions, listDeadlines, listLeaseReviews, listLedger, listLogHistory, listMessages, listPhotos, primaryUnit, readFileForUser } from "@/lib/db";
 import { landlordReady } from "@/lib/landlord";
-import { packetLines } from "@/lib/packet";
-import { renderPdf } from "@/lib/pdf";
+import { buildPacket, type PacketImage } from "@/lib/packet";
+import { renderPacket } from "@/lib/pdf";
 import { withActor } from "@/lib/pg";
 import { todayISO } from "@/lib/rules/dates";
 import { evidenceFilename } from "@/lib/records-view";
@@ -16,11 +16,25 @@ export async function GET() {
   if (!landlordReady(unit)) return Response.json({ needsLandlord: true });
   const deposit = await getDeposit(user.id, unit.id);
   const reviews = await listLeaseReviews(user.id, unit.id);
-  const lines = packetLines({
+  const logs = await listLogHistory(user.id, unit.id);
+  const conditions = await listConditions(user.id, unit.id);
+  const photos = await listPhotos(user.id, unit.id);
+  const imageIds = new Set<string>();
+  for (const log of logs) if (log.photoFileId) imageIds.add(log.photoFileId);
+  for (const photo of photos) imageIds.add(photo.fileId);
+  for (const report of conditions) for (const room of report.rooms) if (room.photoFileId) imageIds.add(room.photoFileId);
+  const images: PacketImage[] = [];
+  for (const id of imageIds) {
+    const file = await readFileForUser(user.id, id);
+    if (!file) continue;
+    const caption = photos.find((photo) => photo.fileId === id);
+    images.push({ id, bytes: file.bytes, mime: file.mime, caption: caption ? [caption.room, caption.caption].filter(Boolean).join(" — ") : "" });
+  }
+  const model = buildPacket({
     user,
     unit,
-    logs: await listLogHistory(user.id, unit.id),
-    messages: (await listMessages(user.id, unit.id)).filter((message) => message.deliveryStatus !== "draft" && message.deliveryStatus !== "discarded"),
+    logs,
+    messages: await listMessages(user.id, unit.id),
     deadlines: await listDeadlines(user.id, unit.id),
     ledger: (await listLedger(user.id, unit.id)).map((row) => ({
       paidOn: row.paid_on,
@@ -30,19 +44,22 @@ export async function GET() {
       voidedAt: row.voided_at,
     })),
     deposit: deposit ? { amountCents: deposit.amount_cents, moveOutDate: deposit.move_out_date, forwardingAddress: deposit.forwarding_address } : null,
-    conditions: (await listConditions(user.id, unit.id)).map((report) => ({
+    conditions: conditions.map((report) => ({
+      id: report.id,
       kind: report.kind,
       createdAt: report.createdAt,
       contentHash: report.contentHash,
       acknowledgedAt: report.acknowledgedAt,
+      rooms: report.rooms,
     })),
     leaseNotes: reviews.flatMap((review) => (review.result.findings || []).filter((finding) => finding.quote).slice(0, 30).map((finding) => ({
       quote: finding.quote,
       ruleId: finding.ruleId,
       filename: review.filename,
     }))),
+    images,
   });
-  const pdf = await renderPdf("Factual evidence packet", lines);
+  const pdf = await renderPacket(model);
   const filename = evidenceFilename(todayISO());
   return new Response(Buffer.from(pdf), {
     headers: { "content-type": "application/pdf", "content-disposition": `attachment; filename="${filename}"` },

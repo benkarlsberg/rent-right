@@ -88,12 +88,22 @@ describe("chat intent", () => {
   });
 
   it("drops the current flow when the tenant changes topic", () => {
-    const repair = planTurn("Nevermind, I'd like to request a fix", "rent_date");
-    expect(repair).toMatchObject({ type: "repair" });
-    expect(repair.type === "repair" && repair.summary).toBe("I'd like to request a fix");
-    expect(planTurn("Nevermind, I'd like to request a fix", "letter").type).toBe("repair");
+    expect(planTurn("Nevermind, I'd like to request a fix", "rent_date")).toEqual({ type: "repair_prompt" });
+    expect(planTurn("Nevermind, I'd like to request a fix", "letter").type).toBe("repair_prompt");
     expect(planTurn("Nevermind", "deposit_date").type).toBe("unclear");
     expect(planTurn("Check my lease", "letter").type).toBe("lease");
+    expect(planTurn("my shower is not heating", null)).toMatchObject({ type: "repair", severity: "no_heat", room: "Bathroom" });
+    expect(planTurn("I need to request a repair", null)).toEqual({ type: "repair_prompt" });
+    expect(planTurn("Review my lease agreement", null).type).toBe("lease");
+    expect(planTurn("Is my rent increase legal?", null)).toMatchObject({ type: "rent", proposedCents: null, noticeDate: null });
+    expect(planTurn("How do I get my deposit back?", null).type).toBe("deposit");
+    expect(planTurn("$2,000 to $2,100, notice on 2026-10-01, starting 2026-11-01", null)).toMatchObject({
+      type: "rent",
+      lowestCents: 200_000,
+      proposedCents: 210_000,
+      noticeDate: "2026-10-01",
+      effectiveDate: "2026-11-01",
+    });
     expect(planTurn("instead check a rent increase to $2,100", "repair")).toMatchObject({ type: "rent", proposedCents: 210_000 });
   });
 });

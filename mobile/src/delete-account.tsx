@@ -1,7 +1,9 @@
 import { router } from "expo-router";
 import { useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
 import { api } from "@/api";
 import { saveAuthorizedFile } from "@/files";
+import { colors } from "@/theme";
 import { Button, ErrorLine, Field, Muted } from "@/ui";
 
 export function DeleteAccount({
@@ -16,6 +18,7 @@ export function DeleteAccount({
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const ready = confirm.trim() === "DELETE" && !busy;
 
   async function download() {
     try {
@@ -28,10 +31,7 @@ export function DeleteAccount({
   }
 
   async function remove() {
-    if (confirm.trim() !== "DELETE") {
-      setError(spanish ? "Escriba DELETE para confirmar." : "Type DELETE to confirm.");
-      return;
-    }
+    if (!ready) return;
     try {
       setBusy(true);
       setError("");
@@ -45,16 +45,24 @@ export function DeleteAccount({
   }
 
   return (
-    <>
-      <Muted>
-        {spanish
-          ? "Eliminar la cuenta borra su perfil, sus registros, sus archivos, sus recordatorios, sus chats y sus comunicaciones con el propietario. Una vivienda que comparte con otra persona se queda para esa persona. Exporte su paquete de evidencia primero."
-          : "Deleting your account erases your profile, your records, your files, your reminders, your chats, and your landlord communications. A home you share with someone else stays for them. Export your evidence packet first."}
-      </Muted>
-      <Button label={spanish ? "Exportar paquete de evidencia" : "Export evidence packet"} onPress={() => void download()} />
-      <Field label={spanish ? "Escriba DELETE" : "Type DELETE"} value={confirm} onChange={setConfirm} autoCapitalize="characters" />
-      <Button label={spanish ? "Eliminar la cuenta" : "Delete account"} onPress={() => void remove()} disabled={busy} />
-      <ErrorLine message={error} />
-    </>
+    <View>
+      <Button label={spanish ? "Exportar paquete de evidencia" : "Export evidence packet"} ghost onPress={() => void download()} />
+      <View style={styles.danger} accessibilityRole="summary">
+        <Text style={styles.title}>{spanish ? "Eliminar la cuenta" : "Delete account"}</Text>
+        <Muted>
+          {spanish
+            ? "Eliminar la cuenta borra su perfil, sus registros, sus archivos, sus recordatorios, sus chats y sus comunicaciones con el propietario. Una vivienda que comparte con otra persona se queda para esa persona."
+            : "Deleting your account erases your profile, your records, your files, your reminders, your chats, and your landlord communications. A home you share with someone else stays for them."}
+        </Muted>
+        <Field label={spanish ? "Escriba DELETE" : "Type DELETE"} value={confirm} onChange={setConfirm} autoCapitalize="characters" />
+        <Button label={spanish ? "Eliminar la cuenta" : "Delete account"} danger onPress={() => void remove()} disabled={!ready} />
+        <ErrorLine message={error} />
+      </View>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  danger: { marginTop: 28, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: "#f0d0d6", backgroundColor: "#f8ecec" },
+  title: { color: colors.bad, fontSize: 18, fontWeight: "700" },
+});

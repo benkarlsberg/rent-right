@@ -391,34 +391,6 @@ export function nextSteps(input: {
       });
     }
   }
-  if (input.hasRecords && items.length < 3) {
-    items.push({
-      id: "export",
-      action: "export",
-      href: null,
-      title: tx(locale, "Export your evidence", "Exporte su evidencia"),
-      button: tx(locale, "Export evidence", "Exportar evidencia"),
-      detail: tx(
-        locale,
-        "A PDF of the requests, messages, and dates saved in this account.",
-        "Un PDF de las solicitudes, los mensajes y las fechas guardadas en esta cuenta.",
-      ),
-    });
-  }
-  if (input.hasRecords && items.length < 3) {
-    items.push({
-      id: "small_claims",
-      action: "small_claims",
-      href: SMALL_CLAIMS_URL,
-      title: tx(locale, "Learn about small claims", "Infórmese sobre reclamos menores"),
-      button: tx(locale, "Learn about small claims", "Infórmese sobre reclamos menores"),
-      detail: tx(
-        locale,
-        "Small claims is a self-help option. Rent Right does not file a case and does not give legal advice.",
-        "Los reclamos menores son una opción de autoayuda. Rent Right no presenta un caso y no da asesoramiento legal.",
-      ),
-    });
-  }
   return {
     title: tx(locale, "Your next steps", "Sus próximos pasos"),
     held: tx(locale, "Nothing was sent.", "No se envió nada."),

@@ -170,12 +170,17 @@ describe("renter workflows", () => {
     expect(switched.status).toBe(200);
     const cards = switched.json?.items as { headline?: string; actions?: { id: string; label: string }[]; action?: { id: string } | null }[];
     expect(cards.some((item) => item.headline === "Unsure")).toBe(false);
-    expect(cards.some((item) => item.action?.id.startsWith("send:") || item.headline === "Repair logged")).toBe(true);
+    expect(cards.some((item) => item.headline === "What's broken?")).toBe(true);
+    expect(cards.some((item) => item.action?.id.startsWith("send:"))).toBe(false);
+
+    const logged = await api("POST", "thread", { text: "The sink is leaking" }, token);
+    expect(logged.status).toBe(200);
+    expect(JSON.stringify(logged.json)).toMatch(/Repair logged/i);
 
     const vague = await api("POST", "thread", { text: "purple balloons on the ceiling" }, token);
     const vagueCards = vague.json?.items as { actions?: { label: string }[] }[];
     const suggestions = vagueCards.at(-1)?.actions?.map((action) => action.label) || [];
-    expect(suggestions).toEqual(expect.arrayContaining(["My sink is leaking", "Check my lease", "Check a rent increase", "Where's my deposit?", "Start over"]));
+    expect(suggestions).toEqual(expect.arrayContaining(["Request a repair", "Review my lease agreement", "Is my rent increase legal?", "Get my deposit back", "Start over"]));
 
     const records = await api("GET", "records", undefined, token);
     expect((records.json?.issues as { title: string }[]).length).toBeGreaterThan(0);

@@ -14,6 +14,7 @@ import type { Me, Notice } from "@/session";
 import { useSession } from "@/session";
 import { TabLoading } from "@/typing-dots";
 import { colors } from "@/theme";
+import { PhotoThumb } from "@/photo-thumb";
 import { Button, ErrorLine, clipX, wrapText } from "@/ui";
 import { useLoad } from "@/use-load";
 
@@ -61,6 +62,7 @@ export type Records = {
     pendingNote: string | null;
     earliest: string;
     sent?: boolean;
+    photos?: { id: string; fileId: string; room: string; caption: string }[];
   }[];
   archive?: {
     id: string;
@@ -344,6 +346,14 @@ export default function Records() {
                     <View style={styles.expand}>
                       <Text style={styles.body}>{issue.issue}</Text>
                       {issue.message ? <Text style={styles.body}>{issue.message}</Text> : null}
+                      {issue.photos?.length ? (
+                        <View style={styles.thumbs}>
+                          {issue.photos.map((photo) => <PhotoThumb key={photo.id} fileId={photo.fileId} token={token} />)}
+                        </View>
+                      ) : null}
+                      <Pressable style={styles.linkHit} accessibilityRole="button" accessibilityLabel={es ? "Agregar una foto" : "Add a photo"} onPress={() => router.push(`/photos?issue=${issue.id}`)}>
+                        <Text style={styles.link}>{es ? "Agregar una foto" : "Add a photo"}</Text>
+                      </Pressable>
                       <Pressable style={styles.linkHit} accessibilityRole="button" accessibilityLabel={labels?.history || "History"} onPress={() => router.push(`/log/${issue.id}`)}>
                         <Text style={styles.link}>{labels?.history || (es ? "Historial" : "History")}</Text>
                       </Pressable>
@@ -538,6 +548,7 @@ const styles = StyleSheet.create({
   note: { ...wrapText, marginTop: 4, color: colors.mute, fontSize: 14, lineHeight: 20 },
   gear: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 22, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
   linkHit: { minHeight: 44, justifyContent: "center" },
+  thumbs: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
   link: { color: colors.pine, fontSize: 14, fontWeight: "700" },
   segment: { flexDirection: "row", marginHorizontal: 16, marginTop: 4, backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.line, padding: 3 },
   segmentItem: { flex: 1, minHeight: 40, alignItems: "center", justifyContent: "center", borderRadius: 9, paddingHorizontal: 4, paddingVertical: 6 },

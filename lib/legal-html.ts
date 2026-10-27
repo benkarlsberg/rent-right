@@ -25,6 +25,7 @@ ${iconLinks}
 </head>
 <body>
 <main>
+<p><a href="/" aria-label="Back">← Back</a></p>
 <h1>${title}</h1>
 ${body}
 <nav>

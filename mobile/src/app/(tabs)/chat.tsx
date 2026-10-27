@@ -64,17 +64,18 @@ export default function AssistantChat() {
     return () => clearTimeout(timer);
   }, [pending]);
 
-  async function send(text: string, extra?: { action?: string; draftId?: string }) {
+  async function send(text: string, extra?: { action?: string; draftId?: string; attachment?: Attachment | null }) {
     const body = text.trim();
+    const attachment = extra && "attachment" in extra ? extra.attachment ?? null : file;
     if (!token || lock.current || busy) return;
-    if (!body && !extra?.action && !file) return;
+    if (!body && !extra?.action && !attachment) return;
     try {
       lock.current = true;
       setBusy(true);
       setPending(body);
       setRetryNote("");
       setError("");
-      await reload(await api<Thread>("thread", { token, body: { text: body, action: extra?.action, draftId: extra?.draftId, attachment: file } }));
+      await reload(await api<Thread>("thread", { token, body: { text: body, action: extra?.action, draftId: extra?.draftId, attachment } }));
       setDraft("");
       setFile(null);
       setMenu(false);
@@ -129,6 +130,10 @@ export default function AssistantChat() {
       router.push("/setup");
       return;
     }
+    if (action.id === "upload-lease") {
+      chooseLease((chosen) => { void send("lease", { action: "upload-lease", attachment: chosen }); });
+      return;
+    }
     if (action.id === "open-landlord" || action.id === "add-landlord") {
       router.push("/landlord");
       return;
@@ -164,7 +169,7 @@ export default function AssistantChat() {
     }
   }
 
-  function pickWeb(accept: string) {
+  function pickWeb(accept: string, onChosen?: (file: Attachment) => void) {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = accept;
@@ -174,12 +179,25 @@ export default function AssistantChat() {
       const reader = new FileReader();
       reader.onload = () => {
         const raw = String(reader.result || "");
-        setFile({ name: chosen.name, mime: chosen.type || "application/octet-stream", base64: raw.split(",")[1] || "" });
+        const next = { name: chosen.name, mime: chosen.type || "application/octet-stream", base64: raw.split(",")[1] || "" };
+        if (onChosen) onChosen(next);
+        else setFile(next);
         setMenu(false);
       };
       reader.readAsDataURL(chosen);
     };
     input.click();
+  }
+
+  function chooseLease(onChosen: (file: Attachment) => void) {
+    if (Platform.OS === "web") {
+      pickWeb(".pdf,.txt,image/*", onChosen);
+      return;
+    }
+    void ImagePicker.launchImageLibraryAsync({ base64: true, mediaTypes: ["images"], quality: 0.6 }).then((result) => {
+      const asset = result.canceled ? null : result.assets[0];
+      if (asset?.base64) onChosen({ name: asset.fileName || "lease.jpg", mime: asset.mimeType || "image/jpeg", base64: asset.base64 });
+    });
   }
 
   async function pickPhoto() {
@@ -458,10 +476,10 @@ const styles = StyleSheet.create({
   menuButton: { flex: 1, minHeight: 48, borderRadius: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.card, alignItems: "center", justifyContent: "center" },
   menuText: { fontSize: 16, color: colors.ink, fontWeight: "600" },
   composer: { flexDirection: "row", alignItems: "flex-end", gap: 8, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.card },
-  plus: { width: 48, height: 48, borderRadius: 14, borderWidth: 1, borderColor: colors.line, alignItems: "center", justifyContent: "center", backgroundColor: "white" },
+  plus: { width: 48, height: 48, borderRadius: 14, borderWidth: 1, borderColor: colors.line, alignItems: "center", justifyContent: "center", backgroundColor: "white", flexShrink: 0 },
   plusText: { fontSize: 28, color: colors.pine, lineHeight: 32 },
   input: { flex: 1, minHeight: 48, maxHeight: 96, backgroundColor: colors.paper, borderRadius: 14, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 12, fontSize: 16, color: colors.ink },
-  send: { minHeight: 48, minWidth: 48, justifyContent: "center", alignItems: "center", paddingHorizontal: 8 },
+  send: { minHeight: 48, minWidth: 48, justifyContent: "center", alignItems: "center", paddingHorizontal: 8, flexShrink: 0 },
   sendOff: { opacity: 0.35 },
   sendText: { color: colors.pine, fontWeight: "700", fontSize: 17 },
   confirmWrap: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(20, 52, 60, 0.4)", justifyContent: "center", padding: 24 },
