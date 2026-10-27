@@ -153,6 +153,7 @@ export function buildPacket(input: {
   leaseNotes?: { quote: string; ruleId?: string | null; filename?: string | null }[];
   images?: PacketImage[];
   messageImages?: { messageId: string; fileId: string }[];
+  issueImages?: { logId: string; fileId: string }[];
   preparedAt?: string;
 }): PacketModel {
   const images = new Map((input.images || []).map((image) => [image.id, image]));
@@ -178,9 +179,10 @@ export function buildPacket(input: {
     const ids = new Set(versions.map((log) => log.id).filter(Boolean) as string[]);
     const reminder = input.deadlines.find((item) => item.kind === "repair" && item.status === "open" && item.sourceId && ids.has(item.sourceId) && (item.tenantReminderOn || item.dueDate));
     const messages = input.messages.filter((message) => visibleMessage(message) && message.logEntryId && ids.has(message.logEntryId));
-    const photoIds = [
+    const photoIds = [...new Set([
       ...versions.map((log) => log.photoFileId).filter(Boolean),
-    ] as string[];
+      ...(input.issueImages || []).filter((item) => item.logId && ids.has(item.logId)).map((item) => item.fileId),
+    ] as string[])];
     const updates = [
       ...versions
         .filter((log) => log.photoFileId && !images.has(log.photoFileId))

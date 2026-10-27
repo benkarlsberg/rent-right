@@ -19,6 +19,7 @@ import {
   listLeaseReviews,
   listLogs,
   listMessages,
+  listPhotos,
   openChatDraft,
   openDraftForLog,
   recentConversationTurns,
@@ -232,6 +233,7 @@ export async function runChatTurn(user: User, unit: Unit | null, input: {
   summary?: string;
   description?: string;
   tier?: string;
+  photos?: { fileId?: string; photoId?: string; name?: string; mime?: string; base64?: string }[];
 }): Promise<void> {
   let text = (input.text || "").trim();
   const action = (input.action || "").trim();
@@ -279,6 +281,16 @@ export async function runChatTurn(user: User, unit: Unit | null, input: {
   if (action.startsWith("repair-save:")) {
     await saveConfirmedRepair(user, unit, action.slice("repair-save:".length), input);
     return;
+  }
+  if (!action && input.attachment?.mime.toLowerCase().startsWith("image/")) {
+    const open = await openChatDraft(user.id);
+    const logId = open && typeof open.payload.logId === "string" ? open.payload.logId : "";
+    if (open && open.unitId === unit.id && open.kind === "repair" && open.payload.awaitingPhoto === true && logId) {
+      await asked(user, unit, text || input.attachment.name || tx(user.locale, "Issue photo", "Foto del problema"));
+      await linkChatPhoto(user, unit, logId, input.attachment, text);
+      await setChatDraftPayload(user.id, open.id, { ...open.payload, awaitingPhoto: false });
+      return;
+    }
   }
   if (action.startsWith("repair-cancel:")) {
     await cancelRepairDraft(user, unit, action.slice("repair-cancel:".length));
@@ -819,9 +831,10 @@ async function logRepair(user: User, unit: Unit, summary: string, severity: Repa
   }
   const suggested = tierForSeverity(kind) === "urgent" ? "urgent" : "routine";
   const safety = safetySteps(kind, user.locale);
+  const staged = photoFileId ? [{ fileId: photoFileId, name: attachment?.name || "photo.jpg" }] : [];
   const draft = await createChatDraft(user.id, unit.id, "repair_confirm", {
     summary,
-    description: summary,
+    description: "",
     room,
     severity: kind,
     tier: suggested,
@@ -836,17 +849,43 @@ async function logRepair(user: User, unit: Unit, summary: string, severity: Repa
     action: { id: `repair-save:${draft.id}`, label: tx(user.locale, "Save issue", "Guardar problema") },
     actions: [
       { id: `repair-save:${draft.id}`, label: tx(user.locale, "Save issue", "Guardar problema") },
-      { id: `repair-edit:${draft.id}`, label: tx(user.locale, "Edit", "Editar") },
       { id: `repair-cancel:${draft.id}`, label: tx(user.locale, "Cancel", "Cancelar") },
     ],
     ...(safety ? { safety } : {}),
-    form: { summary, description: summary, room, tier: suggested, suggested },
+    form: { summary, description: "", room, tier: suggested, suggested, ...(staged.length ? { photos: staged } : {}) },
     detail: tx(user.locale, "Nothing is saved until you tap Save issue.", "No se guarda nada hasta que toque Guardar problema."),
     ruleId: null,
   });
 }
 
-async function saveConfirmedRepair(user: User, unit: Unit, draftId: string, input: { summary?: string; description?: string; tier?: string }) {
+async function repairPhotoFiles(user: User, unit: Unit, inputPhotos: unknown, staged: string | null): Promise<string[]> {
+  if (!Array.isArray(inputPhotos)) return staged ? [staged] : [];
+  const ids: string[] = [];
+  const known = inputPhotos.some((item) => item && typeof item === "object" && typeof (item as { photoId?: unknown }).photoId === "string")
+    ? await listPhotos(user.id, unit.id)
+    : [];
+  for (const item of inputPhotos.slice(0, 4)) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as { fileId?: unknown; photoId?: unknown; name?: unknown; mime?: unknown; base64?: unknown };
+    if (typeof row.fileId === "string" && row.fileId) {
+      ids.push(row.fileId);
+      continue;
+    }
+    if (typeof row.photoId === "string" && row.photoId) {
+      const found = known.find((photo) => photo.id === row.photoId);
+      if (found) ids.push(found.fileId);
+      continue;
+    }
+    if (typeof row.base64 === "string" && row.base64 && typeof row.mime === "string" && row.mime.toLowerCase().startsWith("image/")) {
+      const bytes = Buffer.from(row.base64, "base64");
+      if (!bytes.length || bytes.length > 8 * 1024 * 1024) continue;
+      ids.push(await saveFile(user.id, unit.id, typeof row.name === "string" && row.name ? row.name : "photo.jpg", row.mime, bytes));
+    }
+  }
+  return [...new Set(ids)].slice(0, 4);
+}
+
+async function saveConfirmedRepair(user: User, unit: Unit, draftId: string, input: { summary?: string; description?: string; tier?: string; photos?: unknown }) {
   const draft = await openChatDraft(user.id);
   if (!draft || draft.kind !== "repair_confirm" || draft.id !== draftId || draft.unitId !== unit.id) {
     await say(user, unit, {
@@ -859,14 +898,15 @@ async function saveConfirmedRepair(user: User, unit: Unit, draftId: string, inpu
     return;
   }
   const summary = (input.summary || (typeof draft.payload.summary === "string" ? draft.payload.summary : "")).trim();
-  const description = (input.description || (typeof draft.payload.description === "string" ? draft.payload.description : summary)).trim();
+  const description = (input.description ?? (typeof draft.payload.description === "string" ? draft.payload.description : "")).trim();
   const severity = ((typeof draft.payload.severity === "string" ? draft.payload.severity : "other") || "other") as RepairSeverity;
   const room = typeof draft.payload.room === "string" ? draft.payload.room : null;
   const suggested = draft.payload.suggestedTier === "routine" || draft.payload.suggestedTier === "urgent"
     ? draft.payload.suggestedTier
     : tierForSeverity(severity) === "urgent" ? "urgent" : "routine";
   const tier = chosenTier(input.tier, suggested);
-  const photoFileId = typeof draft.payload.photoFileId === "string" ? draft.payload.photoFileId : null;
+  const staged = typeof draft.payload.photoFileId === "string" ? draft.payload.photoFileId : null;
+  const photoFileIds = await repairPhotoFiles(user, unit, input.photos, staged);
   if (!summary) {
     await say(user, unit, {
       headline: tx(user.locale, "Need a summary", "Falta un resumen"),
@@ -878,7 +918,7 @@ async function saveConfirmedRepair(user: User, unit: Unit, draftId: string, inpu
     return;
   }
   await closeChatDraft(user.id, draft.id, "done");
-  await commitRepair(user, unit, summary, description, severity, room, photoFileId, tier, tier !== suggested);
+  await commitRepair(user, unit, summary, description, severity, room, photoFileIds, tier, tier !== suggested);
 }
 
 async function cancelRepairDraft(user: User, unit: Unit, draftId: string) {
@@ -950,7 +990,7 @@ async function undoSavedRepair(user: User, unit: Unit, logId: string) {
   }
 }
 
-async function commitRepair(user: User, unit: Unit, summary: string, description: string, severity: RepairSeverity, room: string | null, photoFileId: string | null, tier: "routine" | "urgent", tierManual: boolean) {
+async function commitRepair(user: User, unit: Unit, summary: string, description: string, severity: RepairSeverity, room: string | null, photoFileIds: string[], tier: "routine" | "urgent", tierManual: boolean) {
   const entry = await recordLog({
     user,
     unit,
@@ -960,18 +1000,18 @@ async function commitRepair(user: User, unit: Unit, summary: string, description
     room,
     description: summary,
     eventDate: todayISO(),
-    photoFileId,
+    photoFileId: photoFileIds[0] || null,
     sendEmail: false,
     subject: "",
     entryAt: null,
     noticeAt: null,
     tier,
     tierManual,
-    notes: description !== summary ? description : null,
+    notes: description && description !== summary ? description : null,
   });
-  if (photoFileId) {
+  for (const fileId of photoFileIds) {
     await insertPhoto(user.id, unit.id, {
-      fileId: photoFileId,
+      fileId,
       room: room || "",
       caption: summary.slice(0, 200),
       link: "issue",
@@ -988,6 +1028,12 @@ async function commitRepair(user: User, unit: Unit, summary: string, description
     text: letter?.body || summary,
   });
   const urgent = tier === "urgent";
+  const safety = safetySteps(severity, user.locale);
+  const photoLine = photoFileIds.length
+    ? ""
+    : safety
+      ? photoPrompt(severity, user.locale)
+      : tx(user.locale, "Want to add photos? Send them in your next message and I'll attach them to this issue.", "¿Quiere agregar fotos? Envíelas en su próximo mensaje y las adjuntaré a este problema.");
   const undo = { id: `repair-undo:${entry.id}`, label: tx(user.locale, "Undo", "Deshacer") };
   const send = landlordReady(unit)
     ? { id: `send:${draft.id}`, label: tx(user.locale, "Send to landlord", "Enviar al propietario") }
@@ -1000,8 +1046,8 @@ async function commitRepair(user: User, unit: Unit, summary: string, description
     actions: [send, undo],
     sender: mailHeaderText(user, unit),
     detail: [
-      safetySteps(severity, user.locale),
-      urgent ? photoPrompt(severity, user.locale) : "",
+      safety,
+      photoLine,
       user.locale === "es" ? reminder.explanationEs : reminder.explanation,
       reminder.computation,
       landlordReady(unit)
@@ -1011,7 +1057,7 @@ async function commitRepair(user: User, unit: Unit, summary: string, description
     address: cardAddress(unit),
     ruleId: reminder.ruleId,
   }, "cited-issue");
-  await setChatDraftPayload(user.id, draft.id, { ...draft.payload, cardMessageId: messageId });
+  await setChatDraftPayload(user.id, draft.id, { ...draft.payload, cardMessageId: messageId, awaitingPhoto: photoFileIds.length === 0 });
 }
 
 async function linkChatPhoto(user: User, unit: Unit, issueId: string, attachment: { name: string; mime: string; base64: string } | null, text: string) {

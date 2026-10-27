@@ -6,7 +6,7 @@ import { handlePhone } from "@/lib/phone-api";
 import { getSql } from "@/lib/pg";
 import { DEMO_EMAIL, startSampleTenancy } from "@/lib/seed";
 import { emailLandlord } from "@/lib/workflow";
-import { chatPreview } from "@/lib/phone";
+import { outboundBubble } from "@/lib/phone";
 
 const auth = vi.hoisted(() => ({ authorization: "" }));
 
@@ -184,9 +184,9 @@ describe("account deletion and reviewer sign-in", () => {
       expect(saved?.body).toContain("Maya Chen\n1842 N Echo Park Ave, Unit 3\nLos Angeles, CA 90026");
       expect(saved?.body).toContain("Reply to this email or tap Respond.");
       expect(saved?.body).not.toMatch(/The tenant wrote|Message from your tenant/);
-      const preview = chatPreview(saved?.body || "");
-      expect(preview.text).toContain("Maya Chen");
-      expect(preview.text).toContain("Los Angeles, CA 90026");
+      const preview = outboundBubble(saved?.body || "");
+      expect(preview.text).toBe("Please fix the sink.");
+      expect(preview.text).not.toContain("Maya Chen");
       expect(preview.text).not.toContain("Respond without an account");
       expect(preview.detail).toContain("/r/sample");
     } finally {

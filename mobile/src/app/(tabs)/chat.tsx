@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { FlatList, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { FlatList, Image, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/api";
 import { Address } from "@/address";
@@ -15,9 +15,12 @@ import { useLoad } from "@/use-load";
 import { NextSteps, type StepItem } from "@/next-steps";
 import { asksForName, NamePrompt } from "@/name-prompt";
 import * as ImagePicker from "expo-image-picker";
+import { PhotoThumb } from "@/photo-thumb";
 
 type Action = { id: string; label: string };
-type RepairForm = { summary: string; description: string; room: string | null; tier: "routine" | "urgent"; suggested: "routine" | "urgent" };
+type RepairPhoto = { key?: string; fileId?: string; photoId?: string; name: string; mime?: string; base64?: string; preview?: string };
+type RepairForm = { summary: string; description: string; room: string | null; tier: "routine" | "urgent"; suggested: "routine" | "urgent"; photos?: { fileId: string; name: string }[] };
+type LibraryPhoto = { id: string; fileId: string; name: string };
 type Item =
   | { role: "user"; text: string }
   | { role: "card"; headline: string; status: string; action: Action | null; actions?: Action[]; detail: string; ruleId: string | null; legal?: boolean; notice?: Notice; badge?: "urgent" | "violation"; sender?: string; safety?: string; form?: RepairForm; address?: { street?: string; unit?: string; city?: string; region?: string; postalCode?: string } | null };
@@ -31,6 +34,7 @@ type Thread = {
   notice: Notice;
   steps?: { title: string; held: string; items: StepItem[] };
   issues?: { id: string; title: string }[];
+  library?: LibraryPhoto[];
   packetFile?: string;
 };
 type Attachment = { name: string; mime: string; base64: string };
@@ -69,7 +73,7 @@ export default function AssistantChat() {
     return () => clearTimeout(timer);
   }, [pending]);
 
-  async function send(text: string, extra?: { action?: string; draftId?: string; attachment?: Attachment | null; summary?: string; description?: string; tier?: string }) {
+  async function send(text: string, extra?: { action?: string; draftId?: string; attachment?: Attachment | null; summary?: string; description?: string; tier?: string; photos?: RepairPhoto[] }) {
     const body = text.trim();
     const attachment = extra && "attachment" in extra ? extra.attachment ?? null : file;
     if (!token || lock.current || busy) return;
@@ -80,7 +84,7 @@ export default function AssistantChat() {
       setPending(body);
       setRetryNote("");
       setError("");
-      await reload(await api<Thread>("thread", { token, body: { text: body, action: extra?.action, draftId: extra?.draftId, attachment, summary: extra?.summary, description: extra?.description, tier: extra?.tier } }));
+      await reload(await api<Thread>("thread", { token, body: { text: body, action: extra?.action, draftId: extra?.draftId, attachment, summary: extra?.summary, description: extra?.description, tier: extra?.tier, photos: extra?.photos } }));
       setDraft("");
       setFile(null);
       setLinkIssue(null);
@@ -133,7 +137,7 @@ export default function AssistantChat() {
     else void send(draft);
   }
 
-  async function onAction(action: Action, form?: { summary: string; description: string; tier: string }) {
+  async function onAction(action: Action, form?: { summary: string; description: string; tier: string; photos?: RepairPhoto[] }) {
     if (action.id === "add-unit") {
       router.push("/setup");
       return;
@@ -173,7 +177,7 @@ export default function AssistantChat() {
       return;
     }
     if (action.id.startsWith("repair-save:")) {
-      await send("", { action: action.id, summary: form?.summary, description: form?.description, tier: form?.tier });
+      await send("", { action: action.id, summary: form?.summary, description: form?.description, tier: form?.tier, photos: form?.photos });
       return;
     }
     if (action.id.startsWith("repair-cancel:") || action.id.startsWith("repair-undo:") || action.id.startsWith("repair-keep:") || action.id.startsWith("resolve:") || action.id.startsWith("merge:") || action.id === "repair-new") {
@@ -341,7 +345,7 @@ export default function AssistantChat() {
               <View style={styles.userBubble}><Text style={styles.userText}>{item.text}</Text></View>
             </View>
           ) : (
-            <CardView item={item} spanish={spanish} busy={busy} onAction={onAction} onNameSaved={() => { void reload(); }} />
+            <CardView item={item} spanish={spanish} busy={busy} token={token} library={data?.library || []} onAction={onAction} onNameSaved={() => { void reload(); }} />
           )}
         />
         <ErrorLine message={error} />
@@ -421,14 +425,23 @@ export default function AssistantChat() {
   );
 }
 
-function CardView({ item, spanish, busy, onAction, onNameSaved }: { item: Extract<Item, { role: "card" }>; spanish: boolean; busy: boolean; onAction: (action: Action, form?: { summary: string; description: string; tier: string }) => void; onNameSaved: () => void }) {
+function CardView({ item, spanish, busy, token, library, onAction, onNameSaved }: { item: Extract<Item, { role: "card" }>; spanish: boolean; busy: boolean; token: string | null; library: LibraryPhoto[]; onAction: (action: Action, form?: { summary: string; description: string; tier: string; photos?: RepairPhoto[] }) => void; onNameSaved: () => void }) {
   const [advice, setAdvice] = useState(false);
   const [details, setDetails] = useState(false);
   const [summary, setSummary] = useState(item.form?.summary || "");
-  const [description, setDescription] = useState(item.form?.description || "");
+  const [description, setDescription] = useState(item.form && item.form.description.trim() === item.form.summary.trim() ? "" : (item.form?.description || ""));
   const [tier, setTier] = useState<"routine" | "urgent">(item.form?.tier || "routine");
+  const [photos, setPhotos] = useState<RepairPhoto[]>(() => (item.form?.photos || []).map((photo) => ({ key: photo.fileId, fileId: photo.fileId, name: photo.name })));
+  const [photoMenu, setPhotoMenu] = useState<"add" | "library" | null>(null);
   const summaryRef = useRef<TextInput>(null);
-  const actions = item.actions?.length ? item.actions : item.action ? [item.action] : [];
+  const actions = (item.actions?.length ? item.actions : item.action ? [item.action] : []).filter((action) => !action.id.startsWith("repair-edit:"));
+  async function addNewPhoto() {
+    setPhotoMenu(null);
+    const result = await ImagePicker.launchImageLibraryAsync({ base64: true, mediaTypes: ["images"], quality: 0.6 });
+    const asset = result.assets?.[0];
+    if (!asset?.base64) return;
+    setPhotos((current) => current.length >= 4 ? current : [...current, { key: `${Date.now()}`, name: asset.fileName || "photo.jpg", mime: asset.mimeType || "image/jpeg", base64: asset.base64, preview: asset.uri }]);
+  }
   const picker = actions.some((action) => action.id === "reset" || action.id.startsWith("prompt:"));
   const looks = tier === "urgent"
     ? (spanish ? "Parece urgente, cámbielo si no." : "Looks urgent, change if not.")
@@ -446,7 +459,38 @@ function CardView({ item, spanish, busy, onAction, onNameSaved }: { item: Extrac
           <TextInput ref={summaryRef} value={summary} onChangeText={setSummary} style={styles.field} accessibilityLabel={spanish ? "Resumen" : "Summary"} />
           {item.form.room ? <Text style={styles.detail}>{item.form.room}</Text> : null}
           <Text style={styles.fieldLabel}>{spanish ? "Descripción" : "Description"}</Text>
-          <TextInput value={description} onChangeText={setDescription} style={[styles.field, styles.fieldTall]} multiline accessibilityLabel={spanish ? "Descripción" : "Description"} />
+          <TextInput value={description} onChangeText={setDescription} placeholder={spanish ? "Agregue detalles (opcional)" : "Add details (optional)"} placeholderTextColor={colors.mute} style={[styles.field, styles.fieldTall]} multiline accessibilityLabel={spanish ? "Descripción" : "Description"} />
+          <Pressable onPress={() => setPhotoMenu((open) => open ? null : "add")} accessibilityRole="button" accessibilityLabel={spanish ? "Agregar fotos" : "Add photos"}>
+            <Text style={styles.note}>{spanish ? "Agregar fotos" : "Add photos"}</Text>
+          </Pressable>
+          {photoMenu === "add" ? (
+            <View style={styles.menu}>
+              <Pressable style={styles.menuButton} onPress={() => void addNewPhoto()} accessibilityRole="button" accessibilityLabel={spanish ? "Foto nueva" : "New photo"}><Text style={styles.menuText}>{spanish ? "Foto nueva" : "New photo"}</Text></Pressable>
+              <Pressable style={styles.menuButton} onPress={() => setPhotoMenu("library")} accessibilityRole="button" accessibilityLabel={spanish ? "Foto ya guardada" : "Existing photo"}><Text style={styles.menuText}>{spanish ? "Foto ya guardada" : "Existing photo"}</Text></Pressable>
+            </View>
+          ) : null}
+          {photoMenu === "library" ? (
+            <View style={styles.menu}>
+              {library.map((photo) => (
+                <Pressable key={photo.id} accessibilityRole="button" accessibilityLabel={photo.name || (spanish ? "Foto guardada" : "Saved photo")} onPress={() => setPhotos((current) => current.some((item) => item.fileId === photo.fileId) || current.length >= 4 ? current : [...current, { key: photo.id, name: photo.name, fileId: photo.fileId, photoId: photo.id }])}>
+                  <PhotoThumb fileId={photo.fileId} token={token} />
+                </Pressable>
+              ))}
+              {library.length === 0 ? <Text style={styles.detail}>{spanish ? "Aún no hay fotos guardadas." : "No saved photos yet."}</Text> : null}
+            </View>
+          ) : null}
+          {photos.length ? (
+            <View style={styles.menu}>
+              {photos.map((photo) => (
+                <View key={photo.key || photo.fileId || photo.name}>
+                  {photo.preview ? <Image source={{ uri: photo.preview }} style={styles.draftThumb} /> : photo.fileId ? <PhotoThumb fileId={photo.fileId} token={token} /> : null}
+                  <Pressable accessibilityRole="button" accessibilityLabel={spanish ? "Quitar foto" : "Remove photo"} onPress={() => setPhotos((current) => current.filter((item) => item !== photo))}>
+                    <Text style={styles.note}>{spanish ? "Quitar" : "Remove"}</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          ) : null}
           <View style={styles.tiers}>
             {([
               ["routine", spanish ? "Rutina" : "Routine"],
@@ -479,11 +523,7 @@ function CardView({ item, spanish, busy, onAction, onNameSaved }: { item: Extrac
             key={action.id}
             style={suggestion ? styles.suggest : reset ? styles.cancel : styles.action}
             onPress={() => {
-              if (action.id.startsWith("repair-edit:")) {
-                summaryRef.current?.focus();
-                return;
-              }
-              if (action.id.startsWith("repair-save:")) onAction(action, { summary, description, tier });
+              if (action.id.startsWith("repair-save:")) onAction(action, { summary, description, tier, photos: photos.map(({ fileId, photoId, name, mime, base64 }) => ({ fileId, photoId, name, mime, base64 })) });
               else onAction(action);
             }}
             disabled={busy}
@@ -556,6 +596,7 @@ const styles = StyleSheet.create({
   fieldLabel: { color: colors.mute, fontSize: 13, fontWeight: "700", marginTop: 10 },
   field: { marginTop: 4, minHeight: 44, borderWidth: 1, borderColor: colors.line, borderRadius: 12, backgroundColor: colors.paper, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, color: colors.ink },
   fieldTall: { minHeight: 72, textAlignVertical: "top" },
+  draftThumb: { width: 72, height: 72, borderRadius: 10, backgroundColor: colors.line },
   tiers: { flexDirection: "row", gap: 8, marginTop: 10 },
   tierButton: { minHeight: 44, borderRadius: 999, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 14, justifyContent: "center", backgroundColor: colors.paper },
   tierOn: { borderColor: colors.pine, backgroundColor: "#E7F3F1" },

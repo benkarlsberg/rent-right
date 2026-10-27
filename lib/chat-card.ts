@@ -26,6 +26,7 @@ export type ChatCard = {
     room: string | null;
     tier: "routine" | "urgent";
     suggested: "routine" | "urgent";
+    photos?: { fileId: string; name: string }[];
   };
 };
 
@@ -114,12 +115,21 @@ function readForm(value: unknown): ChatCard["form"] | null {
   const tier = row.tier === "urgent" || row.tier === "routine" ? row.tier : null;
   const suggested = row.suggested === "urgent" || row.suggested === "routine" ? row.suggested : null;
   if (typeof row.summary !== "string" || !tier || !suggested) return null;
+  const photos = Array.isArray(row.photos)
+    ? row.photos.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const photo = item as { fileId?: unknown; name?: unknown };
+        if (typeof photo.fileId !== "string" || !photo.fileId) return [];
+        return [{ fileId: photo.fileId, name: typeof photo.name === "string" && photo.name ? photo.name : "photo.jpg" }];
+      }).slice(0, 4)
+    : [];
   return {
     summary: row.summary,
     description: typeof row.description === "string" ? row.description : "",
     room: typeof row.room === "string" ? row.room : null,
     tier,
     suggested,
+    ...(photos.length ? { photos } : {}),
   };
 }
 

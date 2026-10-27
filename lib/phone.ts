@@ -1,6 +1,7 @@
 import { DISCLAIMER_EN, legalNotice, type LegalNotice, type Locale } from "@/lib/disclaimer";
 import { formatDate } from "@/lib/format";
 import { daysBetween } from "@/lib/rules/dates";
+import { REPLY_LINE } from "@/lib/tenant-mail";
 
 export type BubbleSide = "tenant" | "landlord";
 
@@ -19,6 +20,24 @@ export function chatPreview(body: string): { text: string; detail: string | null
   const text = body.slice(0, cut).trim();
   const detail = body.slice(cut).trim();
   return { text: text || body.trim(), detail: detail || null };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Name, address, and the reply line belong on the email. The bubble keeps the words the tenant typed. */
+export function outboundBubble(body: string): { text: string; detail: string | null } {
+  const preview = chatPreview(body);
+  const reply = preview.text.replace(new RegExp(`(?:\\n|\\s)*${escapeRegExp(REPLY_LINE)}\\s*$`, "i"), "").trim();
+  const blocks = reply.split(/\n{2,}/);
+  const head = (blocks[0] || "").split("\n").map((line) => line.trim()).filter(Boolean);
+  const wrapped = body.includes(REPLY_LINE);
+  if (wrapped && head.length === 3 && blocks.length >= 2 && head.every((line) => line.length <= 120)) {
+    const text = blocks.slice(1).join("\n\n").trim();
+    if (text) return { text, detail: preview.detail };
+  }
+  return { text: reply || preview.text, detail: preview.detail };
 }
 
 export function failureCause(status: string, detail: string | null): string | null {

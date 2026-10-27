@@ -764,6 +764,14 @@ export async function promoteDraftMessage(userId: string, id: string, patch: {
 }
 
 /** Keep the landlord's new words in the bubble and the untouched email beside them. */
+export async function saveOutboundBodies(id: string, body: string, rawBody: string): Promise<void> {
+  if (hasUserActor()) return withActor(null, () => saveOutboundBodies(id, body, rawBody));
+  await run(
+    "update messages set body_enc = ?, raw_body_enc = coalesce(raw_body_enc, ?) where id = ? and direction = 'outbound'",
+    [encryptString(body), encryptString(rawBody), id],
+  );
+}
+
 export async function saveInboundBodies(id: string, body: string, rawBody: string): Promise<void> {
   if (hasUserActor()) return withActor(null, () => saveInboundBodies(id, body, rawBody));
   await run(
@@ -1267,6 +1275,7 @@ export async function getCondition(userId: string, id: string) {
 export type StoredPhoto = {
   id: string;
   fileId: string;
+  name: string;
   room: string;
   caption: string;
   link: string;
@@ -1279,12 +1288,19 @@ export type StoredPhoto = {
 export async function listPhotos(userId: string, unitId: string): Promise<StoredPhoto[]> {
   await requireUnit(userId, unitId);
   const rows = await all<{
-    id: string; file_id: string; room: string | null; caption: string | null; link: string;
+    id: string; file_id: string; file_name: string | null; room: string | null; caption: string | null; link: string;
     log_id: string | null; report_id: string | null; message_id: string | null; created_at: string;
-  }>("select * from photos where unit_id = ? order by created_at desc", [unitId]);
+  }>(
+    `select photos.id, photos.file_id, files.name as file_name, photos.room, photos.caption, photos.link,
+            photos.log_id, photos.report_id, photos.message_id, photos.created_at
+     from photos left join files on files.id = photos.file_id
+     where photos.unit_id = ? order by photos.created_at desc`,
+    [unitId],
+  );
   return rows.map((row) => ({
     id: row.id,
     fileId: row.file_id,
+    name: row.file_name || "",
     room: row.room || "",
     caption: row.caption || "",
     link: row.link,

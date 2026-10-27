@@ -34,6 +34,7 @@ import {
   listMessages,
   messageForUser,
   saveDraftBody,
+  saveOutboundBodies,
   updateMessageStatus,
   setLandlordContact,
   setLandlordEmail,
@@ -78,6 +79,7 @@ import { aidLinks, aidText, isIssueTier, timelinePointer, violationFlag } from "
 import {
   chatPreview,
   deliveryLine,
+  outboundBubble,
   dueLine,
   findingStatus,
   logKind,
@@ -94,14 +96,14 @@ import { appUrl, relayAddress, tx } from "@/lib/text";
 import { chatTurnShowsSteps, parseCard, replyShowsNotice } from "@/lib/chat-card";
 import { inboundDisplay, EMPTY_REPLY } from "@/email/plain";
 import { isResponseNote, landlordBubble, refileResponseNotes, settleQuotedInbound } from "@/lib/inbound-reply";
-import { describeTenantMail, outboundSubject, senderForCard } from "@/lib/tenant-mail";
+import { describeTenantMail, outboundSubject, REPLY_LINE, senderForCard } from "@/lib/tenant-mail";
 import { runChatTurn } from "@/lib/chat-turn";
 import { drainRoundTrips, withActor } from "@/lib/pg";
 import { archivedNote, previewResidence, residencePayload, saveResidence, selectResidence } from "@/lib/residence";
 import { hideIssue, hideNote, issueHistory, issueSummary, recordRulesIssue, refreshIssueTiers, reopenRepair, resolveRepair, restoreNote, setIssueTier } from "@/lib/issues";
 import { deleteReminder, dismissReminder, restoreReminder } from "@/lib/reminders";
 import { confirmedOutbound, ensureRepairDeadline, ensureRepairDrafts } from "@/lib/repair-draft";
-import { photoFilename, rejectPhotoSet } from "@/lib/message-photos";
+import { isBrandAsset, photoFilename, rejectPhotoSet } from "@/lib/message-photos";
 import { askAssistant, emailLandlord, extractPdfOrText, recordLog, runLeaseReview, sampleLeaseText, saveDepositAndDeadline, type OutgoingPhoto } from "@/lib/workflow";
 
 function json(data: unknown, status = 200) {
@@ -733,7 +735,7 @@ function presentChat(user: User, unit: Unit, messages: ListedMessage[], photos: 
   const mail = described.ready
     ? { ready: true as const, name: described.name, line1: described.line1, line2: described.line2, subject: described.subject, missing: "" }
     : { ready: false as const, name: "", line1: "", line2: "", subject: "", missing: described.missing };
-  const thumbs = (messageId: string) => photos.filter((photo) => photo.messageId === messageId).map((photo) => ({
+  const thumbs = (messageId: string) => photos.filter((photo) => photo.messageId === messageId && !isBrandAsset(photo.name)).map((photo) => ({
     id: photo.id,
     fileId: photo.fileId,
   }));
@@ -757,13 +759,14 @@ function presentChat(user: User, unit: Unit, messages: ListedMessage[], photos: 
     items: messages.map((message) => {
       const draft = message.deliveryStatus === "draft";
       const inbound = message.direction === "inbound" && !draft;
-      const preview = chatPreview(message.body);
+      const preview = chatPreview(message.rawBody || message.body);
+      const outbound = !draft && message.direction !== "inbound" ? outboundBubble(message.rawBody || message.body) : null;
       const shown = inbound ? inboundDisplay(message.body, message.rawBody) : null;
       return {
         id: message.id,
         side: messageSide(message.direction),
-        text: draft ? message.body : shown ? landlordBubble(emptyReply(shown.text, locale), locale) : preview.text,
-        detail: draft || shown ? null : preview.detail,
+        text: draft ? message.body : shown ? landlordBubble(emptyReply(shown.text, locale), locale) : outbound ? outbound.text : preview.text,
+        detail: draft || shown ? null : outbound ? outbound.detail : preview.detail,
         original: shown?.original || null,
         subject: draft && described.ready ? outboundSubject(message.subject, described) : message.subject,
         time: formatTimestamp(message.createdAt, locale),
@@ -804,14 +807,28 @@ async function syncDelivery(messages: ListedMessage[]): Promise<ListedMessage[]>
   return messages.map((message) => updates.get(message.id) || message);
 }
 
+async function unwrapOutbound(messages: ListedMessage[]): Promise<ListedMessage[]> {
+  const updates = new Map<string, ListedMessage>();
+  for (const message of messages) {
+    if (message.direction !== "outbound" || message.deliveryStatus === "draft") continue;
+    if (!message.body.includes(REPLY_LINE)) continue;
+    const bubble = outboundBubble(message.rawBody || message.body);
+    if (!bubble.text || bubble.text === message.body) continue;
+    await saveOutboundBodies(message.id, bubble.text, message.rawBody || message.body);
+    updates.set(message.id, { ...message, body: bubble.text, rawBody: message.rawBody || message.body });
+  }
+  return messages.map((message) => updates.get(message.id) || message);
+}
+
 async function visibleMessages(user: User, unit: Unit) {
   const [logs, messages] = await Promise.all([listLogs(user.id, unit.id), listMessages(user.id, unit.id)]);
   const refiled = await refileResponseNotes(user, unit, logs);
   const current = refiled ? await listMessages(user.id, unit.id) : messages;
   const settled = await settleQuotedInbound(current);
   const synced = await syncDelivery(settled);
-  const created = await ensureRepairDrafts(user, unit, logs, synced);
-  return [...synced, ...created].filter((message) => message.deliveryStatus !== "discarded");
+  const unwrapped = await unwrapOutbound(synced);
+  const created = await ensureRepairDrafts(user, unit, logs, unwrapped);
+  return [...unwrapped, ...created].filter((message) => message.deliveryStatus !== "discarded");
 }
 
 async function chatContext(user: User, unit: Unit) {
@@ -1241,12 +1258,31 @@ async function threadPayload() {
   const user = await actor();
   const unit = await primaryUnit(user.id);
   if (!unit) return emptyThread(user, await listAssistant(user.id, "visible"));
-  const [rows, bundle] = await Promise.all([
+  const [rows, bundle, photos] = await Promise.all([
     listAssistant(user.id, "visible"),
     recordsBundle(user, unit, { reviews: false }),
+    listPhotos(user.id, unit.id),
   ]);
   const issues = bundle.issues.map((issue) => ({ id: issue.id, title: issue.title }));
-  return presentThread(user, unit, rows, bundle.steps, issues.map((issue) => issue.title), issues);
+  return {
+    ...presentThread(user, unit, rows, bundle.steps, issues.map((issue) => issue.title), issues),
+    library: photos.map((photo) => ({ id: photo.id, fileId: photo.fileId, name: photo.name || photo.caption || "photo.jpg" })),
+  };
+}
+
+function readDraftPhotos(value: unknown): { fileId?: string; photoId?: string; name?: string; mime?: string; base64?: string }[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.slice(0, 4).flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as { fileId?: unknown; photoId?: unknown; name?: unknown; mime?: unknown; base64?: unknown };
+    return [{
+      fileId: typeof row.fileId === "string" ? row.fileId : undefined,
+      photoId: typeof row.photoId === "string" ? row.photoId : undefined,
+      name: typeof row.name === "string" ? row.name : undefined,
+      mime: typeof row.mime === "string" ? row.mime : undefined,
+      base64: typeof row.base64 === "string" ? row.base64 : undefined,
+    }];
+  });
 }
 
 async function postThread(input: Record<string, unknown>) {
@@ -1274,6 +1310,7 @@ async function postThread(input: Record<string, unknown>) {
     summary: text(input.summary),
     description: text(input.description),
     tier: text(input.tier),
+    photos: readDraftPhotos(input.photos),
   });
   return threadPayload();
 }

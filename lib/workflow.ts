@@ -32,7 +32,7 @@ import {
 } from "@/lib/db";
 import { landlordMessageBody, sendRelayEmail } from "@/lib/email";
 import { mailHeader, outboundSubject, REPLY_LINE, requireTenantMail } from "@/lib/tenant-mail";
-import { photoFilename, rejectPhotoSet } from "@/lib/message-photos";
+import { isBrandAsset, photoFilename, rejectPhotoSet } from "@/lib/message-photos";
 import { messageParagraphs, renderMail } from "@/lib/email-template";
 import { LIBRARY_VERSION, type Locale } from "@/lib/disclaimer";
 import { isIssueTier, reminderPace, tierForSeverity } from "@/lib/triage";
@@ -273,7 +273,7 @@ export async function emailLandlord(input: {
   const photos = [...staged, ...(input.photos || []).filter((photo) => !photo.existingPhotoId || !staged.some((item) => item.existingPhotoId === photo.existingPhotoId))];
   const tooBig = rejectPhotoSet(photos.map((photo) => ({ mime: photo.mime, bytes: photo.bytes.length })));
   if (tooBig) throw new Error(tooBig);
-  const attachments = photos.map((photo) => ({
+  const attachments = photos.filter((photo) => !isBrandAsset(photo.name)).map((photo) => ({
     filename: photoFilename(photo.name, photo.mime),
     content: photo.bytes.toString("base64"),
     contentType: photo.mime || "image/jpeg",

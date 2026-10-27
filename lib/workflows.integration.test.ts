@@ -1079,6 +1079,9 @@ describe("renter workflows", () => {
     expect(JSON.stringify(draft.json)).toMatch(/Save this issue/i);
     expect(JSON.stringify(draft.json)).toMatch(/Looks urgent, change if not/i);
     expect(JSON.stringify(draft.json)).toMatch(/Save issue/);
+    const draftCard = ((draft.json?.items as { form?: { description?: string }; actions?: { label: string }[] }[]) || []).find((item) => item.form);
+    expect(draftCard?.form?.description).toBe("");
+    expect(draftCard?.actions?.some((action) => action.label === "Edit")).toBe(false);
     const empty = await api("GET", "records", undefined, token);
     expect((empty.json?.issues as unknown[]) || []).toHaveLength(0);
     expect(((empty.json?.deadlines as { kind: string }[]) || []).some((item) => item.kind === "repair")).toBe(false);
@@ -1100,6 +1103,13 @@ describe("renter workflows", () => {
     }, token);
     expect(saved.status).toBe(200);
     expect(JSON.stringify(saved.json)).toMatch(/Repair logged/i);
+    expect(JSON.stringify(saved.json)).toMatch(/Want to add photos/);
+    const gif = "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+    const pictured = await api("POST", "thread", { attachment: { name: "tap.gif", mime: "image/gif", base64: gif } }, token);
+    expect(pictured.status).toBe(200);
+    expect(JSON.stringify(pictured.json)).toMatch(/Photo added/);
+    const withPhoto = await api("GET", "records", undefined, token);
+    expect(((withPhoto.json?.issues as { photos?: unknown[] }[])[0]?.photos || []).length).toBeGreaterThan(0);
     const open = await api("GET", "records", undefined, token);
     const issue = (open.json?.issues as { id: string; tier?: string }[])[0];
     expect(issue?.tier).toBe("urgent");

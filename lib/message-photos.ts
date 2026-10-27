@@ -24,6 +24,12 @@ export function rejectPhotoSet(files: { mime: string; bytes: number }[]): string
   return null;
 }
 
+/** The email wordmark is not a tenant photo. Hide it if a file with that name was stored. */
+export function isBrandAsset(name: string): boolean {
+  const base = name.toLowerCase().split(/[/\\]/).pop() || "";
+  return /(^|[^a-z0-9])(logo|favicon|apple-touch|icon-192|icon-512)([^a-z0-9]|$)/.test(base);
+}
+
 export function photoFilename(name: string, mime: string): string {
   const cleaned = name.replace(/[/\\]/g, " ").replace(/[^\w.\- ]+/g, "").trim().slice(0, 80);
   if (cleaned && /\.(jpe?g|png|webp|gif)$/i.test(cleaned)) return cleaned;

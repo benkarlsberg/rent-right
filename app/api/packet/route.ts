@@ -59,6 +59,7 @@ export async function GET() {
     }))),
     images,
     messageImages: photos.filter((photo) => photo.messageId).map((photo) => ({ messageId: photo.messageId as string, fileId: photo.fileId })),
+    issueImages: photos.filter((photo) => photo.logId && !photo.messageId).map((photo) => ({ logId: photo.logId as string, fileId: photo.fileId })),
   });
   const pdf = await renderPacket(model);
   const filename = evidenceFilename(todayISO());

@@ -1,5 +1,5 @@
 import { DISCLAIMER_EN, DISCLAIMER_SHORT_EN } from "@/lib/disclaimer";
-import { chatPreview, deliveryLabel, deliveryLine, dueLine, findingStatus, fullDisclaimerIsCanonical, messageSide, rentHeadline } from "@/lib/phone";
+import { chatPreview, deliveryLabel, deliveryLine, dueLine, findingStatus, fullDisclaimerIsCanonical, messageSide, outboundBubble, rentHeadline } from "@/lib/phone";
 import { describe, expect, it } from "vitest";
 
 describe("phone presentation", () => {
@@ -33,6 +33,13 @@ describe("phone presentation", () => {
     expect(deliveryLabel("delivered", true, "en")).toBe("Delivered · opened");
     expect(deliveryLabel("local_only", false, "es")).toBe("Guardado");
     expect(deliveryLabel("bounced", false, "en")).toBe("Not sent");
+  });
+
+  it("keeps the typed words in the sent bubble", () => {
+    const body = "Maya Chen\n1842 N Echo Park Ave, Unit 3\nLos Angeles, CA 90026\n\nPlease fix the sink.\n\nReply to this email or tap Respond.\n\nRespond without an account:\nhttps://app.rentrightportal.com/r/sample";
+    const preview = outboundBubble(body);
+    expect(preview.text).toBe("Please fix the sink.");
+    expect(preview.detail).toContain("/r/sample");
   });
 
   it("names the provider reason when a send is rejected", () => {
