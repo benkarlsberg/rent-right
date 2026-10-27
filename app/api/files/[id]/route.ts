@@ -13,7 +13,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     headers: {
       "content-type": file.mime || "application/octet-stream",
       "content-disposition": `inline; filename="${file.name.replace(/"/g, "")}"`,
-      "cache-control": "private, no-store",
+      "cache-control": "private, max-age=86400, immutable",
     },
   });
   });

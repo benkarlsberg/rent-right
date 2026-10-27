@@ -309,7 +309,12 @@ async function noteTier(user: User, unit: Unit, issueId: string, description: st
 export async function refreshIssueTiers(user: User, unit: Unit, logs: LogEntry[], messages: Message[], deadlines: Deadline[]): Promise<boolean> {
   if (unit.archivedAt) return false;
   const today = todayISO();
-  const responses = await listLandlordResponses(user.id, unit.id);
+  let responses: Awaited<ReturnType<typeof listLandlordResponses>> | null = null;
+  const landlordResponses = async () => {
+    if (responses) return responses;
+    responses = await listLandlordResponses(user.id, unit.id);
+    return responses;
+  };
   let changed = false;
   for (const log of logs) {
     if (log.flags?.removed === true) continue;
@@ -336,9 +341,10 @@ export async function refreshIssueTiers(user: User, unit: Unit, logs: LogEntry[]
     const tier = log.tier && isIssueTier(log.tier) ? log.tier : tierForSeverity(log.severity);
     const due = deadlines.find((item) => item.kind === "repair" && item.sourceId === log.id && item.dueDate)?.dueDate
       || repairReminder((log.eventDate || today).slice(0, 10), asRepairSeverity(log.severity)).dueDate;
+    if (!shouldEscalate({ tier, manual: false, open: true, due, today, replied: false })) continue;
     const ids = new Set(messages.filter((message) => message.logEntryId === log.id).map((message) => message.id));
     const replied = messages.some((message) => message.logEntryId === log.id && message.direction === "inbound")
-      || responses.some((response) => Boolean(response.message_id && ids.has(response.message_id)));
+      || (await landlordResponses()).some((response) => Boolean(response.message_id && ids.has(response.message_id)));
     if (!shouldEscalate({ tier, manual: false, open: true, due, today, replied })) continue;
     const note = escalationNote(user.locale, due || today, isHabitability(log.severity));
     await setLogTier(user.id, log.id, "possible_violation", {

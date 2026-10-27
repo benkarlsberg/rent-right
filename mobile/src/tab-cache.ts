@@ -8,7 +8,8 @@ import {
   type BootstrapBody,
 } from "@/tab-store";
 
-const FRESH_MS = 15_000;
+const FRESH_MS = 60_000;
+const BOOTSTRAP_GAP_MS = 20_000;
 
 type Slot = { data: unknown; at: number };
 
@@ -16,6 +17,7 @@ const slots = new Map<string, Slot>();
 const inflight = new Map<string, Promise<unknown>>();
 let bootstrapFlight: { userId: string; promise: Promise<void> } | null = null;
 let bootstrapSerial = 0;
+const bootstrapAttempt = new Map<string, number>();
 
 function cacheKey(token: string, path: string) {
   return `${userIdFromToken(token)}\0${path}`;
@@ -24,6 +26,7 @@ function cacheKey(token: string, path: string) {
 export function clearTabCache() {
   bootstrapSerial += 1;
   bootstrapFlight = null;
+  bootstrapAttempt.clear();
   slots.clear();
   inflight.clear();
   clearTabMemory();
@@ -42,6 +45,11 @@ export function refreshBootstrap(token: string, force: boolean): Promise<void> {
   const userId = userIdFromToken(token);
   if (!force && !needsBootstrap(token)) return Promise.resolve();
   if (!force && bootstrapFlight?.userId === userId) return bootstrapFlight.promise;
+  if (!force) {
+    const previous = bootstrapAttempt.get(userId) ?? 0;
+    if (Date.now() - previous < BOOTSTRAP_GAP_MS) return Promise.resolve();
+  }
+  bootstrapAttempt.set(userId, Date.now());
   const serial = ++bootstrapSerial;
   const started = tabGeneration();
   const promise = api<BootstrapBody>("bootstrap", { token })

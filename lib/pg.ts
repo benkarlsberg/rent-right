@@ -9,6 +9,10 @@ type Scope = {
   sql?: Sql;
   opening?: Promise<Sql>;
   memo?: Map<string, Promise<unknown>>;
+  tx?: Tx;
+  release?: (commit: boolean) => void;
+  txDone?: Promise<void>;
+  tail?: Promise<void>;
 };
 
 let roundTrips = 0;
@@ -26,6 +30,13 @@ function noteRoundTrip() {
 /** Share one in-flight read across the request so parallel callers do not repeat it. */
 export function dropRequestMemo(key: string) {
   actors.getStore()?.memo?.delete(key);
+}
+
+export function seedRequestMemo<T>(key: string, value: T) {
+  const scope = actors.getStore();
+  if (!scope) return;
+  if (!scope.memo) scope.memo = new Map();
+  if (!scope.memo.has(key)) scope.memo.set(key, Promise.resolve(value));
 }
 
 export function requestMemo<T>(key: string, load: () => Promise<T>): Promise<T> {
@@ -310,10 +321,12 @@ async function applyRole(tx: Tx, userId: string | null) {
   }
 }
 
-// Each authenticated statement runs in its own transaction. postgres.js reserve()
-// never settles when fetch_types is false, which is how the Hyperdrive client is
-// opened, so a request-long reserved connection left signed-in /me hanging.
-// set local keeps the role on this transaction so a pooled connection cannot keep it.
+// Reads in one request share a transaction so the role is set once. Hyperdrive
+// counts every statement, and repeating set_config plus SET ROLE around each
+// read tripled a home load. Writes still commit on their own so a later failure
+// cannot roll back a message that was already stored. postgres.js reserve()
+// never settles when fetch_types is false, which is how the Hyperdrive client
+// is opened, so this does not keep a reserved connection.
 export async function withActor<T>(userId: string | null, fn: () => Promise<T>): Promise<T> {
   const current = actors.getStore();
   if (current && current.userId === userId) return fn();
@@ -321,10 +334,15 @@ export async function withActor<T>(userId: string | null, fn: () => Promise<T>):
   try {
     return await actors.run(scope, fn);
   } finally {
-    const sql = scope.sql;
-    scope.sql = undefined;
-    scope.opening = undefined;
-    if (sql) await sql.end({ timeout: 1 }).catch(() => {});
+    try {
+      await scope.tail?.catch(() => {});
+      await finishShared(scope, true);
+    } finally {
+      const sql = scope.sql;
+      scope.sql = undefined;
+      scope.opening = undefined;
+      if (sql) await sql.end({ timeout: 1 }).catch(() => {});
+    }
   }
 }
 
@@ -341,25 +359,92 @@ function readResult(result: unknown): { rows: Record<string, unknown>[]; count: 
   return { rows, count: Number((result as { count?: number }).count ?? rows.length) };
 }
 
+function isWrite(sql: string): boolean {
+  const word = sql.trimStart().slice(0, 12).toLowerCase();
+  return word.startsWith("insert") || word.startsWith("update") || word.startsWith("delete");
+}
+
+function enqueue<T>(scope: Scope, job: () => Promise<T>): Promise<T> {
+  const prev = scope.tail ?? Promise.resolve();
+  const run = prev.then(job, job);
+  scope.tail = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+async function finishShared(scope: Scope, commit: boolean) {
+  const release = scope.release;
+  scope.release = undefined;
+  scope.tx = undefined;
+  if (!release) return;
+  release(commit);
+  await scope.txDone?.catch(() => {});
+  scope.txDone = undefined;
+}
+
+async function ensureShared(scope: Scope, db: Sql, userId: string): Promise<Tx> {
+  if (scope.tx) return scope.tx;
+  let resolveReady: (tx: Tx) => void = () => {};
+  let rejectReady: (error: unknown) => void = () => {};
+  const ready = new Promise<Tx>((resolve, reject) => {
+    resolveReady = resolve;
+    rejectReady = reject;
+  });
+  const done = db.begin(async (tx) => {
+    try {
+      await applyRole(tx, userId);
+      scope.tx = tx;
+      resolveReady(tx);
+    } catch (error) {
+      rejectReady(error);
+      throw error;
+    }
+    await new Promise<void>((resolve, reject) => {
+      scope.release = (commit) => (commit ? resolve() : reject(new Error("rollback")));
+    });
+  }) as Promise<void>;
+  scope.txDone = done.then(() => undefined, () => undefined);
+  return ready;
+}
+
+async function statementExecute(db: Sql, userId: string, text: string, params: unknown[]) {
+  return await (db.begin(async (tx) => {
+    await applyRole(tx, userId);
+    noteRoundTrip();
+    return readResult(await tx.unsafe(text, params as never[]));
+  }) as Promise<{ rows: Record<string, unknown>[]; count: number }>);
+}
+
+async function executeAuthed(scope: Scope, userId: string, text: string, params: unknown[]) {
+  const db = await client();
+  if (isWrite(text)) {
+    await finishShared(scope, true);
+    return statementExecute(db, userId, text, params);
+  }
+  const tx = await ensureShared(scope, db, userId);
+  try {
+    noteRoundTrip();
+    return readResult(await tx.unsafe(text, params as never[]));
+  } catch (error) {
+    await finishShared(scope, false);
+    throw error;
+  }
+}
+
 async function execute(sql: string, params: unknown[]): Promise<{ rows: Record<string, unknown>[]; count: number }> {
   const text = placeholders(sql);
   const scope = actors.getStore();
   const userId = scope?.userId ?? null;
-  const db = await client();
-  const transient = cloudflareRuntime() && !scope;
-  try {
-    if (!userId) {
+  if (!scope || !userId) {
+    const db = await client();
+    const transient = cloudflareRuntime() && !scope;
+    try {
       noteRoundTrip();
       return readResult(await db.unsafe(text, params as never[]));
+    } finally {
+      if (transient) await db.end({ timeout: 1 }).catch(() => {});
     }
-    return await (db.begin(async (tx) => {
-      await applyRole(tx, userId);
-      noteRoundTrip();
-      return readResult(await tx.unsafe(text, params as never[]));
-    }) as Promise<{ rows: Record<string, unknown>[]; count: number }>);
-  } finally {
-    if (transient) await db.end({ timeout: 1 }).catch(() => {});
   }
+  return enqueue(scope, () => executeAuthed(scope, userId, text, params));
 }
 
 export async function all<T>(sql: string, params: unknown[] = []): Promise<T[]> {

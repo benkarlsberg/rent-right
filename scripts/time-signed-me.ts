@@ -99,7 +99,7 @@ async function main(): Promise<void> {
   if (!account) throw new Error("No real account was found.");
   console.log(`has_unit: ${account.hasUnit}`);
   const token = signSession(account.id);
-  const repeats = 5;
+  const repeats = 2;
   const apiSamples: { status: number | "timeout"; ms: number; hasUser: boolean; serverMs: number | null }[] = [];
   const bootstrapSamples: { status: number | "timeout"; ms: number; ok: boolean; serverMs: number | null }[] = [];
   for (let sample = 1; sample <= repeats; sample += 1) {

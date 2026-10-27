@@ -1,6 +1,6 @@
 export const TAB_PATHS = ["thread", "chat", "records"] as const;
 export type TabPath = (typeof TAB_PATHS)[number];
-export const TAB_STALE_MS = 30_000;
+export const TAB_STALE_MS = 3 * 60_000;
 
 export type BootstrapBody = {
   thread: unknown;

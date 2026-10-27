@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { displayUnit, formatAddressPlain } from "@/lib/address-format";
 import { encryptChatText, openDraftPayload, readChatText, sealDraftPayload } from "@/lib/chat-text";
 import { decryptString, encryptString, hashToken, randomToken, shortCode } from "@/lib/crypto";
-import { all, dropRequestMemo, hasUserActor, one, requestMemo, run, withActor } from "@/lib/pg";
+import { all, dropRequestMemo, hasUserActor, one, requestMemo, run, seedRequestMemo, withActor } from "@/lib/pg";
 import { deleteSupabaseAuthUser, sendSupabaseMagicLink, supabaseAuthConfigured, userFromSupabaseOtp } from "@/lib/supabase-auth";
 import type { Locale } from "@/lib/disclaimer";
 import type { LeaseReview } from "@/lib/lease/review";
@@ -330,7 +330,9 @@ export async function primaryUnit(userId: string) {
     [userId, userId],
   );
   if (!row) return null;
-  return mapUnit(row, row.role === "owner" ? "owner" : "roommate");
+  const unit = mapUnit(row, row.role === "owner" ? "owner" : "roommate");
+  seedRequestMemo(`unit:${userId}:${unit.id}`, unit);
+  return unit;
 }
 
 export async function listResidences(userId: string): Promise<Unit[]> {

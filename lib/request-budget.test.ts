@@ -56,7 +56,7 @@ async function get(userId: string, path: string) {
 }
 
 describe("tab reads", () => {
-  it("finishes signed-in tab reads with a short transaction per statement", async () => {
+  it("finishes signed-in tab reads without repeating the role setup", async () => {
     const suffix = randomUUID().slice(0, 8);
     const user = await createNamedUser(`budget-${suffix}@example.com`, "Maya Chen");
     const unit = await createUnit(user.id, unitInput(`${suffix} N Echo Park Ave`));
@@ -83,16 +83,16 @@ describe("tab reads", () => {
     expect(chat.status).toBe(200);
     const shown = `${titleCase(`${suffix} N Echo Park Ave`)}, Unit 25\nLos Angeles, CA 90026`;
     expect(records.json?.address).toBe(shown);
-    expect(records.trips, `records queries ${records.trips}`).toBeLessThanOrEqual(48);
-    expect(thread.trips, `thread queries ${thread.trips}`).toBeLessThanOrEqual(48);
-    expect(chat.trips, `chat queries ${chat.trips}`).toBeLessThanOrEqual(36);
+    expect(records.trips, `records queries ${records.trips}`).toBeLessThanOrEqual(20);
+    expect(thread.trips, `thread queries ${thread.trips}`).toBeLessThanOrEqual(20);
+    expect(chat.trips, `chat queries ${chat.trips}`).toBeLessThanOrEqual(24);
     const bootstrap = await get(user.id, "bootstrap");
     expect(bootstrap.status).toBe(200);
     expect(bootstrap.json?.records && (bootstrap.json.records as { address?: string }).address).toBe(shown);
     expect(Array.isArray((bootstrap.json?.chat as { items?: unknown[] } | undefined)?.items)).toBe(true);
     expect((bootstrap.json?.thread as { landlord?: string } | undefined)?.landlord).toBe("Elena Vasquez");
     expect(bootstrap.trips, `bootstrap queries ${bootstrap.trips}`).toBeLessThan(records.trips + thread.trips + chat.trips);
-    expect(bootstrap.trips, `bootstrap queries ${bootstrap.trips}`).toBeLessThanOrEqual(40);
+    expect(bootstrap.trips, `bootstrap queries ${bootstrap.trips}`).toBeLessThanOrEqual(16);
     expect(readFileSync("lib/pg.ts", "utf8")).not.toContain(".reserve(");
     const deadlines = records.json?.deadlines as { id: string; closed?: boolean }[] | undefined;
     const open = deadlines?.find((item) => item.closed === false);
