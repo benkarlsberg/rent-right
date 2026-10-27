@@ -185,6 +185,7 @@ jobs:
           if [ -f .database-url ]; then export DATABASE_URL="$(cat .database-url)"; fi
           npx tsx --conditions=react-server scripts/report-outbound.ts
       - name: Time signed /me after deploy
+        continue-on-error: true
         if: steps.hyperdrive.outcome == 'success'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
