@@ -273,7 +273,11 @@ export async function emailLandlord(input: {
   const photos = [...staged, ...(input.photos || []).filter((photo) => !photo.existingPhotoId || !staged.some((item) => item.existingPhotoId === photo.existingPhotoId))];
   const tooBig = rejectPhotoSet(photos.map((photo) => ({ mime: photo.mime, bytes: photo.bytes.length })));
   if (tooBig) throw new Error(tooBig);
-  const attachments = photos.map((photo) => ({ filename: photoFilename(photo.name, photo.mime), content: photo.bytes.toString("base64") }));
+  const attachments = photos.map((photo) => ({
+    filename: photoFilename(photo.name, photo.mime),
+    content: photo.bytes.toString("base64"),
+    contentType: photo.mime || "image/jpeg",
+  }));
   const photoLine = photos.length === 1 ? "1 photo is attached to this email." : photos.length > 1 ? `${photos.length} photos are attached to this email.` : "";
   if (isSampleAccount(input.user.email)) {
     const messageId = await storeLandlordMail({

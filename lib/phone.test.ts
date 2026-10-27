@@ -1,5 +1,5 @@
 import { DISCLAIMER_EN, DISCLAIMER_SHORT_EN } from "@/lib/disclaimer";
-import { chatPreview, deliveryLabel, dueLine, findingStatus, fullDisclaimerIsCanonical, messageSide, rentHeadline } from "@/lib/phone";
+import { chatPreview, deliveryLabel, deliveryLine, dueLine, findingStatus, fullDisclaimerIsCanonical, messageSide, rentHeadline } from "@/lib/phone";
 import { describe, expect, it } from "vitest";
 
 describe("phone presentation", () => {
@@ -32,6 +32,13 @@ describe("phone presentation", () => {
     expect(deliveryLabel("delivered", false, "en")).toBe("Delivered");
     expect(deliveryLabel("delivered", true, "en")).toBe("Delivered · opened");
     expect(deliveryLabel("local_only", false, "es")).toBe("Guardado");
+    expect(deliveryLabel("bounced", false, "en")).toBe("Not sent");
+  });
+
+  it("names the provider reason when a send is rejected", () => {
+    expect(deliveryLine("failed", "The landlord email address is not valid.", false, "en")).toBe("Not sent: The landlord email address is not valid.");
+    expect(deliveryLine("bounced", "Mailbox not found for pat@example.com", false, "en")).toBe("Not sent: Mailbox not found for the address");
+    expect(deliveryLine("sent", "Accepted by the email provider. Delivery status updates when a webhook arrives.", false, "en")).toBe("Sent");
   });
 
   it("counts days until a deadline", () => {

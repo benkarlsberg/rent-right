@@ -34,6 +34,7 @@ import {
   listMessages,
   messageForUser,
   saveDraftBody,
+  updateMessageStatus,
   setLandlordContact,
   setLandlordEmail,
   insertCondition,
@@ -76,14 +77,14 @@ import {
 import { aidLinks, aidText, isIssueTier, timelinePointer, violationFlag } from "@/lib/triage";
 import {
   chatPreview,
-  deliveryLabel,
+  deliveryLine,
   dueLine,
   findingStatus,
   logKind,
   messageSide,
   rentHeadline,
 } from "@/lib/phone";
-import { sendTenantEmail } from "@/lib/email";
+import { lookupProviderDelivery, sendTenantEmail } from "@/lib/email";
 import { signInMessage, signInUrl } from "@/lib/email-template";
 import { currentUser, sessionUserId } from "@/lib/session";
 import { reviewerEmail, reviewerMatch } from "@/lib/reviewer";
@@ -766,7 +767,7 @@ function presentChat(user: User, unit: Unit, messages: ListedMessage[], photos: 
         original: shown?.original || null,
         subject: draft && described.ready ? outboundSubject(message.subject, described) : message.subject,
         time: formatTimestamp(message.createdAt, locale),
-        status: draft ? draftLabels(locale).draft : deliveryLabel(message.deliveryStatus, message.openIndicative, locale),
+        status: draft ? draftLabels(locale).draft : deliveryLine(message.deliveryStatus, message.deliveryDetail, message.openIndicative, locale),
         draft,
         logId: message.logEntryId,
         photos: thumbs(message.id),
@@ -780,13 +781,37 @@ function emptyReply(text: string, locale: Locale): string {
   return tx(locale, EMPTY_REPLY, "La respuesta no tenía texto nuevo.");
 }
 
+async function syncDelivery(messages: ListedMessage[]): Promise<ListedMessage[]> {
+  const due = messages.filter((message) => {
+    if (message.direction !== "outbound" || !message.providerId) return false;
+    if (message.deliveryStatus !== "sent" && message.deliveryStatus !== "delayed") return false;
+    const age = Date.now() - Date.parse(message.statusAt);
+    return Number.isFinite(age) && age > 15_000;
+  }).slice(0, 4);
+  if (!due.length) return messages;
+  const updates = new Map<string, ListedMessage>();
+  for (const message of due) {
+    const found = await lookupProviderDelivery(message.providerId || "");
+    if (!found || found.status === message.deliveryStatus) continue;
+    await updateMessageStatus(message.providerId || "", found.status, found.detail, found.open);
+    updates.set(message.id, {
+      ...message,
+      deliveryStatus: found.status,
+      deliveryDetail: found.detail,
+      openIndicative: message.openIndicative || found.open,
+    });
+  }
+  return messages.map((message) => updates.get(message.id) || message);
+}
+
 async function visibleMessages(user: User, unit: Unit) {
   const [logs, messages] = await Promise.all([listLogs(user.id, unit.id), listMessages(user.id, unit.id)]);
   const refiled = await refileResponseNotes(user, unit, logs);
   const current = refiled ? await listMessages(user.id, unit.id) : messages;
   const settled = await settleQuotedInbound(current);
-  const created = await ensureRepairDrafts(user, unit, logs, settled);
-  return [...settled, ...created].filter((message) => message.deliveryStatus !== "discarded");
+  const synced = await syncDelivery(settled);
+  const created = await ensureRepairDrafts(user, unit, logs, synced);
+  return [...synced, ...created].filter((message) => message.deliveryStatus !== "discarded");
 }
 
 async function chatContext(user: User, unit: Unit) {

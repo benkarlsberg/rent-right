@@ -176,6 +176,14 @@ jobs:
           '
           npx wrangler secret bulk worker-secrets.json
           rm -f worker-secrets.json
+      - name: Check the latest landlord send
+        continue-on-error: true
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: |
+          if [ -f .database-url ]; then export DATABASE_URL="$(cat .database-url)"; fi
+          npx tsx --conditions=react-server scripts/report-outbound.ts
       - name: Time signed /me after deploy
         if: steps.hyperdrive.outcome == 'success'
         env:

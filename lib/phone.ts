@@ -21,6 +21,17 @@ export function chatPreview(body: string): { text: string; detail: string | null
   return { text: text || body.trim(), detail: detail || null };
 }
 
+export function failureCause(status: string, detail: string | null): string | null {
+  if (!detail) return null;
+  if (status !== "failed" && status !== "bounced" && status !== "complained") return null;
+  const cleaned = detail
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "the address")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned || /^email\./i.test(cleaned) || /^accepted by the email provider/i.test(cleaned)) return null;
+  return cleaned.slice(0, 180);
+}
+
 export function deliveryLabel(status: string, openIndicative: boolean, locale: Locale): string {
   const labels: Record<string, [string, string]> = {
     local_only: ["Saved", "Guardado"],
@@ -28,12 +39,23 @@ export function deliveryLabel(status: string, openIndicative: boolean, locale: L
     delivered: ["Delivered", "Entregado"],
     received: ["Received", "Recibido"],
     failed: ["Not sent", "No enviado"],
+    bounced: ["Not sent", "No enviado"],
+    complained: ["Not sent", "No enviado"],
+    delayed: ["Delayed", "Demorado"],
+    opened: ["Delivered", "Entregado"],
     blocked: ["Blocked", "Bloqueado"],
   };
   const pair = labels[status] || [status, status];
   const base = locale === "es" ? pair[1] : pair[0];
-  if (!openIndicative) return base;
+  if (!openIndicative && status !== "opened") return base;
   return locale === "es" ? `${base} · abierto` : `${base} · opened`;
+}
+
+/** Sent stays Sent. A rejected send names the provider's reason. */
+export function deliveryLine(status: string, detail: string | null, openIndicative: boolean, locale: Locale): string {
+  const label = deliveryLabel(status, openIndicative, locale);
+  const cause = failureCause(status, detail);
+  return cause ? `${label}: ${cause}` : label;
 }
 
 export function dueLine(due: string | null, today: string, locale: Locale): { title: string; subtitle: string } {
