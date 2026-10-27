@@ -439,8 +439,9 @@ function CardView({ item, spanish, busy, token, library, onAction, onNameSaved }
     setPhotoMenu(null);
     const result = await ImagePicker.launchImageLibraryAsync({ base64: true, mediaTypes: ["images"], quality: 0.6 });
     const asset = result.assets?.[0];
-    if (!asset?.base64) return;
-    setPhotos((current) => current.length >= 4 ? current : [...current, { key: `${Date.now()}`, name: asset.fileName || "photo.jpg", mime: asset.mimeType || "image/jpeg", base64: asset.base64, preview: asset.uri }]);
+    const base64 = asset?.base64;
+    if (!asset || !base64) return;
+    setPhotos((current) => current.length >= 4 ? current : [...current, { key: `${Date.now()}`, name: asset.fileName || "photo.jpg", mime: asset.mimeType || "image/jpeg", base64, preview: asset.uri }]);
   }
   const picker = actions.some((action) => action.id === "reset" || action.id.startsWith("prompt:"));
   const looks = tier === "urgent"
