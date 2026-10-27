@@ -13,6 +13,7 @@ import { colors } from "@/theme";
 import { ErrorLine, clipX, wrapMarker, wrapText } from "@/ui";
 import { useLoad } from "@/use-load";
 import { NextSteps, type StepItem } from "@/next-steps";
+import { asksForName, NamePrompt } from "@/name-prompt";
 import * as ImagePicker from "expo-image-picker";
 
 type Action = { id: string; label: string };
@@ -335,7 +336,7 @@ export default function AssistantChat() {
               <View style={styles.userBubble}><Text style={styles.userText}>{item.text}</Text></View>
             </View>
           ) : (
-            <CardView item={item} spanish={spanish} busy={busy} onAction={onAction} />
+            <CardView item={item} spanish={spanish} busy={busy} onAction={onAction} onNameSaved={() => { void reload(); }} />
           )}
         />
         <ErrorLine message={error} />
@@ -415,7 +416,7 @@ export default function AssistantChat() {
   );
 }
 
-function CardView({ item, spanish, busy, onAction }: { item: Extract<Item, { role: "card" }>; spanish: boolean; busy: boolean; onAction: (action: Action) => void }) {
+function CardView({ item, spanish, busy, onAction, onNameSaved }: { item: Extract<Item, { role: "card" }>; spanish: boolean; busy: boolean; onAction: (action: Action) => void; onNameSaved: () => void }) {
   const [advice, setAdvice] = useState(false);
   const [details, setDetails] = useState(false);
   const actions = item.actions?.length ? item.actions : item.action ? [item.action] : [];
@@ -426,7 +427,7 @@ function CardView({ item, spanish, busy, onAction }: { item: Extract<Item, { rol
       {item.badge === "urgent" ? <Text style={styles.urgent}>{spanish ? "Urgente" : "Urgent"}</Text> : null}
       {item.badge === "violation" ? <Text style={styles.flag}>{spanish ? "Esto puede no seguir las reglas de California" : "This may not follow California rules"}</Text> : null}
       {item.status ? <Text style={styles.status}>{item.status}</Text> : null}
-      {item.sender ? <Text style={[styles.detail, wrapText]}>{item.sender}</Text> : null}
+      {item.sender && asksForName(item.sender) ? <NamePrompt message={item.sender} onSaved={onNameSaved} /> : item.sender ? <Text style={[styles.detail, wrapText]}>{item.sender}</Text> : null}
       {item.sender?.includes("\n") ? null : item.address?.street || item.address?.city ? (
         <Address street={item.address.street} unit={item.address.unit} city={item.address.city} region={item.address.region} postalCode={item.address.postalCode} style={styles.detail} />
       ) : null}

@@ -7,10 +7,13 @@ import {
   messageByToken,
   peekUnit,
   saveFile,
+  saveInboundBodies,
   unitMemberUserIds,
+  type Message,
   type Unit,
 } from "@/lib/db";
 import { messagePhotoError, photoFilename, MAX_MESSAGE_PHOTOS, MAX_MESSAGE_PHOTO_BYTES, MAX_MESSAGE_PHOTO_TOTAL } from "@/lib/message-photos";
+import { landlordReplyText } from "@/email/plain";
 import { relayAddress } from "@/lib/text";
 
 export type InboundPhoto = { name: string; mime: string; bytes: Buffer };
@@ -76,6 +79,7 @@ export async function recordLandlordChatReply(input: {
   fromEmail: string;
   subject: string;
   body: string;
+  rawBody?: string | null;
   providerId: string;
   logEntryId: string | null;
   photos?: InboundPhoto[];
@@ -94,6 +98,7 @@ export async function recordLandlordChatReply(input: {
       toEmail: relayAddress(input.unit.relayLocal),
       subject: input.subject || "(no subject)",
       body,
+      rawBody: input.rawBody?.trim() || null,
       deliveryStatus: "received",
       deliveryDetail: "Inbound reply in the landlord thread.",
       providerId: input.providerId,
@@ -135,6 +140,22 @@ export async function logEntryForReply(unitId: string, raw: string): Promise<str
 
 export async function unitForReply(unitId: string): Promise<Unit | null> {
   return peekUnit(unitId);
+}
+
+/** Existing inbound rows stored the quoted original in the bubble. Split that into raw mail plus the new text. */
+export async function settleQuotedInbound(messages: Message[]): Promise<Message[]> {
+  const next: Message[] = [];
+  for (const message of messages) {
+    if (message.direction !== "inbound" || message.rawBody) {
+      next.push(message);
+      continue;
+    }
+    const raw = message.body;
+    const body = landlordReplyText(raw);
+    await saveInboundBodies(message.id, body, raw);
+    next.push({ ...message, body, rawBody: raw });
+  }
+  return next;
 }
 
 function duplicateKey(error: unknown): boolean {

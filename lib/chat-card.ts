@@ -18,6 +18,15 @@ export type ChatCard = {
   badge?: "urgent" | "violation";
   /** Name and two-line address shown before a landlord email is sent. */
   sender?: string;
+  /** Shown on a repair draft before anything is saved. Gas, CO, and fire stay visible. */
+  safety?: string;
+  form?: {
+    summary: string;
+    description: string;
+    room: string | null;
+    tier: "routine" | "urgent";
+    suggested: "routine" | "urgent";
+  };
 };
 
 export type CardKind = "prompt" | "cited" | "cited-quiet" | "cited-issue" | "issue";
@@ -78,6 +87,7 @@ export function parseCard(content: string): ChatCard | null {
       ? value.actions.filter((item): item is ChatAction => Boolean(item) && typeof item.id === "string" && typeof item.label === "string")
       : [];
     const address = readAddress(value.address);
+    const form = readForm(value.form);
     return {
       headline: value.headline,
       status: value.status,
@@ -90,10 +100,27 @@ export function parseCard(content: string): ChatCard | null {
       ...(typeof value.showSteps === "boolean" ? { showSteps: value.showSteps } : {}),
       ...(value.badge === "urgent" || value.badge === "violation" ? { badge: value.badge } : {}),
       ...(typeof value.sender === "string" && value.sender ? { sender: value.sender } : {}),
+      ...(typeof value.safety === "string" && value.safety ? { safety: value.safety } : {}),
+      ...(form ? { form } : {}),
     };
   } catch {
     return null;
   }
+}
+
+function readForm(value: unknown): ChatCard["form"] | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  const tier = row.tier === "urgent" || row.tier === "routine" ? row.tier : null;
+  const suggested = row.suggested === "urgent" || row.suggested === "routine" ? row.suggested : null;
+  if (typeof row.summary !== "string" || !tier || !suggested) return null;
+  return {
+    summary: row.summary,
+    description: typeof row.description === "string" ? row.description : "",
+    room: typeof row.room === "string" ? row.room : null,
+    tier,
+    suggested,
+  };
 }
 
 function readAddress(value: unknown): AddressParts | null {

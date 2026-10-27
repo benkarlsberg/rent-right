@@ -47,6 +47,12 @@ export function isConfirm(text: string): boolean {
   return /^(yes[, ]+)?(please[, ]+)?(send( it| this| the email| to( my)? landlord)?|si[, ]+envialo|envialo)$/.test(fold(text));
 }
 
+/** Whole message only, so "no hot water" stays a repair. */
+export function isDraftDiscard(text: string): boolean {
+  const value = fold(text).replace(/[.,]+$/g, "").trim();
+  return value === "never mind" || value === "nevermind" || value === "cancel" || value === "no" || value === "forget it" || value === "olvidalo";
+}
+
 export function extractDate(text: string): string | null {
   const iso = text.match(/\b(20\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]))\b/);
   if (iso) return iso[1];

@@ -602,6 +602,7 @@ export type Message = {
   openIndicative: boolean;
   providerId: string | null;
   responseToken: string | null;
+  rawBody: string | null;
   createdAt: string;
   statusAt: string;
 };
@@ -622,6 +623,7 @@ type MessageRow = {
   open_indicative: number;
   provider_id: string | null;
   response_token: string | null;
+  raw_body_enc: string | null;
   created_at: string;
   status_at: string;
 };
@@ -643,6 +645,7 @@ function mapMessage(row: MessageRow): Message {
     openIndicative: isOn(row.open_indicative),
     providerId: row.provider_id,
     responseToken: row.response_token,
+    rawBody: row.raw_body_enc ? decryptString(row.raw_body_enc) : null,
     createdAt: row.created_at,
     statusAt: row.status_at,
   };
@@ -679,6 +682,7 @@ export async function insertMessage(input: {
   deliveryDetail?: string | null;
   providerId?: string | null;
   responseToken?: string | null;
+  rawBody?: string | null;
   createdAt?: string;
 }) {
   const id = randomUUID();
@@ -686,12 +690,12 @@ export async function insertMessage(input: {
   await run(
     `insert into messages (
       id, unit_id, user_id, log_entry_id, direction, from_email, to_email, cc_email, subject, body_enc,
-      delivery_status, delivery_detail, provider_id, response_token, created_at, status_at
-    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      delivery_status, delivery_detail, provider_id, response_token, created_at, status_at, raw_body_enc
+    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id, input.unitId, input.userId, input.logEntryId || null, input.direction, input.fromEmail, input.toEmail,
       input.ccEmail || null, input.subject, encryptString(input.body), input.deliveryStatus, input.deliveryDetail || null,
-      input.providerId || null, input.responseToken || null, now, now,
+      input.providerId || null, input.responseToken || null, now, now, input.rawBody ? encryptString(input.rawBody) : null,
     ],
   );
   const row = await one<MessageRow>("select * from messages where id = ?", [id]);
@@ -757,6 +761,23 @@ export async function promoteDraftMessage(userId: string, id: string, patch: {
     [encryptString(patch.body), patch.subject, patch.toEmail, patch.deliveryStatus, patch.deliveryDetail, patch.providerId, patch.responseToken, now, now, id],
   );
   if (!result.changes) throw new HttpError("This message was already sent.");
+}
+
+/** Keep the landlord's new words in the bubble and the untouched email beside them. */
+export async function saveInboundBodies(id: string, body: string, rawBody: string): Promise<void> {
+  if (hasUserActor()) return withActor(null, () => saveInboundBodies(id, body, rawBody));
+  await run(
+    "update messages set body_enc = ?, raw_body_enc = ? where id = ? and direction = 'inbound' and raw_body_enc is null",
+    [encryptString(body), encryptString(rawBody), id],
+  );
+}
+
+export async function fillEmptyProfileName(id: string, name: string): Promise<void> {
+  const clean = name.trim().replace(/\s+/g, " ");
+  if (!clean) return;
+  const current = await getUser(id);
+  if (!current || current.name.trim()) return;
+  await updateUser(id, { name: clean });
 }
 
 export async function setLandlordEmail(userId: string, unitId: string, email: string) {

@@ -91,7 +91,9 @@ import { DEMO_EMAIL, startSampleTenancy } from "@/lib/seed";
 import { userFromAppleIdToken } from "@/lib/supabase-auth";
 import { appUrl, relayAddress, tx } from "@/lib/text";
 import { chatTurnShowsSteps, parseCard, replyShowsNotice } from "@/lib/chat-card";
-import { describeTenantMail, outboundSubject } from "@/lib/tenant-mail";
+import { inboundDisplay, EMPTY_REPLY } from "@/email/plain";
+import { settleQuotedInbound } from "@/lib/inbound-reply";
+import { describeTenantMail, outboundSubject, senderForCard } from "@/lib/tenant-mail";
 import { runChatTurn } from "@/lib/chat-turn";
 import { drainRoundTrips, withActor } from "@/lib/pg";
 import { archivedNote, previewResidence, residencePayload, saveResidence, selectResidence } from "@/lib/residence";
@@ -370,7 +372,7 @@ async function route(request: Request, path: string[]): Promise<Response> {
     const remote = await userFromAppleIdToken(text(input.identityToken), text(input.nonce));
     if (!remote) throw new Error("Could not sign in with Apple.");
     const user = await profileForAuthUser(remote.id, remote.email);
-    const name = text(input.name);
+    const name = text(input.name) || remote.name;
     if (name && !user.name) await updateUser(user.id, { name });
     const fresh = await getUser(user.id);
     if (!fresh) throw new Error("Could not sign in with Apple.");
@@ -750,12 +752,15 @@ function presentChat(user: User, unit: Unit, messages: ListedMessage[], photos: 
     })),
     items: messages.map((message) => {
       const draft = message.deliveryStatus === "draft";
+      const inbound = message.direction === "inbound" && !draft;
       const preview = chatPreview(message.body);
+      const shown = inbound ? inboundDisplay(message.body, message.rawBody) : null;
       return {
         id: message.id,
         side: messageSide(message.direction),
-        text: draft ? message.body : preview.text,
-        detail: draft ? null : preview.detail,
+        text: draft ? message.body : shown ? emptyReply(shown.text, locale) : preview.text,
+        detail: draft || shown ? null : preview.detail,
+        original: shown?.original || null,
         subject: draft && described.ready ? outboundSubject(message.subject, described) : message.subject,
         time: formatTimestamp(message.createdAt, locale),
         status: draft ? draftLabels(locale).draft : deliveryLabel(message.deliveryStatus, message.openIndicative, locale),
@@ -767,10 +772,16 @@ function presentChat(user: User, unit: Unit, messages: ListedMessage[], photos: 
   };
 }
 
+function emptyReply(text: string, locale: Locale): string {
+  if (text !== EMPTY_REPLY) return text;
+  return tx(locale, EMPTY_REPLY, "La respuesta no tenía texto nuevo.");
+}
+
 async function visibleMessages(user: User, unit: Unit) {
   const [logs, messages] = await Promise.all([listLogs(user.id, unit.id), listMessages(user.id, unit.id)]);
-  const created = await ensureRepairDrafts(user, unit, logs, messages);
-  return [...messages, ...created].filter((message) => message.deliveryStatus !== "discarded");
+  const settled = await settleQuotedInbound(messages);
+  const created = await ensureRepairDrafts(user, unit, logs, settled);
+  return [...settled, ...created].filter((message) => message.deliveryStatus !== "discarded");
 }
 
 async function chatContext(user: User, unit: Unit) {
@@ -1174,7 +1185,11 @@ function emptyThread(user: User, rows: ListedAssistant[] = []) {
 
 function presentThread(user: User, unit: Unit, rows: ListedAssistant[], steps: { title: string; held: string; items: unknown[] }, issueTitles: string[] = [], issues: { id: string; title: string }[] = []) {
   const locale = user.locale;
-  const items = threadItems(locale, rows);
+  const items = threadItems(locale, rows).map((item) => {
+    if (item.role !== "card" || typeof item.sender !== "string") return item;
+    const sender = senderForCard(user, unit, item.sender);
+    return sender === item.sender ? item : { ...item, sender };
+  });
   const visibleSteps = chatTurnShowsSteps(rows, issueTitles) ? steps : { ...steps, items: [] };
   return {
     landlord: landlordReady(unit) ? unit.landlordName : "",
@@ -1240,8 +1255,9 @@ async function loadHomeRows(user: User, unit: Unit, options?: { reviews?: boolea
   ]);
   const changed = await refreshIssueTiers(user, unit, firstLogs, storedMessages, deadlines);
   const logs = changed ? await listLogs(user.id, unit.id) : firstLogs;
-  const createdDrafts = await ensureRepairDrafts(user, unit, logs, storedMessages);
-  const messages = [...storedMessages, ...createdDrafts].filter((message) => message.deliveryStatus !== "discarded");
+  const settled = await settleQuotedInbound(storedMessages);
+  const createdDrafts = await ensureRepairDrafts(user, unit, logs, settled);
+  const messages = [...settled, ...createdDrafts].filter((message) => message.deliveryStatus !== "discarded");
   return { deadlines, logs, messages, reviews, assistant };
 }
 
@@ -1763,10 +1779,10 @@ async function saveSettings(input: Record<string, unknown>) {
   const user = await actor();
   const locale: Locale = input.locale === "es" ? "es" : input.locale === "en" ? "en" : user.locale;
   await updateUser(user.id, {
-    name: text(input.name) || user.name,
-    phone: text(input.phone),
+    name: typeof input.name === "string" ? text(input.name) : user.name,
+    phone: typeof input.phone === "string" ? text(input.phone) : user.phone,
     locale,
-    lowBandwidth: input.lowBandwidth === true,
+    lowBandwidth: typeof input.lowBandwidth === "boolean" ? input.lowBandwidth : user.lowBandwidth,
   });
   const fresh = await getUser(user.id);
   if (!fresh) throw new Error("Sign in required.");

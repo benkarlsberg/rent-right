@@ -167,12 +167,13 @@ const URGENT = new Set<RepairSeverity>([
   "wiring",
 ]);
 
-export function repairReminder(requestDate: string, severity: RepairSeverity): DatedResult {
+export function repairReminder(requestDate: string, severity: RepairSeverity, pace?: "routine" | "urgent"): DatedResult {
   const rule = getRule("CA-CC-1942");
   let days = 30;
   let preset = "The 30-day figure is the presumption in Civil Code §1942.";
   let presetEs = "La cifra de 30 días es la presunción del Código Civil §1942.";
-  if (URGENT.has(severity)) {
+  const urgent = pace ? pace === "urgent" : URGENT.has(severity);
+  if (urgent) {
     days = 3;
     preset =
       "Rent Right uses a 3-day reminder preset for urgent conditions such as no heat, no hot water, no water, no electricity, a gas smell, sewage backup, a broken exterior door or lock, a broken window, no working toilet, flooding, a carbon monoxide alarm, or a fire hazard or exposed wiring. That number is not in the statute. Section 1942 says a shorter time than 30 days can be reasonable when the condition is urgent.";
@@ -185,7 +186,9 @@ export function repairReminder(requestDate: string, severity: RepairSeverity): D
     ruleId: "CA-CC-1942",
     citation: rule?.citation ?? "Cal. Civ. Code §1942",
     unsure: false,
-    computation: `${requestDate} + ${days} days = ${due} (${severity})`,
+    computation: pace
+      ? `${requestDate} + ${days} days = ${due} (${severity}, ${pace})`
+      : `${requestDate} + ${days} days = ${due} (${severity})`,
     explanation: `${preset} The reminder date is ${due}. It is not a decision about anyone's legal responsibility.`,
     explanationEs: `${presetEs} La fecha del recordatorio es ${due}. No es una decisión sobre la responsabilidad legal de nadie.`,
   });

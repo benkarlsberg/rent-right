@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { acceptInvite, consumeMagicLink, profileForAuthUser } from "@/lib/db";
+import { acceptInvite, consumeMagicLink, fillEmptyProfileName, getUser, profileForAuthUser } from "@/lib/db";
 import { signSession } from "@/lib/crypto";
 import { setSessionCookie } from "@/lib/session";
 import { userFromGoogleCode, userFromSupabaseAccessToken } from "@/lib/supabase-auth";
@@ -75,11 +75,17 @@ async function userFromGoogle(code: string) {
   jar.delete("rr_pkce");
   const remote = await userFromGoogleCode(code, stored);
   if (!remote) throw new Error("Could not sign in with Google.");
-  return profileForAuthUser(remote.id, remote.email);
+  return profileWithSignInName(remote.id, remote.email, remote.name);
 }
 
 async function userFromAccessToken(accessToken: string) {
   const remote = await userFromSupabaseAccessToken(accessToken);
   if (!remote) throw new Error("Could not sign in with Google.");
-  return profileForAuthUser(remote.id, remote.email);
+  return profileWithSignInName(remote.id, remote.email, remote.name);
+}
+
+async function profileWithSignInName(id: string, email: string, name: string) {
+  const user = await profileForAuthUser(id, email);
+  await fillEmptyProfileName(user.id, name);
+  return (await getUser(user.id)) || user;
 }

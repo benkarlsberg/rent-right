@@ -104,7 +104,30 @@ export function startAppleSignIn(): Promise<{ url: string; pkce: string }> {
   return startOAuth("apple");
 }
 
-export async function userFromAppleIdToken(identityToken: string, nonce: string): Promise<{ id: string; email: string } | null> {
+export type AuthIdentity = { id: string; email: string; name: string };
+
+export function nameFromAuthUser(user: { user_metadata?: unknown; identities?: { identity_data?: unknown }[] } | null | undefined): string {
+  const sources = [user?.user_metadata, ...(user?.identities || []).map((item) => item.identity_data)];
+  for (const source of sources) {
+    const name = nameFromMetadata(source);
+    if (name) return name;
+  }
+  return "";
+}
+
+function nameFromMetadata(source: unknown): string {
+  if (!source || typeof source !== "object") return "";
+  const meta = source as Record<string, unknown>;
+  const full = metaString(meta.full_name) || metaString(meta.name);
+  if (full) return full;
+  return [metaString(meta.given_name), metaString(meta.family_name)].filter(Boolean).join(" ");
+}
+
+function metaString(value: unknown): string {
+  return typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+}
+
+export async function userFromAppleIdToken(identityToken: string, nonce: string): Promise<AuthIdentity | null> {
   if (!identityToken || !nonce || !supabaseAuthConfigured()) return null;
   const supabase = client(process.env.SUPABASE_ANON_KEY!);
   const { data, error } = await supabase.auth.signInWithIdToken({
@@ -114,7 +137,7 @@ export async function userFromAppleIdToken(identityToken: string, nonce: string)
   });
   const email = data.user?.email || "";
   if (error || !data.user || !email) return null;
-  return { id: data.user.id, email };
+  return { id: data.user.id, email, name: nameFromAuthUser(data.user) };
 }
 
 /** Deletes the Auth user with the service role. Returns false when that key is not configured. */
@@ -126,7 +149,7 @@ export async function deleteSupabaseAuthUser(userId: string): Promise<boolean> {
   return true;
 }
 
-export async function userFromGoogleCode(code: string, stored: string): Promise<{ id: string; email: string } | null> {
+export async function userFromGoogleCode(code: string, stored: string): Promise<AuthIdentity | null> {
   if (!code || !supabaseAuthConfigured()) return null;
   let flowId: string | null = null;
   const storage = memoryStorage();
@@ -148,15 +171,15 @@ export async function userFromGoogleCode(code: string, stored: string): Promise<
     console.error("Google sign-in exchange failed:", error?.name || "Error", error?.message || "no user");
     return null;
   }
-  return { id: data.user.id, email: data.user.email };
+  return { id: data.user.id, email: data.user.email, name: nameFromAuthUser(data.user) };
 }
 
-export async function userFromSupabaseAccessToken(token: string): Promise<{ id: string; email: string } | null> {
+export async function userFromSupabaseAccessToken(token: string): Promise<AuthIdentity | null> {
   if (!token || !supabaseAuthConfigured()) return null;
   const supabase = client(process.env.SUPABASE_ANON_KEY!);
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data.user?.email) return null;
-  return { id: data.user.id, email: data.user.email };
+  return { id: data.user.id, email: data.user.email, name: nameFromAuthUser(data.user) };
 }
 
 export async function userIdFromSupabaseToken(token: string | undefined): Promise<string | null> {

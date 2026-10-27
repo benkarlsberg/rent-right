@@ -64,6 +64,17 @@ export function mailHeader(mail: TenantMail): string {
   return [mail.name, mail.line1, mail.line2].join("\n");
 }
 
+export function asksForTenantName(value: string): boolean {
+  return /add your name in settings|agregue su nombre en ajustes/i.test(value);
+}
+
+/** A stored card keeps the old prompt until the profile name exists. Refresh it from the profile. */
+export function senderForCard(user: MailPerson, unit: MailPlace, sender?: string): string | undefined {
+  if (!sender || !asksForTenantName(sender)) return sender;
+  const mail = describeTenantMail(user, unit);
+  return mail.ready ? mailHeader(mail) : mail.missing;
+}
+
 export const REPLY_LINE = "Reply to this email or tap Respond.";
 
 function displayName(value: string): string {

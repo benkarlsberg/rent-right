@@ -1,5 +1,5 @@
 import { logEntryForReply, recordLandlordChatReply, emailProviderId, type InboundPhoto } from "@/lib/inbound-reply";
-import { stripQuotedReply } from "@/email/plain";
+import { landlordReplyText } from "@/email/plain";
 import { unitByRelay } from "@/lib/db";
 import { withActor } from "@/lib/pg";
 
@@ -24,8 +24,9 @@ export async function POST(request: Request) {
   return withActor(null, async () => {
     const unit = await unitByRelay(match[0].toLowerCase());
     if (!unit) return new Response("Unknown unit", { status: 202 });
-    const raw = body.rawText || body.text || "";
-    const display = stripQuotedReply(body.text || raw) || "The reply had no new text.";
+    const raw = (body.rawText || body.text || "").trim();
+    const parsed = (body.text || "").trim();
+    const display = landlordReplyText(parsed || raw);
     const photos: InboundPhoto[] = [];
     for (const item of body.attachments || []) {
       const base64 = typeof item.base64 === "string" ? item.base64 : "";
@@ -41,6 +42,7 @@ export async function POST(request: Request) {
       fromEmail: body.from || unit.landlordEmail || "landlord",
       subject: body.subject || "(no subject)",
       body: display,
+      rawBody: raw || display,
       providerId: emailProviderId(body.messageId || "", raw || display),
       logEntryId: await logEntryForReply(unit.id, raw),
       photos,

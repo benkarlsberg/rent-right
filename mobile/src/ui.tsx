@@ -1,5 +1,5 @@
 import { router, usePathname } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type Ref } from "react";
 import { BackHandler, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, type TextInputProps, type TextStyle, type ViewProps, type ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { backAction } from "@/back-nav";
@@ -101,11 +101,11 @@ export function BackBar() {
   );
 }
 
-export function Page({ children, onRefresh }: { children: React.ReactNode; onRefresh?: () => void }) {
+export function Page({ children, onRefresh, scrollRef }: { children: React.ReactNode; onRefresh?: () => void; scrollRef?: Ref<ScrollView> }) {
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <BackBar />
-      <ScrollView style={clipX} contentContainerStyle={styles.page} refreshControl={onRefresh ? <RefreshControl refreshing={false} onRefresh={onRefresh} tintColor={colors.pine} /> : undefined}>
+      <ScrollView ref={scrollRef} style={clipX} contentContainerStyle={styles.page} refreshControl={onRefresh ? <RefreshControl refreshing={false} onRefresh={onRefresh} tintColor={colors.pine} /> : undefined}>
         {children}
       </ScrollView>
     </SafeAreaView>
@@ -143,11 +143,12 @@ export function Button({ label, onPress, ghost, danger, disabled }: { label: str
   );
 }
 
-export function Field({ label, value, onChange, placeholder, multiline, ...input }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; multiline?: boolean } & Pick<TextInputProps, "keyboardType" | "autoComplete" | "autoCapitalize" | "textContentType">) {
+export function Field({ label, value, onChange, placeholder, multiline, inputRef, ...input }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; multiline?: boolean; inputRef?: Ref<TextInput> } & Pick<TextInputProps, "keyboardType" | "autoComplete" | "autoCapitalize" | "textContentType" | "nativeID">) {
   return (
     <View style={styles.field}>
       <Text style={styles.label} nativeID={`${label}-label`}>{label}</Text>
       <TextInput
+        ref={inputRef}
         value={value}
         onChangeText={onChange}
         placeholder={placeholder}

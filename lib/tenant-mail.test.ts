@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeTenantMail, mailHeader, outboundSubject, REPLY_LINE } from "@/lib/tenant-mail";
+import { describeTenantMail, mailHeader, outboundSubject, REPLY_LINE, senderForCard } from "@/lib/tenant-mail";
 
 const maya = { name: "maya chen", locale: "en" as const };
 const home = {
@@ -41,6 +41,9 @@ describe("tenant mail header", () => {
     const missingBoth = describeTenantMail({ name: "", locale: "en" }, { ...home, street: "" });
     expect(missingBoth.ready).toBe(false);
     if (!missingBoth.ready) expect(missingBoth.missing).toMatch(/Settings/);
+    expect(senderForCard({ name: "", locale: "en" }, home, "Add your name in Settings before sending.")).toMatch(/Add your name in Settings/);
+    expect(senderForCard(maya, home, "Add your name in Settings before sending.")).toMatch(/^Maya Chen\n/);
+    expect(senderForCard(maya, home, "Already sent")).toBe("Already sent");
     expect(describeTenantMail({ name: "JANE DOE", locale: "en" }, { ...home, street: "123 main st", unitNumber: "4", city: "oakland", postalCode: "94612" })).toMatchObject({
       ready: true,
       name: "Jane Doe",

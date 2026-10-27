@@ -10,6 +10,7 @@ import { colors } from "@/theme";
 import { Button, ErrorLine, Field, LearnMore, clipX, wrapText } from "@/ui";
 import { useLoad } from "@/use-load";
 import { PhotoThumb } from "@/photo-thumb";
+import { asksForName, NamePrompt } from "@/name-prompt";
 
 type DraftLabels = {
   draft: string;
@@ -37,6 +38,7 @@ type ChatItem = {
   draft?: boolean;
   logId?: string | null;
   photos?: ChatPhoto[];
+  original?: string | null;
 };
 
 type MailPreview = {
@@ -154,8 +156,11 @@ export default function Landlord() {
       const input = document.createElement("input");
       input.type = "file";
       input.accept = "image/jpeg,image/png,image/webp,image/gif";
+      input.style.display = "none";
+      document.body.appendChild(input);
       input.onchange = () => {
         const chosen = input.files?.[0];
+        input.remove();
         if (!chosen) return;
         const reason = photoError(chosen);
         if (reason) {
@@ -355,7 +360,7 @@ export default function Landlord() {
               return (
                 <View nativeID={`draft-${item.id}`} style={[styles.draft, highlighted && styles.draftOn]}>
                   <Text style={styles.draftLabel}>{item.status}</Text>
-                  <MailPreviewBlock mail={data?.mail} subjectLabel={labels?.subject || "Subject"} subject={item.subject} />
+                  <MailPreviewBlock mail={data?.mail} subjectLabel={labels?.subject || "Subject"} subject={item.subject} onName={() => void reload()} />
                   {editing ? (
                     <TextInput
                       value={editBody}
@@ -453,6 +458,11 @@ export default function Landlord() {
                   </View>
                   <Text style={styles.meta}>{item.time} · {item.status}</Text>
                 </View>
+                {item.original ? (
+                  <LearnMore label={spanish ? "Ver el correo original" : "Show original email"} hideLabel={spanish ? "Ocultar el correo original" : "Hide original email"}>
+                    {item.original}
+                  </LearnMore>
+                ) : null}
                 {item.detail ? <LearnMore label="Email details">{item.detail}</LearnMore> : null}
               </View>
             );
@@ -503,7 +513,7 @@ export default function Landlord() {
             ))}
           </View>
         ) : null}
-        {data?.mail ? <MailPreviewBlock mail={data.mail} subjectLabel={labels?.subject || "Subject"} subject={data.mail.subject} /> : null}
+        {data?.mail ? <MailPreviewBlock mail={data.mail} subjectLabel={labels?.subject || "Subject"} subject={data.mail.subject} onName={() => void reload()} /> : null}
         <View style={styles.composer}>
           <Pressable style={styles.plus} onPress={() => setMenu((open) => open?.where === "composer" ? null : { where: "composer" })} disabled={Boolean(data?.archived)} accessibilityRole="button" accessibilityLabel={spanish ? "Agregar una foto" : "Add a photo"}>
             <Text style={styles.plusText}>+</Text>
@@ -517,9 +527,12 @@ export default function Landlord() {
   );
 }
 
-function MailPreviewBlock({ mail, subjectLabel, subject }: { mail?: MailPreview; subjectLabel: string; subject?: string }) {
+function MailPreviewBlock({ mail, subjectLabel, subject, onName }: { mail?: MailPreview; subjectLabel: string; subject?: string; onName: () => void }) {
   if (!mail) return null;
-  if (!mail.ready) return <Text style={styles.prompt}>{mail.missing}</Text>;
+  if (!mail.ready) {
+    if (asksForName(mail.missing)) return <NamePrompt message={mail.missing} onSaved={onName} />;
+    return <Text style={styles.prompt}>{mail.missing}</Text>;
+  }
   return (
     <View style={styles.mailPreview}>
       {subject ? <Text style={styles.subject}>{subjectLabel}: {subject}</Text> : null}

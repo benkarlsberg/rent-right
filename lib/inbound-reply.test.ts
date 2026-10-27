@@ -1,7 +1,8 @@
+import { randomUUID } from "crypto";
 import { describe, expect, it } from "vitest";
 import { POST } from "@/app/api/email/inbound/route";
 import { getUser, insertMessage, listLogs, listMessages, listNotifications, listPhotos, primaryUnit } from "@/lib/db";
-import { logEntryForReply, recordLandlordChatReply, respondProviderId } from "@/lib/inbound-reply";
+import { logEntryForReply, recordLandlordChatReply, respondProviderId, settleQuotedInbound } from "@/lib/inbound-reply";
 import { startSampleTenancy } from "@/lib/seed";
 import { relayAddress } from "@/lib/text";
 
@@ -83,10 +84,46 @@ describe("landlord replies in the tenant chat", () => {
     const mailed = inbound.find((message) => message.body.startsWith("I can come Tuesday."));
     expect(mailed?.logEntryId).toBe(leak!.id);
     expect(mailed?.body).not.toMatch(/On Mon/);
+    expect(mailed?.body).not.toMatch(/\/r\//);
+    expect(mailed?.rawBody).toContain("/r/tokenvalue1");
     expect(mailed?.createdAt).toBeTruthy();
     const photos = await listPhotos(id, unit!.id);
     expect(photos.some((photo) => photo.messageId === mailed?.id && photo.caption === "From the landlord")).toBe(true);
     const notes = await listNotifications(id);
     expect(notes.some((note) => note.title === "Landlord reply" && note.href === "/landlord")).toBe(true);
+  });
+
+  it("reprocesses a stored quote wall and keeps the raw email", async () => {
+    const id = await startSampleTenancy();
+    const unit = await primaryUnit(id);
+    expect(unit).toBeTruthy();
+    const quoted = [
+      "> Can I request a copy of the lease please?",
+      "> The tenant wrote this message. Rent Right only provides the mailbox.",
+      "> Respond",
+      "> https://app.rentrightportal.com/r/zRqsMCOkZ1KWJsjpMXhnoclkV4QXtiJL",
+      "> General information, not legal advice. Rent Right is not a law firm.",
+    ].join("\n");
+    await insertMessage({
+      unitId: unit!.id,
+      userId: null,
+      direction: "inbound",
+      fromEmail: unit!.landlordEmail,
+      toEmail: relayAddress(unit!.relayLocal),
+      subject: "Re: Lease",
+      body: quoted,
+      deliveryStatus: "received",
+      providerId: `email:quote-${randomUUID()}`,
+    });
+    const settled = await settleQuotedInbound(await listMessages(id, unit!.id));
+    const row = settled.find((message) => message.rawBody?.includes("lease please"));
+    expect(row?.body).toBe("The reply had no new text.");
+    expect(row?.body).not.toMatch(/\/r\/|zRqs/);
+    expect(row?.rawBody).toContain("/r/zRqsMCOkZ1KWJsjpMXhnoclkV4QXtiJL");
+    const stored = (await listMessages(id, unit!.id)).find((message) => message.id === row?.id);
+    expect(stored?.body).toBe("The reply had no new text.");
+    expect(stored?.rawBody).toContain("lease please");
+    const again = await settleQuotedInbound(await listMessages(id, unit!.id));
+    expect(again.find((message) => message.id === row?.id)?.rawBody).toBe(stored?.rawBody);
   });
 });

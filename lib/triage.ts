@@ -43,6 +43,13 @@ export function tierForSeverity(severity: string | null | undefined): IssueTier 
   return severity && URGENT_SEVERITIES.has(severity as RepairSeverity) ? "urgent" : "routine";
 }
 
+/** Urgent uses the 3-day reminder. Routine and a rules flag use 30 days. A stored tier wins over the severity default. */
+export function reminderPace(tier: string | null | undefined, severity: string | null | undefined): "routine" | "urgent" {
+  if (tier === "urgent") return "urgent";
+  if (tier === "routine" || tier === "possible_violation") return "routine";
+  return tierForSeverity(severity) === "urgent" ? "urgent" : "routine";
+}
+
 export function isHabitability(severity: string | null | undefined): boolean {
   return Boolean(severity && HABITABILITY.has(severity as RepairSeverity));
 }

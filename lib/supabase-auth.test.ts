@@ -1,8 +1,8 @@
 import { randomUUID } from "crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { hashToken, SHORT_CODE_PATTERN } from "@/lib/crypto";
-import { consumeMagicLink, createMagicLink, deleteUserAccount, profileForAuthUser } from "@/lib/db";
-import { userFromAppleIdToken } from "@/lib/supabase-auth";
+import { consumeMagicLink, createMagicLink, deleteUserAccount, fillEmptyProfileName, getUser as loadUser, profileForAuthUser, updateUser } from "@/lib/db";
+import { nameFromAuthUser, userFromAppleIdToken } from "@/lib/supabase-auth";
 import { getSql } from "@/lib/pg";
 
 const generateLink = vi.hoisted(() => vi.fn());
@@ -103,10 +103,26 @@ describe("Supabase Auth", () => {
     const id = randomUUID();
     signInWithIdToken.mockResolvedValue({ data: { user: { id, email: "apple@example.com" } }, error: null });
     const remote = await userFromAppleIdToken("header.payload.sig", "nonce-raw");
-    expect(remote).toEqual({ id, email: "apple@example.com" });
+    expect(remote).toEqual({ id, email: "apple@example.com", name: "" });
+    signInWithIdToken.mockResolvedValue({ data: { user: { id, email: "apple@example.com", user_metadata: { full_name: "Ada Lovelace" } } }, error: null });
+    expect((await userFromAppleIdToken("header.payload.sig", "nonce-raw"))?.name).toBe("Ada Lovelace");
     expect(signInWithIdToken).toHaveBeenCalledWith({ provider: "apple", token: "header.payload.sig", nonce: "nonce-raw" });
     expect(seenKeys).toContain("sb_publishable_test_key");
     expect(seenKeys).not.toContain("sb_secret_test_key");
+  });
+
+  it("fills an empty profile name from Apple or Google and does not replace an edited name", async () => {
+    expect(nameFromAuthUser({ user_metadata: { full_name: "Ada Lovelace" } })).toBe("Ada Lovelace");
+    expect(nameFromAuthUser({ user_metadata: { given_name: "Ada", family_name: "Lovelace" } })).toBe("Ada Lovelace");
+    expect(nameFromAuthUser({ user_metadata: { name: "  Ada   Lovelace " } })).toBe("Ada Lovelace");
+    expect(nameFromAuthUser({ identities: [{ identity_data: { full_name: "Grace Hopper" } }] })).toBe("Grace Hopper");
+    expect(nameFromAuthUser(null)).toBe("");
+    const created = await profileForAuthUser(randomUUID(), `named-${randomUUID()}@example.com`);
+    await fillEmptyProfileName(created.id, "Ada Lovelace");
+    expect((await loadUser(created.id))?.name).toBe("Ada Lovelace");
+    await updateUser(created.id, { name: "Edited Name" });
+    await fillEmptyProfileName(created.id, "Someone Else");
+    expect((await loadUser(created.id))?.name).toBe("Edited Name");
   });
 
   it("deletes the auth user with the service role", async () => {

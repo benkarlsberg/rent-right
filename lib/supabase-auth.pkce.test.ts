@@ -45,7 +45,7 @@ describe("Google PKCE", () => {
       return sessionResponse();
     }));
     const remote = await userFromGoogleCode("auth-code", started.pkce);
-    expect(remote).toEqual({ id: userId, email: "google@example.com" });
+    expect(remote).toEqual({ id: userId, email: "google@example.com", name: "" });
     expect(bodies.some((body) => body.includes(verifier) && body.includes("auth-code"))).toBe(true);
     expect(bodies.join("\n")).not.toContain("access-token");
   });
