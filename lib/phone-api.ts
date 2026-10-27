@@ -102,7 +102,7 @@ import { drainRoundTrips, withActor } from "@/lib/pg";
 import { archivedNote, previewResidence, residencePayload, saveResidence, selectResidence } from "@/lib/residence";
 import { hideIssue, hideNote, issueHistory, issueSummary, recordRulesIssue, refreshIssueTiers, reopenRepair, resolveRepair, restoreNote, setIssueTier } from "@/lib/issues";
 import { deleteReminder, dismissReminder, restoreReminder } from "@/lib/reminders";
-import { confirmedOutbound, ensureRepairDeadline, ensureRepairDrafts } from "@/lib/repair-draft";
+import { cleanLetterText, confirmedOutbound, ensureRepairDeadline, ensureRepairDrafts } from "@/lib/repair-draft";
 import { isBrandAsset, photoFilename, rejectPhotoSet } from "@/lib/message-photos";
 import { askAssistant, emailLandlord, extractPdfOrText, recordLog, runLeaseReview, sampleLeaseText, saveDepositAndDeadline, type OutgoingPhoto } from "@/lib/workflow";
 
@@ -759,14 +759,15 @@ function presentChat(user: User, unit: Unit, messages: ListedMessage[], photos: 
     items: messages.map((message) => {
       const draft = message.deliveryStatus === "draft";
       const inbound = message.direction === "inbound" && !draft;
-      const preview = chatPreview(message.rawBody || message.body);
-      const outbound = !draft && message.direction !== "inbound" ? outboundBubble(message.rawBody || message.body) : null;
+      const preview = chatPreview(message.body);
+      const outbound = !draft && message.direction !== "inbound" ? outboundBubble(message.body) : null;
+      const mailed = !draft && message.direction !== "inbound" ? outboundBubble(message.rawBody || message.body) : null;
       const shown = inbound ? inboundDisplay(message.body, message.rawBody) : null;
       return {
         id: message.id,
         side: messageSide(message.direction),
         text: draft ? message.body : shown ? landlordBubble(emptyReply(shown.text, locale), locale) : outbound ? outbound.text : preview.text,
-        detail: draft || shown ? null : outbound ? outbound.detail : preview.detail,
+        detail: draft || shown ? null : mailed?.detail || outbound?.detail || preview.detail,
         original: shown?.original || null,
         subject: draft && described.ready ? outboundSubject(message.subject, described) : message.subject,
         time: formatTimestamp(message.createdAt, locale),
@@ -807,6 +808,25 @@ async function syncDelivery(messages: ListedMessage[]): Promise<ListedMessage[]>
   return messages.map((message) => updates.get(message.id) || message);
 }
 
+async function persistCleanLetters(messages: ListedMessage[], locale: Locale): Promise<ListedMessage[]> {
+  const next: ListedMessage[] = [];
+  for (const message of messages) {
+    if (message.direction !== "outbound") {
+      next.push(message);
+      continue;
+    }
+    const face = outboundBubble(message.body).text;
+    const cleaned = cleanLetterText(face, locale);
+    if (!cleaned || cleaned === face.trim()) {
+      next.push(message);
+      continue;
+    }
+    await saveOutboundBodies(message.id, cleaned, message.rawBody || message.body);
+    next.push({ ...message, body: cleaned, rawBody: message.rawBody || message.body });
+  }
+  return next;
+}
+
 async function unwrapOutbound(messages: ListedMessage[]): Promise<ListedMessage[]> {
   const updates = new Map<string, ListedMessage>();
   for (const message of messages) {
@@ -827,8 +847,9 @@ async function visibleMessages(user: User, unit: Unit) {
   const settled = await settleQuotedInbound(current);
   const synced = await syncDelivery(settled);
   const unwrapped = await unwrapOutbound(synced);
-  const created = await ensureRepairDrafts(user, unit, logs, unwrapped);
-  return [...unwrapped, ...created].filter((message) => message.deliveryStatus !== "discarded");
+  const cleaned = await persistCleanLetters(unwrapped, user.locale);
+  const created = await ensureRepairDrafts(user, unit, logs, cleaned);
+  return [...cleaned, ...created].filter((message) => message.deliveryStatus !== "discarded");
 }
 
 async function chatContext(user: User, unit: Unit) {
@@ -1329,8 +1350,9 @@ async function loadHomeRows(user: User, unit: Unit, options?: { reviews?: boolea
   const changed = await refreshIssueTiers(user, unit, filedLogs, filedMessages, deadlines);
   const logs = changed || refiled ? await listLogs(user.id, unit.id) : filedLogs;
   const settled = await settleQuotedInbound(filedMessages);
-  const createdDrafts = await ensureRepairDrafts(user, unit, logs, settled);
-  const messages = [...settled, ...createdDrafts].filter((message) => message.deliveryStatus !== "discarded");
+  const cleaned = await persistCleanLetters(settled, user.locale);
+  const createdDrafts = await ensureRepairDrafts(user, unit, logs, cleaned);
+  const messages = [...cleaned, ...createdDrafts].filter((message) => message.deliveryStatus !== "discarded");
   return { deadlines, logs, messages, reviews, assistant };
 }
 

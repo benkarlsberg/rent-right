@@ -829,12 +829,12 @@ describe("renter workflows", () => {
     expect(draft?.subject).toMatch(/^Repair request:/);
     expect(draft?.text).toContain("I'm writing about a repair.");
     expect(draft?.text).not.toContain("The tenant is writing");
-    expect(draft?.text).toContain("1842 N Echo Park Ave");
-    expect(draft?.text).toContain("Unit 9");
-    expect(draft?.text).toContain("leaking under the cabinet");
-    expect(draft?.text).toContain("Please repair this.");
-    expect(draft?.text).toContain("CA-CC-1942");
-    expect(draft?.text).toMatch(/reminder date/i);
+    expect(draft?.text).not.toContain("1842 N Echo Park Ave");
+    expect(draft?.text).toContain("Issue: The kitchen sink is leaking under the cabinet");
+    expect(draft?.text).toContain("Under California Civil Code §1942");
+    expect(draft?.text).not.toContain("Please repair this.");
+    expect(draft?.text).not.toContain("CA-CC-1942");
+    expect(draft?.text).not.toMatch(/reminder date/i);
 
     const records = await api("GET", "records", undefined, token);
     const sendStep = (records.json?.steps as { items: { action: string; href: string | null }[] }).items[0];
@@ -849,7 +849,8 @@ describe("renter workflows", () => {
     expect(restored?.id).toBeTruthy();
     expect(restored?.id).not.toBe(draftId);
     expect(restored?.status).toBe("Draft, not sent yet");
-    expect(restored?.text).toContain("Please repair this.");
+    expect(restored?.text).toContain("I'm writing about a repair.");
+    expect(restored?.text).not.toContain("CA-CC-1942");
     const restoredId = restored!.id;
 
     const edited = "Please repair the kitchen sink leak. The cabinet under the sink is wet.";
@@ -902,10 +903,12 @@ describe("renter workflows", () => {
     const esMail = await api("GET", "chat", undefined, token);
     const esDraft = (esMail.json?.items as { id: string; status: string; text: string }[]).find((item) => item.id === esId);
     expect(esDraft?.status).toBe("Borrador, aún no enviado");
-    expect(esDraft?.text).toContain("Por favor, repare esto.");
     expect(esDraft?.text).toContain("Escribo sobre una reparación.");
+    expect(esDraft?.text).toContain("Problema: Hay moho en el baño");
+    expect(esDraft?.text).toContain("Según el Código Civil de California §1942");
+    expect(esDraft?.text).not.toContain("Por favor, repare esto.");
     expect(esDraft?.text).not.toContain("escribe sobre una reparación");
-    expect(esDraft?.text).toContain("CA-CC-1942");
+    expect(esDraft?.text).not.toContain("CA-CC-1942");
   });
 
   it("discards a landlord draft without sending it or writing it again", async () => {
@@ -930,7 +933,8 @@ describe("renter workflows", () => {
     const draftId = String(draft?.id || "");
     expect(draftId).toBeTruthy();
     expect(draft?.text).toContain("I'm writing about a repair.");
-    expect(draft?.text).toContain("12588 Carmel Creek Rd, Unit 25");
+    expect(draft?.text).toContain("Issue: My sink is leaking");
+    expect(draft?.text).not.toContain("12588 Carmel Creek Rd, Unit 25");
     expect(draft?.text).not.toContain("Unit 25, Unit 25");
     const dropped = await api("POST", "chat/draft/discard", { id: draftId }, token);
     expect(dropped.status).toBe(200);

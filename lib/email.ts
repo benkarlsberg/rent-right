@@ -1,5 +1,5 @@
 import { REPLY_LINE } from "@/lib/tenant-mail";
-import { EMAIL_FOOTER, relayAddress } from "@/lib/text";
+import { relayAddress } from "@/lib/text";
 
 export type SendResult = {
   status: "sent" | "failed" | "local_only";
@@ -7,7 +7,8 @@ export type SendResult = {
   providerId: string | null;
 };
 
-export function landlordMessageBody(tenantText: string, responseUrl: string, header = ""): string {
+export function landlordMessageBody(tenantText: string, responseUrl: string, header = "", footer = "", options = "You can reply, or tap Respond to acknowledge, schedule, or dispute."): string {
+  const closing = footer.trim();
   return [
     header.trim(),
     header.trim() ? "" : null,
@@ -16,8 +17,8 @@ export function landlordMessageBody(tenantText: string, responseUrl: string, hea
     REPLY_LINE,
     "",
     `Respond without an account: ${responseUrl}`,
-    "You can acknowledge, give a schedule, mark the issue fixed, dispute it, or block later non-essential mail.",
-    EMAIL_FOOTER,
+    options,
+    closing ? `\n---\n${closing}` : null,
   ].filter((line) => line !== null).join("\n");
 }
 

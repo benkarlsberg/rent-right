@@ -11,6 +11,8 @@ export type MailInput = {
   paragraphs?: string[];
   button?: MailButton;
   lines?: string[];
+  /** Omit the legal footer. Undefined keeps the standard sign-in footer. */
+  footer?: string | null;
 };
 
 export function emailLogoUrl(): string {
@@ -39,6 +41,7 @@ export function messageParagraphs(text: string): string[] {
 export function renderMail(input: MailInput): { subject: string; text: string; html: string } {
   const paragraphs = (input.paragraphs || []).map((line) => line.trim()).filter(Boolean);
   const lines = (input.lines || []).map((line) => line.trim()).filter(Boolean);
+  const footer = input.footer === undefined ? FOOTER : (input.footer || "").trim();
   const text = [
     "Rent Right",
     "",
@@ -49,7 +52,7 @@ export function renderMail(input: MailInput): { subject: string; text: string; h
     input.button ? "" : "",
     ...lines,
     "",
-    FOOTER,
+    footer,
   ]
     .filter((line, index, all) => line !== "" || all[index - 1] !== "")
     .join("\n")
@@ -83,9 +86,9 @@ ${input.button ? `<tr><td style="padding:24px 28px 8px;">
 ${escapeHtml(input.button.href)}
 </td></tr>` : ""}
 ${lines.map((line) => `<tr><td style="padding:12px 28px 0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#3D5A62;">${escapeHtml(line)}</td></tr>`).join("")}
-<tr><td style="padding:20px 28px 24px;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#3D5A62;">
-${escapeHtml(FOOTER)}
-</td></tr>
+${footer ? `<tr><td style="padding:20px 28px 24px;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#3D5A62;">
+${escapeHtml(footer)}
+</td></tr>` : ""}
 </table>
 </td></tr>
 </table>

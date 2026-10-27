@@ -183,6 +183,7 @@ describe("account deletion and reviewer sign-in", () => {
       expect(saved?.subject).toBe("Message from Maya Chen, 1842 N Echo Park Ave, Unit 3");
       expect(saved?.body).toContain("Maya Chen\n1842 N Echo Park Ave, Unit 3\nLos Angeles, CA 90026");
       expect(saved?.body).toContain("Reply to this email or tap Respond.");
+      expect(saved?.body).not.toMatch(/not legal advice/i);
       expect(saved?.body).not.toMatch(/The tenant wrote|Message from your tenant/);
       const preview = outboundBubble(saved?.body || "");
       expect(preview.text).toBe("Please fix the sink.");
@@ -228,6 +229,9 @@ describe("account deletion and reviewer sign-in", () => {
       expect(body.text).toContain("123 Main St, Unit 4");
       expect(body.text).toContain("Oakland, CA 94612");
       expect(body.text).toContain("Reply to this email or tap Respond.");
+      expect(body.text).toContain("A photo is attached.");
+      expect(body.text.split("123 Main St, Unit 4").length - 1).toBe(1);
+      expect(body.text).not.toMatch(/not legal advice/i);
       expect(body.text).not.toMatch(/The tenant wrote|Message from your tenant/);
       expect(body.reply_to).toMatch(/^u-[a-z0-9]+@/);
       expect(body.attachments[0].filename).toBe("leak.gif");

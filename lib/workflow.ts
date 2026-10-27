@@ -31,6 +31,7 @@ import {
   type User,
 } from "@/lib/db";
 import { landlordMessageBody, sendRelayEmail } from "@/lib/email";
+import { repairOpening } from "@/lib/repair-draft";
 import { mailHeader, outboundSubject, REPLY_LINE, requireTenantMail } from "@/lib/tenant-mail";
 import { isBrandAsset, photoFilename, rejectPhotoSet } from "@/lib/message-photos";
 import { messageParagraphs, renderMail } from "@/lib/email-template";
@@ -253,6 +254,12 @@ async function persistPhotos(user: User, unit: Unit, messageId: string, logEntry
   }
 }
 
+function photoNote(count: number, locale: Locale): string {
+  if (count <= 0) return "";
+  if (count === 1) return tx(locale, "A photo is attached.", "Hay una foto adjunta.");
+  return tx(locale, `${count} photos are attached.`, `Hay ${count} fotos adjuntas.`);
+}
+
 export async function emailLandlord(input: {
   user: User;
   unit: Unit;
@@ -278,12 +285,17 @@ export async function emailLandlord(input: {
     content: photo.bytes.toString("base64"),
     contentType: photo.mime || "image/jpeg",
   }));
-  const photoLine = photos.length === 1 ? "1 photo is attached to this email." : photos.length > 1 ? `${photos.length} photos are attached to this email.` : "";
+  const photoLine = photoNote(photos.length, input.user.locale);
+  const letter = [input.tenantText.trim(), photoLine].filter(Boolean).join("\n\n");
+  const footer = input.tenantText.trim().startsWith(repairOpening(input.user.locale))
+    ? tx(input.user.locale, "General information, not legal advice.", "Información general, no es consejo legal.")
+    : "";
+  const options = tx(input.user.locale, "You can reply, or tap Respond to acknowledge, schedule, or dispute.", "Puede responder, o toque Responder para acusar recibo, programar o disputar.");
   if (isSampleAccount(input.user.email)) {
     const messageId = await storeLandlordMail({
       ...input,
       subject,
-      body: landlordMessageBody(input.tenantText, `${appUrl()}/r/sample`, header),
+      body: landlordMessageBody(letter, `${appUrl()}/r/sample`, header, footer, options),
       deliveryStatus: "local_only",
       deliveryDetail: "This sample home does not email a landlord.",
     });
@@ -294,7 +306,7 @@ export async function emailLandlord(input: {
     const messageId = await storeLandlordMail({
       ...input,
       subject,
-      body: landlordMessageBody(input.tenantText, `${appUrl()}/r/blocked`, header),
+      body: landlordMessageBody(letter, `${appUrl()}/r/blocked`, header, footer, options),
       deliveryStatus: "blocked",
       deliveryDetail: "The landlord blocked later mail. Print a letter and mail it yourself.",
     });
@@ -307,18 +319,18 @@ export async function emailLandlord(input: {
   }
   const token = randomToken();
   const responseUrl = `${appUrl()}/r/${token}`;
-  const body = landlordMessageBody(input.tenantText, responseUrl, header);
+  const body = landlordMessageBody(letter, responseUrl, header, footer, options);
   const mail = renderMail({
     subject,
     heading: sender.name,
     paragraphs: [
       `${sender.line1}\n${sender.line2}`,
-      ...messageParagraphs(input.tenantText),
-      photoLine,
+      ...messageParagraphs(letter),
       REPLY_LINE,
-      "You can acknowledge, give a schedule, mark the issue fixed, dispute it, or block later non-essential mail.",
+      options,
     ].filter(Boolean),
     button: { label: "Respond", href: responseUrl },
+    footer: footer || null,
   });
   const sent = await sendRelayEmail({
     relayLocal: input.unit.relayLocal,

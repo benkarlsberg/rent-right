@@ -13,7 +13,7 @@ import {
 import { formatDate } from "@/lib/format";
 import { repairReminder } from "@/lib/rules/engine";
 import { relayAddress, tx } from "@/lib/text";
-import { asRepairSeverity, reminderPace, tierForSeverity, urgentLetterLead } from "@/lib/triage";
+import { asRepairSeverity, reminderPace, tierForSeverity, violationFlag } from "@/lib/triage";
 
 export function confirmedOutbound(status: string): boolean {
   return status === "sent" || status === "delivered" || status === "local_only" || status === "blocked";
@@ -42,27 +42,82 @@ export function repairDraftLetter(input: {
   const short = issue.length > 80 ? `${issue.slice(0, 77).trim()}…` : issue;
   const subject = tx(locale, `Repair request: ${short}`, `Solicitud de reparación: ${short}`);
   const date = formatDate(day, locale);
-  const rule = locale === "es" ? reminder.explanationEs : reminder.explanation;
-  const lead = urgent ? urgentLetterLead(locale) : tx(locale, "I'm writing about a repair.", "Escribo sobre una reparación.");
-  const ask = urgent
-    ? tx(locale, "Please reply with a time when the repair will be done.", "Responda con una hora en que se hará la reparación.")
-    : tx(locale, "Please repair this.", "Por favor, repare esto.");
+  const tier = input.tier ?? (urgent ? "urgent" : "routine");
   const body = [
-    lead,
-    "",
-    input.address.trim(),
+    repairOpening(locale),
     "",
     tx(locale, `Issue: ${issue}`, `Problema: ${issue}`),
     tx(locale, `Date: ${date}`, `Fecha: ${date}`),
     "",
-    ask,
-    "",
-    rule,
-    "",
-    reminder.computation,
-    tx(locale, `Rule ${reminder.ruleId}`, `Regla ${reminder.ruleId}`),
+    repairLegalNote(locale, tier),
   ].join("\n");
   return { subject, body, ruleId: reminder.ruleId, dueDate: reminder.dueDate };
+}
+
+export function repairOpening(locale: Locale): string {
+  return tx(locale, "I'm writing about a repair.", "Escribo sobre una reparación.");
+}
+
+export function repairLegalNote(locale: Locale, tier: string | null): string {
+  if (tier === "possible_violation") {
+    return `${violationFlag(locale)}.`;
+  }
+  if (tier === "urgent") {
+    return tx(
+      locale,
+      "This affects health or safety, so please repair it as soon as possible, within a short reasonable time. California Civil Code §1942.",
+      "Esto afecta la salud o la seguridad, así que repárelo lo antes posible, dentro de un plazo breve y razonable. Código Civil de California §1942.",
+    );
+  }
+  return tx(
+    locale,
+    "Under California Civil Code §1942, repairs like this are generally expected within a reasonable time, presumed to be 30 days.",
+    "Según el Código Civil de California §1942, reparaciones como esta generalmente se esperan en un plazo razonable, que se presume de 30 días.",
+  );
+}
+
+const LETTER_INTERNAL = /\d{4}-\d{2}-\d{2} \+ \d+ days =|(?:^|\n)Rule [A-Za-z0-9.-]+|(?:^|\n)Regla |\breminder date\b|\bfecha del recordatorio\b|not a decision about anyone's legal responsibility|no es una decisión sobre la responsabilidad legal|3-day reminder preset|recordatorio de 3 días/i;
+
+export function letterHasInternals(text: string): boolean {
+  return LETTER_INTERNAL.test(text);
+}
+
+function addressBlock(block: string): boolean {
+  const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+  if (!lines.length || lines.length > 3) return false;
+  return /,\s*[A-Z]{2}\s+\d{5}\b/.test(lines[lines.length - 1] || "");
+}
+
+/** Drop date math, rule ids, and the reminder essay from a letter the tenant has not rewritten. */
+export function cleanLetterText(text: string, locale: Locale): string | null {
+  if (!letterHasInternals(text)) return null;
+  const urgent = /3-day reminder preset|recordatorio de 3 días|, urgent\)/.test(text);
+  const violation = /may not follow California rules|puede no seguir las reglas de California/i.test(text);
+  const kept = text.replace(/\r\n/g, "\n").split(/\n{2,}/).map((block) => block.trim()).filter(Boolean).flatMap((block) => {
+    if (addressBlock(block) && !/^(Issue|Problema|Date|Fecha):/i.test(block)) return [];
+    const lines = block.split("\n").map((line) => line.trim()).filter((line) => {
+      if (/^\d{4}-\d{2}-\d{2} \+ \d+ days =/.test(line)) return false;
+      if (/^(Rule|Regla) /.test(line)) return false;
+      if (/^Please repair this\.?$/i.test(line) || /^Por favor, repare esto\.?$/i.test(line)) return false;
+      if (/^Please reply with a time/i.test(line) || /^Responda con una hora/i.test(line)) return false;
+      if (/^Please repair this within a short reasonable time/i.test(line) || /^Repare esto dentro de un plazo breve/i.test(line)) return false;
+      return true;
+    });
+    if (!lines.length) return [];
+    const next = lines.join("\n");
+    if (LETTER_INTERNAL.test(next) && !/^(Issue|Problema|Date|Fecha):/i.test(next)) return [];
+    return [next];
+  });
+  let cleaned = kept.join("\n\n").trim();
+  const opening = repairOpening(locale);
+  if (!/^I'm writing about a repair\.|^Escribo sobre una reparación\./.test(cleaned)) {
+    cleaned = cleaned ? `${opening}\n\n${cleaned}` : opening;
+  }
+  const note = repairLegalNote(locale, violation ? "possible_violation" : urgent ? "urgent" : "routine");
+  if (!/Civil Code §1942|Código Civil de California §1942|may not follow California rules|puede no seguir las reglas de California/i.test(cleaned)) {
+    cleaned = `${cleaned}\n\n${note}`;
+  }
+  return cleaned.trim();
 }
 
 function uniqueViolation(error: unknown): boolean {
