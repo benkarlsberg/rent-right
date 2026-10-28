@@ -15,7 +15,7 @@
     "userInterfaceStyle": "light",
     "backgroundColor": "#F8FAF9",
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.rentrightportal.app",
       "appleTeamId": "B5RNR69S8U",
       "buildNumber": "1",
