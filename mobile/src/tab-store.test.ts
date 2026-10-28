@@ -4,6 +4,7 @@ import {
   clearTabMemory,
   needsBootstrap,
   readSlice,
+  sliceStale,
   rememberSlice,
   tabGeneration,
   TAB_STALE_MS,
@@ -27,7 +28,9 @@ describe("tab store", () => {
     expect(readSlice(alice, "chat")).toEqual({ name: "landlord" });
     expect(readSlice(alice, "records")).toEqual({ name: "records" });
     expect(needsBootstrap(alice, 1_000 + TAB_STALE_MS)).toBe(false);
+    expect(sliceStale(alice, "thread", 1_000 + TAB_STALE_MS)).toBe(false);
     expect(needsBootstrap(alice, 1_000 + TAB_STALE_MS + 1)).toBe(true);
+    expect(sliceStale(alice, "chat", 1_000 + TAB_STALE_MS + 1)).toBe(true);
     expect(readSlice(bob, "thread")).toBeNull();
     expect(needsBootstrap(bob, 1_000)).toBe(true);
   });

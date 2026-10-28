@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { Platform } from "react-native";
 import { useSession } from "@/session";
 import { cachedTab, fetchTab, refreshBootstrap } from "@/tab-cache";
-import { needsBootstrap, publishSlice, readSlice, subscribeTabStore, tabPath, type TabPath } from "@/tab-store";
+import { publishSlice, readSlice, sliceStale, subscribeTabStore, tabPath, type TabPath } from "@/tab-store";
 
 export { clearTabCache, prefetchTabs, refreshBootstrap } from "@/tab-cache";
 
@@ -88,11 +88,12 @@ export function useLoad<T>(path: string) {
       setLocalLoading(false);
       return;
     }
+    if (!screenVisible()) return;
     if (!tab) {
       void run(false);
       return;
     }
-    if (!needsBootstrap(token) || readSlice(token, tab) != null) return;
+    if (!sliceStale(token, tab) || readSlice(token, tab) != null) return;
     let alive = true;
     void refreshBootstrap(token, false).catch((err: unknown) => {
       if (!alive) return;
@@ -107,7 +108,7 @@ export function useLoad<T>(path: string) {
     const current = tokenRef.current;
     if (!current || !screenVisible()) return;
     if (tab) {
-      if (needsBootstrap(current)) void refreshBootstrap(current, false).catch((err: unknown) => noteFailure(err, current));
+      if (sliceStale(current, tab)) void refreshBootstrap(current, false).catch((err: unknown) => noteFailure(err, current));
       return;
     }
     void run(false);
@@ -118,7 +119,7 @@ export function useLoad<T>(path: string) {
     const onShow = () => {
       if (document.visibilityState === "hidden") return;
       const current = tokenRef.current;
-      if (current && needsBootstrap(current)) void refreshBootstrap(current, false).catch((err: unknown) => noteFailure(err, current));
+      if (current && sliceStale(current, tab)) void refreshBootstrap(current, false).catch((err: unknown) => noteFailure(err, current));
     };
     document.addEventListener("visibilitychange", onShow);
     return () => document.removeEventListener("visibilitychange", onShow);

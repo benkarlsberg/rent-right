@@ -98,7 +98,7 @@ import { inboundDisplay, EMPTY_REPLY } from "@/email/plain";
 import { isResponseNote, landlordBubble, refileResponseNotes, settleQuotedInbound } from "@/lib/inbound-reply";
 import { describeTenantMail, outboundSubject, REPLY_LINE, senderForCard } from "@/lib/tenant-mail";
 import { ChatTurnDone, runChatTurn } from "@/lib/chat-turn";
-import { drainRoundTrips, withActor } from "@/lib/pg";
+import { all, drainRoundTrips, withActor } from "@/lib/pg";
 import { archivedNote, previewResidence, residencePayload, saveResidence, selectResidence } from "@/lib/residence";
 import { hideIssue, hideNote, issueHistory, issueSummary, recordRulesIssue, refreshIssueTiers, reopenRepair, resolveRepair, restoreNote, setIssueTier } from "@/lib/issues";
 import { deleteReminder, dismissReminder, restoreReminder } from "@/lib/reminders";
@@ -335,6 +335,11 @@ async function route(request: Request, path: string[]): Promise<Response> {
       notice: notice("en"),
       noticeEs: notice("es"),
     });
+  }
+
+  if (method === "GET" && key === "ready") {
+    await all("select 1 as ok");
+    return json({ ok: true });
   }
 
   if (method === "POST" && key === "auth/magic") {

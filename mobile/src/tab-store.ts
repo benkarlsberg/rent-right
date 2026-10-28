@@ -49,12 +49,14 @@ export function readSlice<T>(token: string, path: TabPath): T | null {
   return slot ? (slot.data as T) : null;
 }
 
-export function needsBootstrap(token: string, now = Date.now()): boolean {
+export function sliceStale(token: string, path: TabPath, now = Date.now()): boolean {
   if (!memory || memory.userId !== userIdFromToken(token)) return true;
-  return TAB_PATHS.some((path) => {
-    const slot = memory?.slots[path];
-    return !slot || now - slot.at > TAB_STALE_MS;
-  });
+  const slot = memory.slots[path];
+  return !slot || now - slot.at > TAB_STALE_MS;
+}
+
+export function needsBootstrap(token: string, now = Date.now()): boolean {
+  return TAB_PATHS.some((path) => sliceStale(token, path, now));
 }
 
 export function rememberSlice(token: string, path: TabPath, data: unknown, now = Date.now()) {

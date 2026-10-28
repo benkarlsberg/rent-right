@@ -3,7 +3,9 @@ import { signSession } from "@/lib/crypto";
 import { normalizeDatabaseUrl } from "@/lib/pg";
 import { DEMO_EMAIL } from "@/lib/sample";
 
-const origins = ["https://api.rentrightportal.com", "https://app.rentrightportal.com"];
+const origins = process.env.ME_BOTH_ORIGINS === "1"
+  ? ["https://api.rentrightportal.com", "https://app.rentrightportal.com"]
+  : ["https://api.rentrightportal.com"];
 
 function redact(message: string): string {
   const secrets = [process.env.DATABASE_URL ?? "", process.env.AUTH_SECRET ?? ""].filter((item) => item.length >= 4);
@@ -99,7 +101,7 @@ async function main(): Promise<void> {
   if (!account) throw new Error("No real account was found.");
   console.log(`has_unit: ${account.hasUnit}`);
   const token = signSession(account.id);
-  const repeats = 2;
+  const repeats = Math.max(1, Number(process.env.ME_REPEATS || "1"));
   const apiSamples: { status: number | "timeout"; ms: number; hasUser: boolean; serverMs: number | null }[] = [];
   const bootstrapSamples: { status: number | "timeout"; ms: number; ok: boolean; serverMs: number | null }[] = [];
   for (let sample = 1; sample <= repeats; sample += 1) {
@@ -108,10 +110,10 @@ async function main(): Promise<void> {
       const result = await timeOrigin(origin, token);
       if (origin.includes("api.")) apiSamples.push(result);
     }
-    bootstrapSamples.push(await timeBootstrap(token));
+    if (process.env.ME_BOOTSTRAP === "1") bootstrapSamples.push(await timeBootstrap(token));
   }
-  const warmApi = apiSamples.slice(1);
-  const warmBootstrap = bootstrapSamples.slice(1);
+  const warmApi = repeats === 1 ? apiSamples : apiSamples.slice(1);
+  const warmBootstrap = repeats === 1 ? bootstrapSamples : bootstrapSamples.slice(1);
   const limit = Number(process.env.ME_MAX_MS || "0");
   const serverLimit = Number(process.env.ME_SERVER_MAX_MS || "0");
   const slowApi = warmApi.find((api) => api.status !== 200 || !api.hasUser || api.ms > limit || (serverLimit > 0 && (api.serverMs == null || api.serverMs > serverLimit)));

@@ -519,89 +519,93 @@ function isoDay(value: unknown): string {
 }
 
 export async function dispatchReminders(today = todayISO()) {
-  const { openDeadlines, reminderSlotsSent, markReminder, unitMemberUserIds, listDueNudges } = await import("@/lib/db");
+  const { reminderCandidates, profilesByIds, markReminder } = await import("@/lib/db");
   const { sendTenantEmail } = await import("@/lib/email");
-  let sent = 0;
-  const deliver = async (userId: string, subject: string, heading: string, body: string, paragraphs: string[], href: string, button: string) => {
-    const user = await getUser(userId);
-    if (!user) return false;
-    await addNotification(userId, heading, body, href);
-    const mail = renderMail({
-      subject,
-      heading,
-      paragraphs,
-      button: { label: button, href: `${appUrl()}${href}` },
-    });
-    const delivered = await sendTenantEmail(user.email, mail.subject, mail.text, mail.html);
-    if (!delivered && process.env.RESEND_API_KEY && process.env.RESEND_FROM) return false;
-    return true;
+  const rows = await reminderCandidates();
+  type Job = {
+    deadlineId: string;
+    slot: string;
+    userIds: string[];
+    subject: string;
+    heading: string;
+    body: string;
+    paragraphs: string[];
+    href: string;
+    button: string;
   };
-  for (const deadline of await openDeadlines()) {
-    if (!deadline.due_date) continue;
-    const slots = pendingReminderSlots(deadline.due_date, today, await reminderSlotsSent(deadline.id));
-    if (slots.length === 0) continue;
-    const users = await unitMemberUserIds(deadline.unit_id);
-    for (const slot of slots) {
-      let failed = false;
-      for (const userId of users) {
+  const jobs: Job[] = [];
+  for (const row of rows) {
+    const sentSlots = row.slots || [];
+    const userIds = row.user_ids || [];
+    if (row.due_date) {
+      for (const slot of pendingReminderSlots(String(row.due_date).slice(0, 10), today, sentSlots)) {
         const title = slot === "0d" ? "A tracked date is today" : `A tracked date is ${slot === "7d" ? "7" : "3"} days away`;
-        const ok = await deliver(
-          userId,
-          `Rent Right: ${title}`,
-          title,
-          deadline.explanation,
-          [
-            deadline.explanation,
-            `Rule ID: ${deadline.rule_id}`,
+        jobs.push({
+          deadlineId: row.id,
+          slot,
+          userIds,
+          subject: `Rent Right: ${title}`,
+          heading: title,
+          body: row.explanation,
+          paragraphs: [
+            row.explanation,
+            `Rule ID: ${row.rule_id}`,
             "This is a reminder of a date computed from what you entered. Confirm with the official source.",
           ],
-          "/deadlines",
-          "Open deadlines",
-        );
-        if (!ok) {
-          const user = await getUser(userId);
-          if (user) failed = true;
-          continue;
-        }
-        sent += 1;
+          href: "/deadlines",
+          button: "Open deadlines",
+        });
       }
-      if (!failed) await markReminder(deadline.id, slot, "in_app_email");
+    }
+    if (row.tenant_reminder_on) {
+      const on = isoDay(row.tenant_reminder_on).slice(0, 10);
+      const late = daysBetween(on, today);
+      const slot = `nudge:${on}`;
+      if (late >= 0 && late <= 1 && !sentSlots.includes(slot)) {
+        const label = row.kind === "custom_reminder" && row.explanation ? row.explanation : "A reminder you saved on a record.";
+        const body = `This is a reminder you set for yourself for ${on}. It is not a legal deadline. ${label} Nothing was sent to the landlord.`;
+        jobs.push({
+          deadlineId: row.id,
+          slot,
+          userIds,
+          subject: "Rent Right: Your reminder",
+          heading: "Your reminder",
+          body,
+          paragraphs: [
+            `This is a reminder you set for yourself for ${on}. It is not a legal deadline.`,
+            label,
+            "Nothing was sent to the landlord.",
+          ],
+          href: "/records",
+          button: "Open records",
+        });
+      }
     }
   }
-  for (const nudge of await listDueNudges()) {
-    const on = isoDay(nudge.tenant_reminder_on);
-    const late = daysBetween(on, today);
-    if (late < 0 || late > 1) continue;
-    const slot = `nudge:${on}`;
-    if ((await reminderSlotsSent(nudge.id)).includes(slot)) continue;
-    const users = await unitMemberUserIds(nudge.unit_id);
-    const label = nudge.kind === "custom_reminder" && nudge.explanation
-      ? nudge.explanation
-      : "A reminder you saved on a record.";
-    const body = `This is a reminder you set for yourself for ${on}. It is not a legal deadline. ${label} Nothing was sent to the landlord.`;
+  if (!jobs.length) return 0;
+  const people = await profilesByIds([...new Set(jobs.flatMap((job) => job.userIds))]);
+  const byId = new Map(people.map((person) => [person.id, person]));
+  let sent = 0;
+  for (const job of jobs) {
     let failed = false;
-    for (const userId of users) {
-      const ok = await deliver(
-        userId,
-        "Rent Right: Your reminder",
-        "Your reminder",
-        body,
-        [
-          `This is a reminder you set for yourself for ${on}. It is not a legal deadline.`,
-          label,
-          "Nothing was sent to the landlord.",
-        ],
-        "/records",
-        "Open records",
-      );
-      if (!ok) {
-        const user = await getUser(userId);
-        if (user) failed = true;
+    for (const userId of job.userIds) {
+      const user = byId.get(userId);
+      if (!user) continue;
+      await addNotification(userId, job.heading, job.body, job.href);
+      const mail = renderMail({
+        subject: job.subject,
+        heading: job.heading,
+        paragraphs: job.paragraphs,
+        button: { label: job.button, href: `${appUrl()}${job.href}` },
+      });
+      const delivered = await sendTenantEmail(user.email, mail.subject, mail.text, mail.html);
+      if (!delivered && process.env.RESEND_API_KEY && process.env.RESEND_FROM) {
+        failed = true;
         continue;
       }
       sent += 1;
     }
-    if (!failed) await markReminder(nudge.id, slot, "in_app_email");
+    if (!failed) await markReminder(job.deadlineId, job.slot, "in_app_email");
   }
   return sent;
 }

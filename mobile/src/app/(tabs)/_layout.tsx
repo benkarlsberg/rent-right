@@ -1,6 +1,6 @@
 import { Tabs, usePathname } from "expo-router";
 import { useEffect } from "react";
-import { Pressable, StyleSheet, Text } from "react-native";
+import { Platform, Pressable, StyleSheet, Text } from "react-native";
 import { SvgXml } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSession } from "@/session";
@@ -35,7 +35,9 @@ export default function TabsLayout() {
   const spanish = session.me?.user.locale === "es";
   const path = usePathname();
   useEffect(() => {
-    if (session.token) prefetchTabs(session.token);
+    if (!session.token) return;
+    if (Platform.OS === "web" && typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    prefetchTabs(session.token);
   }, [session.token]);
   return (
     <Tabs

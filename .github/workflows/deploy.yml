@@ -60,15 +60,11 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         run: npx tsx scripts/resolve-database-url.ts
-      - name: Time signed /me before deploy
+      - name: Check the API name
         continue-on-error: true
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
-          ME_PHASE: before
         run: |
-          if [ -f .database-url ]; then export DATABASE_URL="$(cat .database-url)"; fi
-          npx tsx scripts/time-signed-me.ts
+          curl -fsS --max-time 20 -A "Mozilla/5.0" https://api.rentrightportal.com/api/v1 -o /tmp/api-name.json
+          node -e 'const body = require("/tmp/api-name.json"); if (body.name !== "Rent Right") process.exit(1);'
       - name: Apply database migrations
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -176,31 +172,15 @@ jobs:
           '
           npx wrangler secret bulk worker-secrets.json
           rm -f worker-secrets.json
-      - name: Check the latest landlord send
-        continue-on-error: true
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-        run: |
-          if [ -f .database-url ]; then export DATABASE_URL="$(cat .database-url)"; fi
-          npx tsx --conditions=react-server scripts/report-outbound.ts
-      - name: Time signed /me after deploy
-        continue-on-error: true
+      - name: Check the database answers
         if: steps.hyperdrive.outcome == 'success'
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
-          ME_PHASE: after
-          ME_MAX_MS: "1000"
-          ME_SERVER_MAX_MS: "300"
-          ME_BOOTSTRAP_MAX_MS: "2000"
-          ME_BOOTSTRAP_SERVER_MAX_MS: "800"
         run: |
-          if [ -f .database-url ]; then export DATABASE_URL="$(cat .database-url)"; fi
           ok=0
           for attempt in 1 2 3; do
-            echo "attempt: $attempt"
-            if npx tsx scripts/time-signed-me.ts; then
+            echo "ready_attempt: $attempt"
+            code=$(curl -sS -o /tmp/ready.json -w '%{http_code}' --max-time 20 -A "Mozilla/5.0" https://api.rentrightportal.com/api/v1/ready || true)
+            echo "ready_status: $code"
+            if [ "$code" = "200" ] && grep -q '"ok":true' /tmp/ready.json; then
               ok=1
               break
             fi

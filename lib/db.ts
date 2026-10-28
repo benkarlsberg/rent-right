@@ -1053,6 +1053,69 @@ export async function listDueNudges() {
   }>("select id, unit_id, tenant_reminder_on, explanation, kind from deadlines where status = 'open' and tenant_reminder_on is not null");
 }
 
+export type ReminderCandidate = {
+  id: string;
+  unit_id: string;
+  rule_id: string;
+  kind: string;
+  due_date: string | null;
+  explanation: string;
+  tenant_reminder_on: string | null;
+  slots: string[];
+  user_ids: string[];
+};
+
+/** Open deadlines, the reminder slots already sent, and the members, in one read. */
+export async function reminderCandidates(): Promise<ReminderCandidate[]> {
+  const rows = await all<{
+    id: string;
+    unit_id: string;
+    rule_id: string;
+    kind: string;
+    due_date: string | null;
+    explanation: string;
+    tenant_reminder_on: string | null;
+    slots: string[] | null;
+    user_ids: string[] | null;
+  }>(
+    `select d.id, d.unit_id, d.rule_id, d.kind, d.due_date::text as due_date, d.explanation,
+            d.tenant_reminder_on::text as tenant_reminder_on,
+            coalesce(json_agg(distinct rs.slot) filter (where rs.slot is not null), '[]'::json) as slots,
+            coalesce(json_agg(distinct m.user_id::text) filter (where m.user_id is not null), '[]'::json) as user_ids
+     from deadlines d
+     left join reminder_sent rs on rs.deadline_id = d.id
+     left join unit_members m on m.unit_id = d.unit_id
+     where d.status = 'open' and (d.due_date is not null or d.tenant_reminder_on is not null)
+     group by d.id`,
+  );
+  return rows.map((row) => ({
+    ...row,
+    slots: textList(row.slots),
+    user_ids: textList(row.user_ids),
+  }));
+}
+
+function textList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        if (Array.isArray(parsed)) return parsed.map(String);
+      } catch {
+        return [];
+      }
+    }
+  }
+  return [];
+}
+
+export async function profilesByIds(ids: string[]): Promise<{ id: string; email: string }[]> {
+  if (!ids.length) return [];
+  return await all<{ id: string; email: string }>("select id, email from profiles where id = any(?::uuid[])", [ids]);
+}
+
 export async function openDeadlines() {
   return await all<{
     id: string; unit_id: string; rule_id: string; kind: string; due_date: string; explanation: string;
