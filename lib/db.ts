@@ -1112,8 +1112,13 @@ function textList(value: unknown): string[] {
 }
 
 export async function profilesByIds(ids: string[]): Promise<{ id: string; email: string }[]> {
-  if (!ids.length) return [];
-  return await all<{ id: string; email: string }>("select id, email from profiles where id = any(?::uuid[])", [ids]);
+  const list = [...new Set(ids.map((id) => String(id).trim()).filter(Boolean))];
+  if (!list.length) return [];
+  // A uuid[] parameter is sent as one uuid when prepared statements cannot see the array type.
+  return await all<{ id: string; email: string }>(
+    "select id::text as id, email from profiles where id::text = any(string_to_array(?, ','))",
+    [list.join(",")],
+  );
 }
 
 export async function openDeadlines() {
