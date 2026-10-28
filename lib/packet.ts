@@ -1,5 +1,7 @@
 import { formatAddressLines } from "@/lib/address-format";
+import { COVERAGE_NOTICE_EN, coversLaw } from "@/lib/coverage";
 import { DISCLAIMER_EN } from "@/lib/disclaimer";
+import { stateName } from "@/lib/us-address";
 import { formatDate, formatMoney, formatTimestamp } from "@/lib/format";
 import type { Unit, User } from "@/lib/db";
 import { packByJurisdiction } from "@/lib/rules/cities";
@@ -120,16 +122,17 @@ function tenantLine(user: User): string {
   return "Tenant";
 }
 
-function tierName(log: PacketLog): string | null {
+function tierName(log: PacketLog, covered: boolean): string | null {
+  if (!covered) return null;
   if (log.tier === "urgent") return "Urgent";
   if (log.tier === "possible_violation") return "This may not follow California rules";
   if (log.tier === "routine") return "Routine";
   return null;
 }
 
-function statusLabel(log: PacketLog): string {
+function statusLabel(log: PacketLog, covered: boolean): string {
   if (removed(log)) return "Removed by tenant";
-  const tier = tierName(log);
+  const tier = tierName(log, covered);
   const withTier = (label: string) => tier ? `${label} · ${tier}` : label;
   if (log.status === "resolved" && log.resolvedAt) return withTier(`Resolved on ${when(log.resolvedAt)}`);
   if (log.status === "resolved") return withTier("Resolved");
@@ -156,6 +159,7 @@ export function buildPacket(input: {
   issueImages?: { logId: string; fileId: string }[];
   preparedAt?: string;
 }): PacketModel {
+  const covered = coversLaw(input.unit);
   const images = new Map((input.images || []).map((image) => [image.id, image]));
   const imagesFor = (messageId?: string | null) => {
     if (!messageId) return [] as PacketImage[];
@@ -177,7 +181,9 @@ export function buildPacket(input: {
   const issues = [...groups.values()].map((versions) => {
     const latest = [...versions].sort((a, b) => (a.version || 1) - (b.version || 1) || a.createdAt.localeCompare(b.createdAt)).at(-1)!;
     const ids = new Set(versions.map((log) => log.id).filter(Boolean) as string[]);
-    const reminder = input.deadlines.find((item) => item.kind === "repair" && item.status === "open" && item.sourceId && ids.has(item.sourceId) && (item.tenantReminderOn || item.dueDate));
+    const reminder = covered
+      ? input.deadlines.find((item) => item.kind === "repair" && item.status === "open" && item.sourceId && ids.has(item.sourceId) && (item.tenantReminderOn || item.dueDate))
+      : input.deadlines.find((item) => item.kind === "custom_reminder" && item.status === "open" && item.sourceId && ids.has(item.sourceId) && (item.tenantReminderOn || item.dueDate));
     const messages = input.messages.filter((message) => visibleMessage(message) && message.logEntryId && ids.has(message.logEntryId));
     const photoIds = [...new Set([
       ...versions.map((log) => log.photoFileId).filter(Boolean),
@@ -193,7 +199,7 @@ export function buildPacket(input: {
     ];
     return {
       title: latest.description.replace(/\s+/g, " ").trim().slice(0, 90) || "Repair request",
-      status: statusLabel(latest),
+      status: statusLabel(latest, covered),
       reported: when(latest.eventDate || latest.createdAt),
       reminder: reminder ? when(reminder.tenantReminderOn || reminder.dueDate || "") : null,
       description: latest.description,
@@ -218,7 +224,7 @@ export function buildPacket(input: {
     if (log.type === "repair" || log.type === "issue_event" || log.tier !== "possible_violation" || removed(log) || !log.id) continue;
     issues.push({
       title: log.description.replace(/\s+/g, " ").trim().slice(0, 90) || "Request",
-      status: statusLabel(log),
+      status: statusLabel(log, covered),
       reported: when(log.eventDate || log.createdAt),
       reminder: null,
       description: log.description,
@@ -239,6 +245,7 @@ export function buildPacket(input: {
   const sent = mail.filter((message) => message.direction !== "inbound").length;
   const received = mail.filter((message) => message.direction === "inbound").length;
   const keyDates = input.deadlines
+    .filter((item) => covered || item.kind === "custom_reminder")
     .filter((item) => item.status === "open" && (item.dueDate || item.tenantReminderOn))
     .map((item) => `${item.kind === "deposit" ? "Deposit accounting" : "Follow-up"} ${when(item.tenantReminderOn || item.dueDate || "")}`);
   const summary = [
@@ -290,7 +297,7 @@ export function buildPacket(input: {
     ? `Amount ${input.deposit.amountCents != null ? formatMoney(input.deposit.amountCents, "en") : "not entered"}. Move-out ${input.deposit.moveOutDate ? when(input.deposit.moveOutDate) : "not entered"}. Forwarding address ${input.deposit.forwardingAddress || "not entered"}.`
     : null;
 
-  const leaseNotes = (input.leaseNotes || []).filter((note) => note.quote).map((note) => (
+  const leaseNotes = (covered ? input.leaseNotes || [] : []).filter((note) => note.quote).map((note) => (
     `${note.filename ? `${note.filename}: ` : ""}${note.quote}`
   ));
 
@@ -305,11 +312,13 @@ export function buildPacket(input: {
     about: "A record of communications and photos stored in Rent Right. It is not legal advice and it is not a court filing.",
     tenant: tenantLine(input.user),
     property: lines,
-    place: jurisdictionLabel(input.unit.jurisdiction),
+    place: covered ? jurisdictionLabel(input.unit.jurisdiction) : (stateName(input.unit.region) || input.unit.region || "United States"),
     landlord: input.unit.landlordName || "Not entered",
     rent: input.unit.rentCents != null ? formatMoney(input.unit.rentCents, "en") : "Not entered",
     summary,
-    reminderNote: issues.some((issue) => issue.reminder) || keyDates.length ? REMINDER_NOTE : null,
+    reminderNote: covered
+      ? (issues.some((issue) => issue.reminder) || keyDates.length ? REMINDER_NOTE : null)
+      : COVERAGE_NOTICE_EN,
     issues: issues.map(({ title, status, reported, reminder, description, updates, messages, images: issueImages }) => ({
       title, status, reported, reminder, description, updates, messages, images: issueImages,
     })),
@@ -332,8 +341,10 @@ export function buildPacket(input: {
     leaseNotes,
     otherNotes,
     verification,
-    closing: `Small claims is a self-help option. Rent Right does not file a case and does not give legal advice. ${SMALL_CLAIMS_URL}`,
-    disclaimer: DISCLAIMER_EN,
+    closing: covered
+      ? `Small claims is a self-help option. Rent Right does not file a case and does not give legal advice. ${SMALL_CLAIMS_URL}`
+      : "Rent Right does not file a case and does not give legal advice.",
+    disclaimer: covered ? DISCLAIMER_EN : COVERAGE_NOTICE_EN,
   };
 }
 

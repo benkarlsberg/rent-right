@@ -1,4 +1,5 @@
 import { formatAddressPlain, type AddressParts } from "@/lib/address-format";
+import { coverageNotice, coversLaw, rulesUnavailable } from "@/lib/coverage";
 import { cardAfterSend, flagCard, serializeCard, type CardKind, type ChatCard } from "@/lib/chat-card";
 import { aiConfigured } from "@/lib/ai";
 import { answerFromConversation } from "@/lib/chat-answer";
@@ -483,6 +484,10 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: Awaited<
     return;
   }
   if (plan.type === "rent") {
+    if (!coversLaw(unit)) {
+      await say(user, unit, uncoveredCard(user, unit));
+      return;
+    }
     if (plan.proposedCents == null) {
       await say(user, unit, {
         headline: tx(user.locale, "Need the rent amounts", "Faltan los montos"),
@@ -521,6 +526,14 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: Awaited<
     return;
   }
   if (plan.type === "deposit") {
+    if (!coversLaw(unit)) {
+      if (!plan.moveOutDate) {
+        await say(user, unit, uncoveredCard(user, unit));
+        return;
+      }
+      await runDeposit(user, unit, resolveDay(plan.moveOutDate));
+      return;
+    }
     if (!plan.moveOutDate) {
       await createChatDraft(user.id, unit.id, "deposit_date", {});
       const existing = (await listDeadlines(user.id, unit.id)).find((item) => item.kind === "deposit" && item.status === "open");
@@ -551,6 +564,22 @@ async function execute(user: User, unit: Unit, plan: TurnPlan, pending: Awaited<
     return;
   }
   if (plan.type === "deadlines") {
+    if (!coversLaw(unit)) {
+      const saved = (await listDeadlines(user.id, unit.id)).find((item) => item.kind === "custom_reminder" && item.status === "open" && item.dueDate);
+      if (!saved?.dueDate) {
+        await say(user, unit, uncoveredCard(user, unit));
+        return;
+      }
+      const line = dueLine(saved.dueDate, todayISO(), user.locale);
+      await say(user, unit, {
+        headline: line.title,
+        status: line.subtitle,
+        action: null,
+        detail: saved.explanation,
+        ruleId: null,
+      });
+      return;
+    }
     const next = (await listDeadlines(user.id, unit.id)).find((item) => item.status === "open" && item.dueDate);
     if (!next) {
       await say(user, unit, {
@@ -659,7 +688,21 @@ function suggestionCard(user: User): ChatCard {
   };
 }
 
+function uncoveredCard(user: User, unit: Unit): ChatCard {
+  return {
+    headline: tx(user.locale, "No rules for this state yet", "Aún no hay reglas para este estado"),
+    status: "",
+    action: null,
+    detail: rulesUnavailable(user.locale, unit.region),
+    ruleId: null,
+  };
+}
+
 async function answerRights(user: User, unit: Unit, question: string, history: string, retrieval: string) {
+  if (!coversLaw(unit)) {
+    await say(user, unit, uncoveredCard(user, unit));
+    return;
+  }
   const answer = await answerFromConversation(question, user.locale, history, retrieval);
   const rule = answer.ruleIds[0] ? getRule(answer.ruleIds[0]) : undefined;
   if (!answer.handoff && (answer.unsure || !rule)) {
@@ -872,7 +915,7 @@ async function logRepair(user: User, unit: Unit, summary: string, severity: Repa
       { id: `repair-cancel:${draft.id}`, label: tx(user.locale, "Cancel", "Cancelar") },
     ],
     ...(safety ? { safety } : {}),
-    form: { summary, description: "", room, tier: suggested, suggested, ...(staged.length ? { photos: staged } : {}) },
+    form: { summary, description: "", room, tier: suggested, suggested, tiers: coversLaw(unit), ...(staged.length ? { photos: staged } : {}) },
     detail: tx(user.locale, "Nothing is saved until you tap Save issue.", "No se guarda nada hasta que toque Guardar problema."),
     ruleId: null,
   });
@@ -1039,7 +1082,8 @@ async function commitRepair(user: User, unit: Unit, summary: string, description
       reportId: null,
     });
   }
-  const reminder = repairReminder(todayISO(), severity, reminderPace(tier, severity));
+  const covered = coversLaw(unit);
+  const reminder = covered ? repairReminder(todayISO(), severity, reminderPace(tier, severity)) : null;
   const pending = await ensureRepairDrafts(user, unit, [entry], []);
   const letter = pending[0];
   const draft = await createChatDraft(user.id, unit.id, "repair", {
@@ -1061,22 +1105,22 @@ async function commitRepair(user: User, unit: Unit, summary: string, description
   const messageId = await say(user, unit, {
     headline: tx(user.locale, "Repair logged", "Reparación anotada"),
     status: tx(user.locale, "Not sent", "No enviado"),
-    badge: urgent ? "urgent" : undefined,
+    badge: covered && urgent ? "urgent" : undefined,
     action: send,
     actions: [send, undo],
     sender: mailHeaderText(user, unit),
     detail: [
       safety,
       photoLine,
-      user.locale === "es" ? reminder.explanationEs : reminder.explanation,
-      reminder.computation,
+      reminder ? (user.locale === "es" ? reminder.explanationEs : reminder.explanation) : coverageNotice(user.locale),
+      reminder?.computation || "",
       landlordReady(unit)
         ? tx(user.locale, "Nothing was emailed. Send only if you want the landlord to get this note.", "No se envió ningún correo. Envíe solo si quiere que el propietario reciba esta nota.")
         : landlordPrompt(user.locale),
     ].filter(Boolean).join("\n\n"),
     address: cardAddress(unit),
-    ruleId: reminder.ruleId,
-  }, "cited-issue");
+    ruleId: reminder?.ruleId || null,
+  }, covered ? "cited-issue" : "issue");
   await setChatDraftPayload(user.id, draft.id, { ...draft.payload, cardMessageId: messageId, awaitingPhoto: photoFileIds.length === 0 });
 }
 
@@ -1118,6 +1162,10 @@ async function linkChatPhoto(user: User, unit: Unit, issueId: string, attachment
 }
 
 async function runRent(user: User, unit: Unit, lowest: number | null, proposed: number | null, effectiveDate: string, noticeDate: string | null = null) {
+  if (!coversLaw(unit)) {
+    await say(user, unit, uncoveredCard(user, unit));
+    return;
+  }
   if (lowest == null || proposed == null) {
     await say(user, unit, {
       headline: tx(user.locale, "Need both rents", "Faltan las dos rentas"),
@@ -1205,6 +1253,19 @@ function aidFor(unit: Unit) {
 }
 
 async function runDeposit(user: User, unit: Unit, moveOutDate: string) {
+  if (!coversLaw(unit)) {
+    const existing = await getDeposit(user.id, unit.id);
+    await saveDepositAndDeadline(user, unit, {
+      amountCents: existing?.amount_cents ?? unit.depositCents,
+      receivedDate: existing?.received_date ?? unit.moveInDate,
+      moveOutDate,
+      forwardingAddress: existing?.forwarding_address || "",
+      landlordDeductions: existing?.landlord_deductions || "",
+      tenantNotes: existing?.tenant_notes || "",
+    });
+    await say(user, unit, uncoveredCard(user, unit));
+    return;
+  }
   const existing = await getDeposit(user.id, unit.id);
   await saveDepositAndDeadline(user, unit, {
     amountCents: existing?.amount_cents ?? unit.depositCents,
@@ -1230,6 +1291,10 @@ async function sayDeposit(user: User, unit: Unit, dueDate: string | null, explan
 }
 
 async function askForLetter(user: User, unit: Unit) {
+  if (!coversLaw(unit)) {
+    await say(user, unit, uncoveredCard(user, unit));
+    return;
+  }
   await createChatDraft(user.id, unit.id, "letter", {});
   await say(user, unit, {
     headline: tx(user.locale, "Your words", "Sus palabras"),
@@ -1241,6 +1306,45 @@ async function askForLetter(user: User, unit: Unit) {
 }
 
 async function writeLetter(user: User, unit: Unit, text: string) {
+  if (!coversLaw(unit)) {
+    const deposit = await getDeposit(user.id, unit.id);
+    const addressMatch = text.match(/forwarding address is\s+(.+)/i);
+    const forwarding = (addressMatch?.[1] || deposit?.forwarding_address || "").trim();
+    const notes = text.replace(/forwarding address is\s+.+/i, "").trim();
+    if (!deposit?.amount_cents || !forwarding || notes.length < 20) {
+      await say(user, unit, {
+        headline: tx(user.locale, "Letter not created", "Carta sin crear"),
+        status: "",
+        action: null,
+        detail: `${rulesUnavailable(user.locale, unit.region)}\n\n${tx(user.locale, "Add the deposit amount, a forwarding address, and a short explanation in your own words. Nothing was written.", "Agregue el monto del depósito, una dirección de reenvío y una explicación breve con sus palabras. No se escribió nada.")}`,
+        ruleId: null,
+      });
+      return;
+    }
+    const letter = demandLetter({
+      tenantName: user.name,
+      unitAddress: formatAddressPlain(cardAddress(unit)),
+      landlordName: unit.landlordName,
+      landlordEmail: unit.landlordEmail,
+      depositCents: deposit.amount_cents,
+      moveOutDate: deposit.move_out_date || todayISO(),
+      dueDate: "",
+      forwardingAddress: forwarding,
+      deductionNotes: deposit.landlord_deductions || "",
+      disputeNotes: notes,
+      letterDate: todayISO(),
+      citeStatute: false,
+    });
+    await say(user, unit, {
+      headline: tx(user.locale, "Letter ready", "Carta lista"),
+      status: tx(user.locale, "Not sent", "No enviado"),
+      action: null,
+      detail: `${letter}\n\n${coverageNotice(user.locale)}`,
+      address: cardAddress(unit),
+      ruleId: null,
+    });
+    return;
+  }
   const deposit = await getDeposit(user.id, unit.id);
   const deadline = (await listDeadlines(user.id, unit.id)).find((item) => item.kind === "deposit" && item.status === "open");
   const addressMatch = text.match(/forwarding address is\s+(.+)/i);
@@ -1290,6 +1394,18 @@ async function writeLetter(user: User, unit: Unit, text: string) {
 }
 
 async function reviewAttachment(user: User, unit: Unit, file: { name: string; mime: string; base64: string }) {
+  if (!coversLaw(unit)) {
+    const bytes = Buffer.from(file.base64, "base64");
+    await saveFile(user.id, unit.id, file.name || "lease", file.mime || "application/octet-stream", bytes);
+    await say(user, unit, {
+      headline: tx(user.locale, "Lease saved", "Contrato guardado"),
+      status: "",
+      action: null,
+      detail: `${rulesUnavailable(user.locale, unit.region)}\n\n${tx(user.locale, "The file is saved with your records.", "El archivo quedó guardado con sus registros.")}`,
+      ruleId: null,
+    });
+    return;
+  }
   const bytes = Buffer.from(file.base64, "base64");
   await saveFile(user.id, unit.id, file.name || "lease", file.mime || "application/octet-stream", bytes);
   const extracted = await extractPdfOrText(bytes, file.mime || "", file.name || "lease.txt");

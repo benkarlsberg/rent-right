@@ -26,6 +26,8 @@ export type Me = {
     relay: string;
     jurisdiction: string;
     archived?: boolean;
+    supported?: boolean;
+    coverageNotice?: string | null;
   } | null;
 };
 

@@ -65,9 +65,10 @@ import { emailValue } from "@/lib/forms";
 import { addLandlordLabel, landlordPrompt, landlordReady } from "@/lib/landlord";
 import { formatDate, formatMoney, formatTimestamp, percentLabel } from "@/lib/format";
 import { getRule } from "@/lib/rules/library";
-import { isCaliforniaPostal, suggestPlace, tidyAddress } from "@/lib/geo";
+import { coverageNotice, coversLaw } from "@/lib/coverage";
+import { suggestPlace, tidyAddress } from "@/lib/geo";
+import { storedHome } from "@/lib/home-place";
 import { detectPlace, localProtectionNote, placeSummary } from "@/lib/rules/detect";
-import { isAllowedJurisdiction } from "@/lib/rules/cities";
 import { parseLocalFacts } from "@/lib/rules/cities/verify";
 import { checkRentIncrease, type Jurisdiction, type RsoStatus, type RstpoTier } from "@/lib/rules/engine";
 import { parseISODate, todayISO } from "@/lib/rules/dates";
@@ -181,7 +182,7 @@ async function sessionPayload(user: User) {
     user: publicUser(user),
     needsUnit: !unit,
     needsLandlord: Boolean(unit && !landlordReady(unit)),
-    unit: unit ? publicUnit(unit) : null,
+    unit: unit ? publicUnit(unit, user.locale) : null,
   };
 }
 
@@ -196,7 +197,7 @@ function publicUser(user: User) {
   };
 }
 
-function publicUnit(unit: Unit) {
+function publicUnit(unit: Unit, locale: Locale) {
   return {
     id: unit.id,
     address: unitAddress(unit),
@@ -213,6 +214,8 @@ function publicUnit(unit: Unit) {
     rsoStatus: unit.rsoStatus,
     rstpoTier: unit.rstpoTier,
     archived: Boolean(unit.archivedAt),
+    supported: unit.supported,
+    coverageNotice: coversLaw(unit) ? null : coverageNotice(locale),
   };
 }
 
@@ -240,27 +243,25 @@ function unitInput(input: Record<string, unknown>): UnitInput {
   const landlordName = text(input.landlordName);
   const landlordEmailRaw = text(input.landlordEmail);
   if (!tidy.street || !tidy.city) throw new Error("Add the address.");
-  if (tidy.postalCode && !isCaliforniaPostal(tidy.postalCode)) throw new Error("That address does not look like California.");
   const landlordEmail = landlordEmailRaw ? emailValue(landlordEmailRaw) : "";
-  const requested = text(input.jurisdiction);
-  const detected = detectPlace({
-    address: tidy.street,
+  const home = storedHome({
+    street: tidy.street,
     city: tidy.city,
     postalCode: tidy.postalCode,
     region: tidy.region,
+    requested: text(input.jurisdiction),
   });
-  const jurisdiction = requested && requested !== "unsure" && isAllowedJurisdiction(requested) ? requested : detected.jurisdiction;
-  if (!isAllowedJurisdiction(jurisdiction)) throw new Error("Choose a jurisdiction.");
   return {
     street: tidy.street,
     unitNumber: tidy.unit,
     city: tidy.city,
     postalCode: tidy.postalCode,
-    region: tidy.region,
-    jurisdiction,
-    jurisdictionConfirmed: input.jurisdictionConfirmed === true,
-    rsoStatus: (text(input.rsoStatus) || "unsure") as RsoStatus,
-    rstpoTier: (text(input.rstpoTier) || "unsure") as RstpoTier,
+    region: home.region,
+    jurisdiction: home.jurisdiction,
+    supported: home.supported,
+    jurisdictionConfirmed: home.supported ? input.jurisdictionConfirmed === true : true,
+    rsoStatus: (home.supported ? text(input.rsoStatus) || "unsure" : "unsure") as RsoStatus,
+    rstpoTier: (home.supported ? text(input.rstpoTier) || "unsure" : "unsure") as RstpoTier,
     landlordName,
     landlordEmail,
     landlordPhone: text(input.landlordPhone),
@@ -434,10 +435,13 @@ async function route(request: Request, path: string[]): Promise<Response> {
     const postalCode = text(body.postalCode);
     const region = text(body.region) || "CA";
     if (!street || !city || !postalCode) throw new Error("Add the street, city, and ZIP.");
+    if (!/^\d{5}(?:-\d{4})?$/.test(postalCode.trim())) throw new Error("Enter a 5-digit US ZIP.");
     const found = await suggestPlace({ street, unit: text(body.unitNumber), city, region, postalCode });
     return json({
       summary: placeSummary(found.place, user.locale),
       inCalifornia: found.place.inCalifornia,
+      covered: found.place.inCalifornia && found.place.jurisdiction !== "unsupported",
+      state: found.place.state || null,
       suggestion: found.suggestion,
       differs: found.differs,
       jurisdiction: found.place.jurisdiction,
@@ -454,7 +458,7 @@ async function route(request: Request, path: string[]): Promise<Response> {
     const unit = existing ? await updateUnit(user.id, existing.id, input) : await createUnit(user.id, input);
     const fresh = await getUser(user.id);
     if (!fresh) throw new Error("Sign in required.");
-    return json({ ...(await sessionPayload(fresh)), unit: publicUnit(unit) });
+    return json({ ...(await sessionPayload(fresh)), unit: publicUnit(unit, fresh.locale) });
   }
 
   if (method === "GET" && key === "home") return json(await homePayload());
@@ -602,7 +606,8 @@ async function homePayload() {
   const { user, unit } = await withUnit();
   const locale = user.locale;
   const today = todayISO();
-  const deadlines = (await listDeadlines(user.id, unit.id)).filter((item) => item.status === "open");
+  const covered = coversLaw(unit);
+  const deadlines = (await listDeadlines(user.id, unit.id)).filter((item) => item.status === "open" && (covered || item.kind === "custom_reminder"));
   const logs = await listLogs(user.id, unit.id);
   const rent = await latestRentCheck(user.id, unit.id);
   const cards: { id: string; href: string; kicker: string; title: string; subtitle: string; detail: string; tone: string }[] = [];
@@ -627,7 +632,7 @@ async function homePayload() {
   const flag = logs
     .map((entry) => entry.flags.retaliation as { flagged?: boolean; explanation?: string; explanationEs?: string; ruleId?: string } | undefined)
     .find((item) => item?.flagged);
-  if (flag) {
+  if (covered && flag) {
     cards.push({
       id: "retaliation",
       href: "/log",
@@ -639,7 +644,7 @@ async function homePayload() {
     });
   }
 
-  if (rent?.result) {
+  if (covered && rent?.result) {
     const status = rent.result.applicable.status;
     cards.push({
       id: rent.id,
@@ -659,12 +664,14 @@ async function homePayload() {
     local: unitLocal(unit, locale),
     cards,
     notice: notice(locale),
+    coverageNotice: covered ? null : coverageNotice(locale),
   };
 }
 
 async function leasePayload() {
   const { user, unit } = await withUnit();
   const locale = user.locale;
+  if (!coversLaw(unit)) return { reviews: [], local: null, notice: notice(locale), coverageNotice: coverageNotice(locale) };
   const reviews = (await listLeaseReviews(user.id, unit.id)).slice(0, 3).map((review) => ({
     id: review.id,
     filename: review.filename,
@@ -682,11 +689,18 @@ async function leasePayload() {
       };
     }),
   }));
-  return { reviews, local: unitLocal(unit, locale), notice: notice(locale) };
+  return { reviews, local: unitLocal(unit, locale), notice: notice(locale), coverageNotice: null };
 }
 
 async function reviewPosted(input: Record<string, unknown>) {
   const { user, unit } = await withUnit();
+  if (!coversLaw(unit)) {
+    if (typeof input.fileBase64 === "string" && input.fileBase64) {
+      const bytes = Buffer.from(input.fileBase64, "base64");
+      await saveFile(user.id, unit.id, text(input.filename) || "lease.txt", text(input.mime) || "application/octet-stream", bytes);
+    }
+    return leasePayload();
+  }
   let textBody = text(input.text);
   const filename = text(input.filename) || "lease.txt";
   if (typeof input.fileBase64 === "string" && input.fileBase64) {
@@ -701,6 +715,7 @@ async function reviewPosted(input: Record<string, unknown>) {
 
 async function reviewSample() {
   const { user, unit } = await withUnit();
+  if (!coversLaw(unit)) return leasePayload();
   await runLeaseReview(user, unit, sampleLeaseText(), "sample-lease.txt");
   return leasePayload();
 }
@@ -1161,7 +1176,9 @@ async function depositPayload() {
     moveOut: deposit?.move_out_date || "",
     forwarding: deposit?.forwarding_address || "",
     deductions: deposit?.landlord_deductions || "",
-    detail: deadline ? (locale === "es" ? deadline.explanationEs : deadline.explanation) : tx(locale, "The 21-day count starts when you enter a move-out date.", "El conteo de 21 días empieza cuando anota la fecha de salida."),
+    detail: !coversLaw(unit)
+      ? coverageNotice(locale)
+      : deadline ? (locale === "es" ? deadline.explanationEs : deadline.explanation) : tx(locale, "The 21-day count starts when you enter a move-out date.", "El conteo de 21 días empieza cuando anota la fecha de salida."),
     notice: notice(locale),
   };
 }
@@ -1210,6 +1227,7 @@ async function increasePayload() {
 
 async function runIncrease(input: Record<string, unknown>) {
   const { user, unit } = await withUnit();
+  if (!coversLaw(unit)) throw new Error(coverageNotice(user.locale));
   const lowest = dollars(input.lowest);
   const proposed = dollars(input.proposed);
   if (!lowest || !proposed) throw new Error("Enter the current rent and the proposed rent.");
@@ -1334,6 +1352,7 @@ function emptyThread(user: User, rows: ListedAssistant[] = []) {
     issues: [] as { id: string; title: string }[],
     archived: false,
     archivedNote: null as string | null,
+    coverageNotice: null as string | null,
   };
 }
 
@@ -1358,6 +1377,7 @@ function presentThread(user: User, unit: Unit, rows: ListedAssistant[], steps: {
     packetFile: evidenceFilename(todayISO()),
     archived: Boolean(unit.archivedAt),
     archivedNote: archivedNote(unit, locale),
+    coverageNotice: coversLaw(unit) ? null : coverageNotice(locale),
   };
 }
 
@@ -1477,7 +1497,8 @@ function presentRecords(user: User, unit: Unit, loaded: HomeRows, photos: Awaite
   const { deadlines, logs, messages, reviews } = loaded;
   const locale = user.locale;
   const today = todayISO();
-  const deadlineInput: DeadlineInput[] = deadlines.map((item) => ({
+  const covered = coversLaw(unit);
+  const deadlineInput: DeadlineInput[] = deadlines.filter((item) => covered || item.kind === "custom_reminder").map((item) => ({
     id: item.id,
     kind: item.kind,
     ruleId: item.ruleId,
@@ -1502,6 +1523,7 @@ function presentRecords(user: User, unit: Unit, loaded: HomeRows, photos: Awaite
     noticeKind: item.noticeKind,
   }));
   const board = issueBoard({
+    covered,
     locale,
     logs: logs.map((item) => ({
       id: item.id,
@@ -1641,6 +1663,7 @@ function emptyRecords(user: User) {
     today: todayISO(),
     archived: false,
     archivedNote: null,
+    coverageNotice: null,
   };
 }
 
@@ -1665,13 +1688,19 @@ function presentRecordsPayload(user: User, unit: Unit, bundle: ReturnType<typeof
     issues: bundle.issues,
     archive: bundle.archive,
     steps: bundle.steps,
-    lease: review
+    lease: review && coversLaw(unit)
       ? {
           filename: review.filename || tx(locale, "Lease", "Contrato"),
           headline: finding ? findingStatus(finding.label, locale) : tx(locale, "Reviewed", "Revisado"),
           detail: finding ? `${finding.quote}\n\n${finding.ruleId || ""}` : "",
         }
-      : null,
+      : review
+        ? {
+            filename: review.filename || tx(locale, "Lease", "Contrato"),
+            headline: tx(locale, "Saved", "Guardado"),
+            detail: coverageNotice(locale),
+          }
+        : null,
     labels: bundle.labels,
     reminderNote: bundle.reminderNote,
     reminderMail: bundle.reminderMail,
@@ -1680,6 +1709,8 @@ function presentRecordsPayload(user: User, unit: Unit, bundle: ReturnType<typeof
     archived: Boolean(unit.archivedAt),
     archivedNote: archivedNote(unit, locale),
     needsLandlord: !landlordReady(unit),
+    coverageNotice: coversLaw(unit) ? null : coverageNotice(locale),
+    supported: unit.supported,
   };
 }
 

@@ -26,6 +26,7 @@ export type ChatCard = {
     room: string | null;
     tier: "routine" | "urgent";
     suggested: "routine" | "urgent";
+    tiers?: boolean;
     photos?: { fileId: string; name: string }[];
   };
 };

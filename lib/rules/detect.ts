@@ -1,7 +1,9 @@
+import { coverageNotice } from "@/lib/coverage";
 import { CITY_PACKS } from "@/lib/rules/cities";
 import { LOCAL_ORDINANCES, type LocalOrdinance } from "@/lib/rules/cities/local-directory";
 import type { CityPack } from "@/lib/rules/cities/types";
 import type { AreaKey, Jurisdiction } from "@/lib/rules/engine";
+import { stateCode, stateFromText, stateFromZip } from "@/lib/us-address";
 
 export type PlaceQuery = {
   address?: string;
@@ -18,6 +20,7 @@ export type PlaceDetection = {
   localOrdinance: LocalOrdinance | null;
   confidence: "low" | "medium";
   notes: string[];
+  state?: string | null;
 };
 
 const COUNTY_AREAS: { area: AreaKey; name: string }[] = [
@@ -143,6 +146,9 @@ export function detectPlace(input: PlaceQuery): PlaceDetection {
     }
   }
 
+  const zipState = zips.map((zip) => stateFromZip(zip)).find((code): code is string => Boolean(code)) || null;
+  if (zipState && zipState !== "CA") return unsupportedPlace(zipState);
+
   const stateNamed = /\b(california|calif)\b/.test(`${text} ${city}`) || /\bca\b/.test(region) || /\bca\b/.test(address);
   const zipIsCa = zips.some(isCaliforniaZip);
   const inCalifornia = Boolean(pack || localOrdinance || stateNamed || zipIsCa);
@@ -157,10 +163,12 @@ export function detectPlace(input: PlaceQuery): PlaceDetection {
             ? "This looks like unincorporated Los Angeles County. Confirm on the county map."
             : `This looks like ${pack.name}. Whether a particular unit is covered still has to be confirmed.`,
     ];
-    return { jurisdiction: pack.jurisdiction, area: pack.area, inCalifornia: true, pack, localOrdinance: null, confidence: "low", notes };
+    return { jurisdiction: pack.jurisdiction, area: pack.area, inCalifornia: true, pack, localOrdinance: null, confidence: "low", notes, state: "CA" };
   }
 
   if (!inCalifornia) {
+    const named = [stateCode(input.region || ""), stateFromText(`${address} ${city}`)].find((code) => code && code !== "CA");
+    if (named) return unsupportedPlace(named);
     return {
       jurisdiction: "unsure",
       area: null,
@@ -169,6 +177,7 @@ export function detectPlace(input: PlaceQuery): PlaceDetection {
       localOrdinance: null,
       confidence: "low",
       notes: [address || city || zips.length ? "This does not look like a California address." : "No address entered."],
+      state: null,
     };
   }
 
@@ -184,6 +193,20 @@ export function detectPlace(input: PlaceQuery): PlaceDetection {
     localOrdinance,
     confidence: "low",
     notes,
+    state: "CA",
+  };
+}
+
+function unsupportedPlace(state: string): PlaceDetection {
+  return {
+    jurisdiction: "unsupported",
+    area: null,
+    inCalifornia: false,
+    pack: null,
+    localOrdinance: null,
+    confidence: "low",
+    notes: [],
+    state,
   };
 }
 
@@ -197,6 +220,7 @@ export function inferJurisdiction(address: string): {
 }
 
 export function placeSummary(place: PlaceDetection, locale: "en" | "es" = "en"): string {
+  if (place.jurisdiction === "unsupported") return coverageNotice(locale);
   if (!place.inCalifornia) {
     const empty = place.notes.some((note) => note === "No address entered.");
     if (locale === "es") return empty ? "No hay dirección." : "Esa dirección no parece de California.";

@@ -482,7 +482,8 @@ export type ArchiveIssueCard = {
   note: string | null;
 };
 
-function tierFields(log: { type?: string; tier?: string | null; severity?: string | null; flags?: Record<string, unknown> }, locale: Locale): Pick<OpenIssueCard, "tier" | "tierLabel" | "flag" | "citation" | "unsure"> {
+function tierFields(log: { type?: string; tier?: string | null; severity?: string | null; flags?: Record<string, unknown> }, locale: Locale, covered = true): Pick<OpenIssueCard, "tier" | "tierLabel" | "flag" | "citation" | "unsure"> {
+  if (!covered) return { tier: null, tierLabel: null, flag: null, citation: null, unsure: false };
   const stored = log.tier && isIssueTier(log.tier) ? log.tier : log.type === "repair" ? tierForSeverity(log.severity) : null;
   const citation = typeof log.flags?.citation === "string" ? log.flags.citation : stored === "possible_violation" ? "CA-CC-1942" : null;
   return {
@@ -496,6 +497,7 @@ function tierFields(log: { type?: string; tier?: string | null; severity?: strin
 
 export function issueBoard(input: {
   locale: Locale;
+  covered?: boolean;
   logs: (LogInput & {
     room?: string | null;
     resolvedAt?: string | null;
@@ -508,7 +510,8 @@ export function issueBoard(input: {
   messages: MessageInput[];
 }): { open: OpenIssueCard[]; archive: ArchiveIssueCard[] } {
   const locale = input.locale;
-  const repairs = input.logs.filter((log) => log.type === "repair" || (log.tier === "possible_violation" && log.type !== "issue_event"));
+  const covered = input.covered !== false;
+  const repairs = input.logs.filter((log) => log.type === "repair" || (covered && log.tier === "possible_violation" && log.type !== "issue_event"));
   const cards = new Map(logCards(repairs, input.messages, locale).map((card) => [card.id, card]));
   const open: OpenIssueCard[] = [];
   const archive: ArchiveIssueCard[] = [];
@@ -559,7 +562,7 @@ export function issueBoard(input: {
       pendingNote: landlordFixedNote(log.flags),
       earliest: log.eventDate || log.createdAt.slice(0, 10),
       sent: sentMail(log.id, input.messages),
-      ...tierFields(log, locale),
+      ...tierFields(log, locale, covered),
     });
   }
   return { open, archive };

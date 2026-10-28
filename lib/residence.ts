@@ -19,8 +19,9 @@ import {
   type UnitInput,
   type User,
 } from "@/lib/db";
+import { coversLaw } from "@/lib/coverage";
 import { emailValue } from "@/lib/forms";
-import { isCaliforniaPostal, suggestPlace, tidyAddress } from "@/lib/geo";
+import { suggestPlace, tidyAddress } from "@/lib/geo";
 import { parseISODate } from "@/lib/rules/dates";
 import { detectPlace, placeSummary, type PlaceDetection } from "@/lib/rules/detect";
 import {
@@ -174,7 +175,7 @@ function readFields(unit: Unit, body: Record<string, unknown>, locale: User["loc
   const landlordName = text(body.landlordName);
   const landlordEmailRaw = text(body.landlordEmail);
   if (!street || !city || !postalCode) throw new Error(tx(locale, "Add the street, city, and ZIP.", "Agregue calle, ciudad y código postal."));
-  if (!isCaliforniaPostal(postalCode)) throw new Error(tx(locale, "That address does not look like California.", "Esa dirección no parece de California."));
+  if (!/^\d{5}(?:-\d{4})?$/.test(postalCode.trim())) throw new Error(tx(locale, "Enter a 5-digit US ZIP.", "Escriba un código postal de 5 dígitos."));
   if ((landlordName || landlordEmailRaw) && (!landlordName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(landlordEmailRaw))) {
     throw new Error(tx(locale, "Add the landlord's name and email.", "Agregue el nombre y el correo del propietario."));
   }
@@ -266,11 +267,13 @@ export async function previewResidence(user: User, body: Record<string, unknown>
     region: fields.region,
     postalCode: fields.postalCode,
   });
-  if (!found.place.inCalifornia) throw new Error(placeSummary(found.place, locale));
+  if (!found.place.inCalifornia && found.place.jurisdiction !== "unsupported") throw new Error(placeSummary(found.place, locale));
   const changed = !sameAddress(unit, fields);
   const lawsChange = changed && found.place.jurisdiction !== unit.jurisdiction;
   return {
-    inCalifornia: true,
+    inCalifornia: found.place.inCalifornia,
+    covered: found.place.inCalifornia && found.place.jurisdiction !== "unsupported",
+    state: found.place.state || null,
     summary: placeSummary(found.place, locale),
     suggestion: found.suggestion,
     differs: found.differs,
@@ -290,8 +293,9 @@ function inputFor(unit: Unit, fields: ReturnType<typeof readFields>, place: Plac
     unitNumber: fields.unitNumber,
     city: fields.city,
     postalCode: fields.postalCode,
-    region: fields.region,
+    region: redetect && place.jurisdiction === "unsupported" && place.state ? place.state : fields.region,
     jurisdiction: redetect ? place.jurisdiction : unit.jurisdiction,
+    supported: redetect ? place.jurisdiction !== "unsupported" : unit.supported,
     jurisdictionConfirmed: true,
     rsoStatus: (moving ? "unsure" : unit.rsoStatus) as RsoStatus,
     rstpoTier: (moving ? "unsure" : unit.rstpoTier) as RstpoTier,
@@ -402,7 +406,7 @@ export async function saveResidence(user: User, body: Record<string, unknown>) {
       region: fields.region,
       postalCode: fields.postalCode,
     });
-    if (!found.place.inCalifornia) throw new Error(placeSummary(found.place, locale));
+    if (!found.place.inCalifornia && found.place.jurisdiction !== "unsupported") throw new Error(placeSummary(found.place, locale));
     place = found.place;
   }
   const lawsChange = changed && place.jurisdiction !== unit.jurisdiction;
@@ -416,7 +420,7 @@ export async function saveResidence(user: User, body: Record<string, unknown>) {
     return { note: labels.nothingSent, unit: created };
   }
   const saved = await updateUnit(user.id, unit.id, inputFor(unit, fields, place, mode === "typo" ? "typo" : "details", changed));
-  if (mode === "typo" && changed) {
+  if (mode === "typo" && changed && coversLaw(saved)) {
     await refreshOpenDeadlines(user.id, saved.id);
     await refreshRentCheck(user, saved);
   }

@@ -1,3 +1,4 @@
+import { coversLaw } from "@/lib/coverage";
 import type { Locale } from "@/lib/disclaimer";
 import {
   insertDeadline,
@@ -31,17 +32,26 @@ export function repairDraftLetter(input: {
   address: string;
   severity: string | null;
   tier?: string | null;
+  covered?: boolean;
 }): { subject: string; body: string; ruleId: string; dueDate: string | null } {
   const locale = input.locale;
   const day = input.eventDate.slice(0, 10);
-  const severity = severityOf(input.severity);
-  const pace = input.tier ? reminderPace(input.tier, input.severity) : undefined;
-  const reminder = repairReminder(day, severity, pace);
-  const urgent = input.tier ? input.tier === "urgent" : tierForSeverity(severity) === "urgent";
   const issue = input.description.replace(/\s+/g, " ").trim();
   const short = issue.length > 80 ? `${issue.slice(0, 77).trim()}…` : issue;
   const subject = tx(locale, `Repair request: ${short}`, `Solicitud de reparación: ${short}`);
   const date = formatDate(day, locale);
+  if (input.covered === false) {
+    return {
+      subject,
+      body: [repairOpening(locale), "", tx(locale, `Issue: ${issue}`, `Problema: ${issue}`), tx(locale, `Date: ${date}`, `Fecha: ${date}`)].join("\n"),
+      ruleId: "",
+      dueDate: null,
+    };
+  }
+  const severity = severityOf(input.severity);
+  const pace = input.tier ? reminderPace(input.tier, input.severity) : undefined;
+  const reminder = repairReminder(day, severity, pace);
+  const urgent = input.tier ? input.tier === "urgent" : tierForSeverity(severity) === "urgent";
   const tier = input.tier ?? (urgent ? "urgent" : "routine");
   const body = [
     repairOpening(locale),
@@ -139,6 +149,7 @@ export async function ensureRepairDrafts(user: User, unit: Unit, logs: LogEntry[
       address: unitAddress(unit),
       severity: log.severity,
       tier: log.tier,
+      covered: coversLaw(unit),
     });
     try {
       const row = await insertMessage({
@@ -169,7 +180,7 @@ export async function ensureRepairDrafts(user: User, unit: Unit, logs: LogEntry[
 }
 
 export async function ensureRepairDeadline(user: User, unit: Unit, log: LogEntry) {
-  if (log.type !== "repair") return;
+  if (!coversLaw(unit) || log.type !== "repair") return;
   const existing = (await listDeadlines(user.id, unit.id)).find((item) => item.kind === "repair" && item.sourceId === log.id);
   if (existing) return;
   const day = log.eventDate.slice(0, 10);

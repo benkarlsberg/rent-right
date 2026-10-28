@@ -147,12 +147,11 @@ function localPlace(kept: KeptAddress): PlaceDetection {
 }
 
 function localCheck(kept: KeptAddress): AddressCheck {
-  if (kept.postalCode && !isCaliforniaPostal(kept.postalCode)) {
-    return { place: rejectPlace(localPlace(kept)), suggestion: null, differs: false, kept };
-  }
   const place = localPlace(kept);
-  if (!place.inCalifornia) return { place: rejectPlace(place), suggestion: null, differs: false, kept };
-  return { place, suggestion: null, differs: false, kept };
+  if (place.inCalifornia || place.jurisdiction === "unsupported") {
+    return { place, suggestion: null, differs: false, kept };
+  }
+  return { place: rejectPlace(place), suggestion: null, differs: false, kept };
 }
 
 async function censusMatch(address: string, timeoutMs: number): Promise<CensusMatch | null> {
@@ -206,7 +205,16 @@ export async function suggestPlace(input: string | AddressFields): Promise<Addre
     if (!match) return localCheck(kept);
     const parts = match.addressComponents || {};
     const censusState = String(parts.state || "").trim().toUpperCase();
-    if (censusState && censusState !== "CA") return { place: rejectPlace(localPlace(kept)), suggestion: null, differs: false, kept };
+    if (censusState && censusState !== "CA") {
+      const outside = detectPlace({
+        address: kept.street,
+        city: kept.city,
+        postalCode: kept.postalCode || String(parts.zip || ""),
+        region: censusState,
+      });
+      if (outside.jurisdiction === "unsupported") return { place: outside, suggestion: null, differs: false, kept };
+      return { place: rejectPlace(localPlace(kept)), suggestion: null, differs: false, kept };
+    }
     const city = censusCity(match) || kept.city;
     const postalCode = String(parts.zip || kept.postalCode);
     const county = match.geographies?.Counties?.[0]?.NAME || "";

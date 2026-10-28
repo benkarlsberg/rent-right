@@ -1,6 +1,7 @@
 import { aiConfigured, completeJson, extractImageText } from "@/lib/ai";
 import { answerFromConversation } from "@/lib/chat-answer";
 import { chatContext } from "@/lib/chat-text";
+import { coverageNotice, coversLaw, rulesUnavailable } from "@/lib/coverage";
 import { landlordReady } from "@/lib/landlord";
 import {
   addAssistantMessage,
@@ -87,11 +88,12 @@ export async function recordLog(input: {
   notes?: string | null;
 }) {
   assertWritable(input.unit, input.user.locale);
+  const covered = coversLaw(input.unit);
   const flags: Record<string, unknown> = {};
-  if (input.entryAt && input.noticeAt) {
+  if (covered && input.entryAt && input.noticeAt) {
     flags.entry = entryNoticeCheck(input.noticeAt, input.entryAt);
   }
-  if ((input.noticeKind === "rent_increase" || input.noticeKind === "eviction") && input.eventDate) {
+  if (covered && (input.noticeKind === "rent_increase" || input.noticeKind === "eviction") && input.eventDate) {
     const repairs = (await listLogs(input.user.id, input.unit.id)).filter((entry) => entry.type === "repair");
     const hits = repairs
       .map((entry) => ({ entry, window: retaliationWindow(entry.eventDate, input.eventDate) }))
@@ -110,7 +112,7 @@ export async function recordLog(input: {
   const chosen = input.type === "repair"
     ? (input.tier && isIssueTier(input.tier) ? input.tier : tierForSeverity(input.severity))
     : null;
-  const tier = failedCheck ? "possible_violation" : chosen;
+  const tier = covered ? (failedCheck ? "possible_violation" : chosen) : null;
   if (failedCheck) flags.unsure = true;
   if (input.tierManual) flags.tierManual = true;
   if (input.notes?.trim()) flags.notes = input.notes.trim();
@@ -129,7 +131,7 @@ export async function recordLog(input: {
     createdAt: input.createdAt,
   });
 
-  if (input.type === "repair" && input.severity) {
+  if (covered && input.type === "repair" && input.severity) {
     const reminder = repairReminder(input.eventDate, input.severity as RepairSeverity, reminderPace(tier, input.severity));
     await insertDeadline({
       unitId: input.unit.id,
@@ -146,7 +148,7 @@ export async function recordLog(input: {
     });
   }
 
-  if (input.noticeKind === "pay_or_quit_3day") {
+  if (covered && input.noticeKind === "pay_or_quit_3day") {
     const counted = threeDayNoticeDeadline(input.eventDate);
     await insertDeadline({
       unitId: input.unit.id,
@@ -368,7 +370,7 @@ export async function saveDepositAndDeadline(user: User, unit: Unit, input: {
 }) {
   assertWritable(unit, user.locale);
   await saveDeposit(user.id, unit.id, input);
-  if (input.moveOutDate) {
+  if (input.moveOutDate && coversLaw(unit)) {
     const due = depositReturnDeadline(input.moveOutDate);
     await replaceOpenDeadline(unit.id, "deposit");
     await insertDeadline({
@@ -389,6 +391,7 @@ export async function saveDepositAndDeadline(user: User, unit: Unit, input: {
 
 export async function runLeaseReview(user: User, unit: Unit, text: string, filename: string) {
   assertWritable(unit, user.locale);
+  if (!coversLaw(unit)) throw new Error(coverageNotice(user.locale));
   const cleaned = redactPii(text).trim();
   if (cleaned.length < 40) throw new Error("No lease text was found. Paste the text or upload a PDF with selectable text.");
   const textHash = leaseTextHash(cleaned, LIBRARY_VERSION, unit.rentCents, unit.jurisdiction);
@@ -480,6 +483,11 @@ export async function askAssistant(user: User, unit: Unit | null, question: stri
     ));
   }
   await addAssistantMessage(user.id, unit?.id || null, "user", { locale, content: trimmed, ruleIds: [], unsure: false });
+  if (unit && !coversLaw(unit)) {
+    const text = rulesUnavailable(locale, unit.region);
+    await addAssistantMessage(user.id, unit.id, "assistant", { locale, content: text, ruleIds: [], unsure: true });
+    return { text, ruleIds: [], disclaimer: "", handoff: false, unsure: true };
+  }
   const context = aiConfigured() ? chatContext(await recentConversationTurns(user.id)) : { history: "", retrieval: "" };
   const answer = await answerFromConversation(trimmed, locale, context.history, context.retrieval);
   await addAssistantMessage(user.id, unit?.id || null, "assistant", {
@@ -531,7 +539,8 @@ export async function dispatchReminders(today = todayISO()) {
     const sentSlots = row.slots || [];
     const userIds = row.user_ids || [];
     const issue = row.kind === "custom_reminder" ? row.explanation : (row.issue || "");
-    if (row.due_date) {
+    const uncovered = row.supported === false || row.jurisdiction === "unsupported";
+    if (row.due_date && !(uncovered && row.kind !== "custom_reminder")) {
       const dueDate = String(row.due_date).slice(0, 10);
       for (const slot of pendingReminderSlots(dueDate, today, sentSlots)) {
         due.push({ deadlineId: row.id, slot, kind: row.kind, date: dueDate, issue, userIds, sourceId: row.source_id });

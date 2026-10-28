@@ -1,3 +1,4 @@
+import { coversLaw } from "@/lib/coverage";
 import { getDeposit, primaryUnit, unitAddress } from "@/lib/db";
 import { demandLetter } from "@/lib/letters";
 import { renderPdf } from "@/lib/pdf";
@@ -25,6 +26,7 @@ export async function GET(request: Request) {
       deductionNotes: deposit?.landlord_deductions || "",
       disputeNotes: notes,
       letterDate: new Date().toISOString().slice(0, 10),
+      citeStatute: coversLaw(unit),
     });
     const { listDeadlines } = await import("@/lib/db");
     const due = (await listDeadlines(user.id, unit.id)).find((item) => item.kind === "deposit" && item.dueDate);

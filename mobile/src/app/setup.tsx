@@ -15,6 +15,8 @@ type Kept = { street: string; unit: string; city: string; region: string; postal
 type PlaceResult = {
   summary: string;
   inCalifornia: boolean;
+  covered?: boolean;
+  state?: string | null;
   suggestion: Suggestion | null;
   differs?: boolean;
   jurisdiction?: string;
@@ -23,10 +25,8 @@ type PlaceResult = {
 
 const STEPS = 5;
 
-function californiaZip(value: string): boolean {
-  if (!/^\d{5}$/.test(value)) return false;
-  const prefix = Number(value.slice(0, 3));
-  return prefix >= 900 && prefix <= 961;
+function usZip(value: string): boolean {
+  return /^\d{5}$/.test(value);
 }
 
 export default function Setup() {
@@ -37,6 +37,7 @@ export default function Setup() {
   const [unitNumber, setUnit] = useState("");
   const [city, setCity] = useState("");
   const [postalCode, setPostal] = useState("");
+  const [region, setRegion] = useState("CA");
   const [landlordName, setLandlord] = useState("");
   const [landlordEmail, setEmail] = useState("");
   const [moveInDate, setMoveIn] = useState("");
@@ -65,6 +66,10 @@ export default function Setup() {
     setPostal(value);
     clearCheck();
   }
+  function editRegion(value: string) {
+    setRegion(value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2));
+    clearCheck();
+  }
 
   function applyKept() {
     if (kept) {
@@ -88,7 +93,7 @@ export default function Setup() {
 
   async function later() {
     const zip = postalCode.trim();
-    const addressReady = Boolean(street.trim() && city.trim() && californiaZip(zip));
+    const addressReady = Boolean(street.trim() && city.trim() && usZip(zip));
     if (!addressReady || !token) {
       await setSkippedSetup(true);
       router.replace("/chat");
@@ -108,7 +113,7 @@ export default function Setup() {
           unitNumber: unitNumber.trim(),
           city: city.trim(),
           postalCode: zip,
-          region: "CA",
+          region: region.trim() || "CA",
           landlordName: keepLandlord ? name : "",
           landlordEmail: keepLandlord ? email : "",
           rent: rent.trim(),
@@ -132,17 +137,18 @@ export default function Setup() {
       setError("");
       if (step === 0) {
         const zip = postalCode.trim();
-        if (!street.trim() || !city.trim() || !californiaZip(zip)) {
-          setError(es ? "Agregue calle, ciudad y un código postal de California." : "Add a street, city, and California ZIP.");
+        if (!street.trim() || !city.trim() || !usZip(zip)) {
+          setError(es ? "Agregue calle, ciudad y un código postal de 5 dígitos." : "Add a street, city, and a 5-digit ZIP.");
           return;
         }
         setBusy(true);
-        const found = await api<PlaceResult>("place", { token, body: { street: street.trim(), city: city.trim(), postalCode: zip, region: "CA" } });
-        if (!found.inCalifornia) {
+        const found = await api<PlaceResult>("place", { token, body: { street: street.trim(), city: city.trim(), postalCode: zip, region: region.trim() || "CA" } });
+        if (!found.inCalifornia && found.jurisdiction !== "unsupported") {
           setError(found.summary);
           return;
         }
         setSummary(found.summary);
+        if (found.state) setRegion(found.state);
         if (found.jurisdiction) setJurisdiction(found.jurisdiction);
         setKept(found.kept || null);
         if (found.differs && found.suggestion) {
@@ -192,7 +198,7 @@ export default function Setup() {
           unitNumber: unitNumber.trim(),
           city: city.trim(),
           postalCode: postalCode.trim(),
-          region: "CA",
+          region: region.trim() || "CA",
           landlordName: landlordName.trim(),
           landlordEmail: landlordEmail.trim(),
           rent: rent.trim(),
@@ -215,8 +221,8 @@ export default function Setup() {
     ? ["¿Dónde renta?", "Unidad o apartamento", "Su propietario", "Datos del contrato", "Reglas para esta dirección"]
     : ["Where do you rent?", "Unit or apartment", "Your landlord", "Lease details", "Rules for this address"];
   const hints = es
-    ? ["Una dirección en California.", "Si es una casa, puede dejarlo en blanco.", "Deje ambos en blanco para agregarlos después. Nada se envía hasta que usted lo confirme.", "Los dos son opcionales.", summary]
-    : ["A California address.", "Leave this blank for a house.", "Leave both blank to add them later. Nothing is sent until you confirm it.", "Both of these are optional.", summary];
+    ? ["Una dirección en Estados Unidos.", "Si es una casa, puede dejarlo en blanco.", "Deje ambos en blanco para agregarlos después. Nada se envía hasta que usted lo confirme.", "Los dos son opcionales.", summary]
+    : ["A US address.", "Leave this blank for a house.", "Leave both blank to add them later. Nothing is sent until you confirm it.", "Both of these are optional.", summary];
   const action = step === 4 ? (es ? "Guardar" : "Save") : (es ? "Continuar" : "Continue");
 
   return (
@@ -229,6 +235,7 @@ export default function Setup() {
         <>
           <Field label={es ? "Calle" : "Street"} value={street} onChange={editStreet} autoComplete="street-address" textContentType="fullStreetAddress" />
           <Field label={es ? "Ciudad" : "City"} value={city} onChange={editCity} placeholder="Los Angeles" autoComplete="postal-address-locality" textContentType="addressCity" />
+          <Field label={es ? "Estado" : "State"} value={region} onChange={editRegion} placeholder="CA" autoCapitalize="characters" autoComplete="postal-address-region" textContentType="addressState" />
           <Field label={es ? "Código postal" : "ZIP"} value={postalCode} onChange={editPostal} placeholder="90026" keyboardType="number-pad" autoComplete="postal-code" textContentType="postalCode" />
         </>
       ) : null}
@@ -246,7 +253,7 @@ export default function Setup() {
         </>
       ) : null}
       {step === 4 ? (
-        <Address street={street} unit={unitNumber} city={city} postalCode={postalCode} region="CA" style={styles.recap} />
+        <Address street={street} unit={unitNumber} city={city} postalCode={postalCode} region={region || "CA"} style={styles.recap} />
       ) : null}
       {step === 0 && offer ? (
         <>

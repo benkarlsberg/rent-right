@@ -1,13 +1,15 @@
 import { randomUUID } from "crypto";
 import { describe, expect, it, vi } from "vitest";
+import { COVERAGE_NOTICE_EN } from "@/lib/coverage";
 import { signSession } from "@/lib/crypto";
-import { profileForAuthUser } from "@/lib/db";
+import { getUserByEmail, listDeadlines, listLogs, listMessages, primaryUnit, profileForAuthUser } from "@/lib/db";
+import { packetLines } from "@/lib/packet";
 import { handlePhone } from "@/lib/phone-api";
 import { sampleLeaseText } from "@/lib/workflow";
 import { dispatchReminders } from "@/lib/workflow";
 import { getSql, run, withActor } from "@/lib/pg";
 import { DEMO_EMAIL, startSampleTenancy } from "@/lib/seed";
-import { getUser, getUserByEmail } from "@/lib/db";
+import { getUser } from "@/lib/db";
 import { GET as packetPdf } from "@/app/api/packet/route";
 import { addDays, todayISO } from "@/lib/rules/dates";
 
@@ -259,7 +261,10 @@ describe("renter workflows", () => {
       region: "TX",
     }, token);
     expect(elsewhere.json?.inCalifornia).toBe(false);
-    expect(elsewhere.json?.summary).toBe("That address does not look like California.");
+    expect(elsewhere.json?.jurisdiction).toBe("unsupported");
+    expect(elsewhere.json?.state).toBe("TX");
+    expect(elsewhere.json?.covered).toBe(false);
+    expect(elsewhere.json?.summary).toBe(COVERAGE_NOTICE_EN);
     const saved = await api("POST", "unit", {
       street: "1604 dover ave",
       unitNumber: "apt 4",
@@ -272,6 +277,79 @@ describe("renter workflows", () => {
     expect(address).toContain("1604 Dover Ave");
     expect(address.toLowerCase()).toContain("apt 4");
     expect(address).not.toContain("1600");
+  });
+
+  it("accepts an Austin home without California rules, deadlines, or citations", async () => {
+    const email = `austin-${Date.now()}@example.com`;
+    const magic = await api("POST", "auth/magic", { email });
+    const session = await api("POST", "auth/verify", { token: magic.json?.devToken });
+    const token = String(session.json?.token);
+    const bad = await api("POST", "place", { street: "1 Main", city: "Austin", postalCode: "12", region: "TX" }, token);
+    expect(bad.status).toBe(400);
+    expect(String(bad.json?.error)).toBe("Enter a 5-digit US ZIP.");
+    expect(String(bad.json?.error)).not.toBe(COVERAGE_NOTICE_EN);
+
+    const saved = await api("POST", "unit", {
+      name: "Ada Tenant",
+      street: "1 Main",
+      city: "Austin",
+      postalCode: "78701",
+      region: "CA",
+      landlordName: "Elena Vasquez",
+      landlordEmail: "elena@example.com",
+    }, token);
+    expect(saved.status).toBe(200);
+    const unit = saved.json?.unit as { jurisdiction?: string; supported?: boolean; region?: string; coverageNotice?: string };
+    expect(unit.jurisdiction).toBe("unsupported");
+    expect(unit.supported).toBe(false);
+    expect(unit.region).toBe("TX");
+    expect(unit.coverageNotice).toBe(COVERAGE_NOTICE_EN);
+
+    const repair = await saveRepair(token, "The kitchen sink is leaking under the cabinet");
+    expect(repair.saved.status).toBe(200);
+    const threadText = JSON.stringify(repair.saved.json);
+    expect(threadText).not.toMatch(/Civil Code|CA-CC|§1942/);
+
+    const mail = await api("GET", "chat", undefined, token);
+    const draft = (mail.json?.items as { draft?: boolean; text?: string }[]).find((item) => item.draft);
+    expect(draft?.text || "").not.toMatch(/Civil Code|Código Civil|CA-CC|§1942/);
+    expect(draft?.text || "").toContain("Issue: The kitchen sink is leaking under the cabinet");
+
+    const rights = await api("POST", "thread", { text: "Can my landlord enter without 24 hours notice?" }, token);
+    expect(rights.status).toBe(200);
+    const rightsText = JSON.stringify(rights.json);
+    expect(rightsText).toContain(COVERAGE_NOTICE_EN);
+    expect(rightsText).toContain("can't give rules for Texas yet");
+    expect(rightsText).not.toMatch(/CA-CC-1954|Civil Code §1954/);
+
+    const reminder = await api("POST", "records/reminder/new", { label: "Call the plumber", date: "2026-12-01" }, token);
+    expect(reminder.status).toBe(200);
+    const kinds = (reminder.json?.deadlines as { kind: string }[]) || [];
+    expect(kinds.some((item) => item.kind === "custom_reminder")).toBe(true);
+    expect(kinds.some((item) => item.kind === "repair" || item.kind === "deposit" || item.kind === "notice_3day")).toBe(false);
+    expect(JSON.stringify(reminder.json)).not.toMatch(/CA-CC|Civil Code/);
+
+    const owner = await getUserByEmail(email);
+    expect(owner?.id).toBeTruthy();
+    await withActor(owner!.id, async () => {
+      const home = await primaryUnit(owner!.id);
+      expect(home?.supported).toBe(false);
+      const lines = packetLines({
+        user: owner!,
+        unit: home!,
+        logs: await listLogs(owner!.id, home!.id),
+        messages: await listMessages(owner!.id, home!.id),
+        deadlines: await listDeadlines(owner!.id, home!.id),
+        ledger: [],
+        deposit: null,
+        conditions: [],
+      });
+      const text = lines.join("\n");
+      expect(text).toContain(COVERAGE_NOTICE_EN);
+      expect(text).toContain("Texas");
+      expect(text).not.toMatch(/Civil Code|CA-CC|§1942|selfhelp\.courts\.ca\.gov/);
+      expect(lines.some((line) => line === "California")).toBe(false);
+    });
   });
 
   it("answers statewide questions for an Apple-shaped account with no place or landlord", async () => {

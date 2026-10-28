@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
-import { isCaliforniaPostal, lookupJurisdiction, tidyAddress } from "@/lib/geo";
-import { isAllowedJurisdiction } from "@/lib/rules/cities";
+import { coverageNotice, coversLaw } from "@/lib/coverage";
+import { lookupJurisdiction, tidyAddress } from "@/lib/geo";
+import { storedHome } from "@/lib/home-place";
 import { detectPlace } from "@/lib/rules/detect";
 import {
   acknowledgeCondition,
@@ -84,10 +85,13 @@ function unitInput(form: FormData): UnitInput {
     postalCode: field(form, "postalCode"),
     region: field(form, "region"),
   });
-  if (tidy.postalCode && !isCaliforniaPostal(tidy.postalCode)) throw new Error("That address does not look like California.");
-  const detected = detectPlace({ address: tidy.street, city: tidy.city, postalCode: tidy.postalCode, region: tidy.region });
-  const jurisdiction = requested && requested !== "unsure" && isAllowedJurisdiction(requested) ? requested : detected.jurisdiction;
-  if (!isAllowedJurisdiction(jurisdiction)) throw new Error("Choose a jurisdiction.");
+  const home = storedHome({
+    street: tidy.street,
+    city: tidy.city,
+    postalCode: tidy.postalCode,
+    region: tidy.region,
+    requested,
+  });
   const landlordName = field(form, "landlordName");
   const landlordEmailRaw = field(form, "landlordEmail");
   return {
@@ -95,11 +99,12 @@ function unitInput(form: FormData): UnitInput {
     unitNumber: tidy.unit,
     city: tidy.city,
     postalCode: tidy.postalCode,
-    region: tidy.region,
-    jurisdiction,
-    jurisdictionConfirmed: form.get("jurisdictionConfirmed") === "on",
-    rsoStatus: (field(form, "rsoStatus") || "unsure") as RsoStatus,
-    rstpoTier: (field(form, "rstpoTier") || "unsure") as RstpoTier,
+    region: home.region,
+    jurisdiction: home.jurisdiction,
+    supported: home.supported,
+    jurisdictionConfirmed: home.supported ? form.get("jurisdictionConfirmed") === "on" : true,
+    rsoStatus: (home.supported ? field(form, "rsoStatus") || "unsure" : "unsure") as RsoStatus,
+    rstpoTier: (home.supported ? field(form, "rstpoTier") || "unsure" : "unsure") as RstpoTier,
     landlordName,
     landlordEmail: landlordEmailRaw ? emailValue(landlordEmailRaw) : "",
     landlordPhone: field(form, "landlordPhone"),
@@ -353,6 +358,7 @@ export async function checkIncrease(form: FormData) {
     const lowest = centsField(form, "lowest");
     const proposed = centsField(form, "proposed");
     if (!lowest || !proposed) throw new Error("Enter the current rent and the proposed rent.");
+    if (!coversLaw(unit)) throw new Error(coverageNotice(user.locale));
     const jurisdiction = (field(form, "jurisdiction") || unit.jurisdiction) as Jurisdiction;
     const place = detectPlace({ address: unit.street, city: unit.city, postalCode: unit.postalCode, region: unit.region });
     const statewide = jurisdiction === "ca" || jurisdiction === "other_ca";

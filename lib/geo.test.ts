@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { COVERAGE_NOTICE_EN } from "@/lib/coverage";
 import { addressDiffers, suggestPlace } from "@/lib/geo";
 import { placeSummary } from "@/lib/rules/detect";
 
@@ -164,10 +165,11 @@ describe("address suggestions", () => {
     });
     const found = await suggestPlace({ street: "350 5th Ave", city: "New York", region: "CA", postalCode: "10001" });
     expect(found.place.inCalifornia).toBe(false);
-    expect(found.place.jurisdiction).toBe("unsure");
+    expect(found.place.jurisdiction).toBe("unsupported");
+    expect(found.place.state).toBe("NY");
     expect(found.suggestion).toBeNull();
     expect(found.kept.street).toBe("350 5th Ave");
-    expect(placeSummary(found.place)).toBe("That address does not look like California.");
+    expect(placeSummary(found.place)).toBe(COVERAGE_NOTICE_EN);
   });
 
   it("treats a different house number, street, or unit as a suggestion", () => {

@@ -64,6 +64,7 @@ type Home = {
   moveInDate: string;
   leaseEndDate: string;
   relay: string;
+  jurisdiction?: string;
   summary: string;
   archived: boolean;
   canEdit: boolean;
@@ -87,10 +88,8 @@ type Preview = {
   warning: string;
 };
 
-function californiaZip(value: string): boolean {
-  if (!/^\d{5}$/.test(value)) return false;
-  const prefix = Number(value.slice(0, 3));
-  return prefix >= 900 && prefix <= 961;
+function usZip(value: string): boolean {
+  return /^\d{5}$/.test(value);
 }
 
 function norm(value: string): string {
@@ -182,8 +181,8 @@ export default function ResidenceScreen() {
   async function previewAddress(nextMode: "typo" | "move") {
     if (!token || !labels) return;
     const zip = postalCode.trim();
-    if (!street.trim() || !city.trim() || !californiaZip(zip)) {
-      setError(labels.zip === "ZIP" ? "Add a street, city, and California ZIP." : "Agregue calle, ciudad y un código postal de California.");
+    if (!street.trim() || !city.trim() || !usZip(zip)) {
+      setError(labels.zip === "ZIP" ? "Add a street, city, and a 5-digit ZIP." : "Agregue calle, ciudad y un código postal de 5 dígitos.");
       return;
     }
     const name = landlordName.trim();
@@ -290,6 +289,7 @@ export default function ResidenceScreen() {
       <H1>{title}</H1>
       {labels ? <Muted>{labels.intro}</Muted> : null}
       <ErrorLine message={error} />
+      {home?.jurisdiction === "unsupported" && home.summary ? <Text style={styles.note}>{home.summary}</Text> : null}
       {note ? <Text style={styles.note}>{note}</Text> : null}
       {data && labels && data.homes.length ? (
         <View>

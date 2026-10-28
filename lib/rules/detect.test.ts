@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { LOCAL_ORDINANCES } from "@/lib/rules/cities/local-directory";
+import { COVERAGE_NOTICE_EN } from "@/lib/coverage";
 import { detectPlace, localProtectionNote, placeSummary } from "@/lib/rules/detect";
 
 describe("California place detection", () => {
@@ -52,7 +53,8 @@ describe("California place detection", () => {
     expect(detectPlace({ address: "1 Fair Oaks, South Pasadena, CA" }).pack?.id).not.toBe("pasadena");
     expect(detectPlace({ address: "1 Fair Oaks, South Pasadena, CA" }).pack).toBeNull();
     expect(detectPlace({ city: "Los Angeles", address: "100 Commerce Ave" }).jurisdiction).toBe("city_la");
-    expect(detectPlace({ address: "1 Main, Austin, TX 78701" }).jurisdiction).toBe("unsure");
+    expect(detectPlace({ address: "1 Main, Austin, TX 78701" }).jurisdiction).toBe("unsupported");
+    expect(detectPlace({ address: "1 Main, Austin, TX 78701" }).state).toBe("TX");
     expect(detectPlace({}).jurisdiction).toBe("unsure");
   });
 
@@ -70,7 +72,7 @@ describe("California place detection", () => {
       "California rules apply; Unincorporated Los Angeles County local rules may also apply.",
     );
     expect(placeSummary(detectPlace({ city: "Fresno", postalCode: "93721", region: "CA" }))).toBe("California rules apply.");
-    expect(placeSummary(detectPlace({ address: "1 Main, Austin, TX 78701" }))).toBe("That address does not look like California.");
+    expect(placeSummary(detectPlace({ address: "1 Main, Austin, TX 78701" }))).toBe(COVERAGE_NOTICE_EN);
     expect(placeSummary(detectPlace({}))).toBe("No address entered.");
     expect(placeSummary(detectPlace({ city: "Los Angeles", region: "CA", postalCode: "90026" }), "es")).toContain("Los Ángeles");
   });

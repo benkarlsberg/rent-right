@@ -19,7 +19,7 @@ import { PhotoThumb } from "@/photo-thumb";
 
 type Action = { id: string; label: string };
 type RepairPhoto = { key?: string; fileId?: string; photoId?: string; name: string; mime?: string; base64?: string; preview?: string };
-type RepairForm = { summary: string; description: string; room: string | null; tier: "routine" | "urgent"; suggested: "routine" | "urgent"; photos?: { fileId: string; name: string }[] };
+type RepairForm = { summary: string; description: string; room: string | null; tier: "routine" | "urgent"; suggested: "routine" | "urgent"; tiers?: boolean; photos?: { fileId: string; name: string }[] };
 type LibraryPhoto = { id: string; fileId: string; name: string };
 type Item =
   | { role: "user"; id?: string; text: string }
@@ -38,6 +38,7 @@ type Thread = {
   issues?: { id: string; title: string }[];
   library?: LibraryPhoto[];
   packetFile?: string;
+  coverageNotice?: string | null;
 };
 type Attachment = { name: string; mime: string; base64: string };
 
@@ -338,8 +339,9 @@ export default function AssistantChat() {
           data={items}
           keyExtractor={(item) => item.id || `${item.role}:${item.role === "user" ? item.text : item.headline}`}
           contentContainerStyle={styles.list}
-          ListHeaderComponent={data?.archivedNote || (me?.needsUnit && items.length === 0) ? (
+          ListHeaderComponent={data?.coverageNotice || data?.archivedNote || (me?.needsUnit && items.length === 0) ? (
             <View style={styles.place}>
+              {data?.coverageNotice ? <Text style={styles.coverage}>{data.coverageNotice}</Text> : null}
               {data?.archivedNote ? <Text style={styles.support}>{data.archivedNote}</Text> : null}
               {me?.needsUnit && items.length === 0 ? <Text style={styles.support}>{spanish ? "Agregue su dirección para guardar registros y escribirle al propietario." : "Add your address to keep records and write to your landlord."}</Text> : null}
               {me?.needsUnit && items.length === 0 ? (
@@ -408,7 +410,7 @@ export default function AssistantChat() {
               <View style={styles.userBubble}><Text style={styles.userText}>{item.text}</Text></View>
             </View>
           ) : (
-            <CardView item={item} spanish={spanish} busy={busy} token={token} library={data?.library || []} onAction={onAction} onNameSaved={() => { void reload(); }} />
+            <CardView item={item} spanish={spanish} busy={busy} token={token} library={data?.library || []} showTiers={item.role === "card" && item.form?.tiers !== false && !data?.coverageNotice} onAction={onAction} onNameSaved={() => { void reload(); }} />
           )}
         />
         <ErrorLine message={error} onRetry={!pending && !data ? () => void reload() : undefined} retryLabel={spanish ? "Reintentar" : "Retry"} />
@@ -493,7 +495,7 @@ export default function AssistantChat() {
   );
 }
 
-function CardView({ item, spanish, busy, token, library, onAction, onNameSaved }: { item: Extract<Item, { role: "card" }>; spanish: boolean; busy: boolean; token: string | null; library: LibraryPhoto[]; onAction: (action: Action, form?: { summary: string; description: string; tier: string; photos?: RepairPhoto[] }) => void; onNameSaved: () => void }) {
+function CardView({ item, spanish, busy, token, library, showTiers, onAction, onNameSaved }: { item: Extract<Item, { role: "card" }>; spanish: boolean; busy: boolean; token: string | null; library: LibraryPhoto[]; showTiers: boolean; onAction: (action: Action, form?: { summary: string; description: string; tier: string; photos?: RepairPhoto[] }) => void; onNameSaved: () => void }) {
   const [advice, setAdvice] = useState(false);
   const [details, setDetails] = useState(false);
   const [summary, setSummary] = useState(item.form?.summary || "");
@@ -560,7 +562,7 @@ function CardView({ item, spanish, busy, token, library, onAction, onNameSaved }
               ))}
             </View>
           ) : null}
-          <View style={styles.tiers}>
+          {showTiers ? <View style={styles.tiers}>
             {([
               ["routine", spanish ? "Rutina" : "Routine"],
               ["urgent", spanish ? "Urgente" : "Urgent"],
@@ -576,7 +578,7 @@ function CardView({ item, spanish, busy, token, library, onAction, onNameSaved }
                 <Text style={[styles.tierText, value === "urgent" && styles.urgent]}>{label}</Text>
               </Pressable>
             ))}
-          </View>
+          </View> : null}
         </View>
       ) : null}
       {item.sender && asksForName(item.sender) ? <NamePrompt message={item.sender} onSaved={onNameSaved} /> : item.sender ? <Text style={[styles.detail, wrapText]}>{item.sender}</Text> : null}
@@ -643,6 +645,7 @@ const styles = StyleSheet.create({
   place: { marginTop: 8 },
   intro: { fontSize: 22, color: colors.ink, marginTop: 16, lineHeight: 30 },
   support: { fontSize: 16, lineHeight: 24, color: colors.mute, marginTop: 8 },
+  coverage: { ...wrapText, fontSize: 15, lineHeight: 22, color: colors.ink, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: 12, padding: 12, marginTop: 8 },
   chip: { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.line, minHeight: 48, justifyContent: "center", paddingVertical: 14, paddingHorizontal: 18, marginTop: 12 },
   chipText: { fontSize: 17, color: colors.ink },
   userRow: { alignItems: "flex-end", marginTop: 16, width: "100%", maxWidth: "100%", minWidth: 0, alignSelf: "stretch" },

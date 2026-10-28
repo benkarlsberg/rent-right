@@ -65,6 +65,7 @@ export type Unit = {
   movedFromUnitId: string | null;
   createdAt: string;
   role: "owner" | "roommate";
+  supported: boolean;
 };
 
 type UserRow = {
@@ -102,6 +103,7 @@ type UnitRow = {
   moved_from_unit_id: string | null;
   created_at: string;
   role?: string;
+  supported?: boolean | number | null;
 };
 
 function mapUser(row: UserRow): User {
@@ -142,6 +144,7 @@ function mapUnit(row: UnitRow, role: "owner" | "roommate"): Unit {
     movedFromUnitId: row.moved_from_unit_id,
     createdAt: row.created_at,
     role,
+    supported: row.supported == null ? row.jurisdiction !== "unsupported" : isOn(row.supported),
   };
 }
 
@@ -395,6 +398,7 @@ export type UnitInput = {
   depositCents: number | null;
   moveInDate: string | null;
   leaseEndDate: string | null;
+  supported?: boolean;
 };
 
 export async function createUnit(userId: string, input: UnitInput) {
@@ -404,12 +408,12 @@ export async function createUnit(userId: string, input: UnitInput) {
   await run(
     `insert into units (
       id, created_by, street, unit_number, city, postal_code, region, jurisdiction, jurisdiction_confirmed,
-      rso_status, rstpo_tier, landlord_name, landlord_email, landlord_phone, relay_local,
+      supported, rso_status, rstpo_tier, landlord_name, landlord_email, landlord_phone, relay_local,
       rent_cents, deposit_cents, move_in_date, lease_end_date, created_at
-    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id, userId, input.street, input.unitNumber, input.city, input.postalCode, input.region, input.jurisdiction,
-      input.jurisdictionConfirmed, input.rsoStatus, input.rstpoTier, input.landlordName, input.landlordEmail,
+      input.jurisdictionConfirmed, input.supported !== false, input.rsoStatus, input.rstpoTier, input.landlordName, input.landlordEmail,
       input.landlordPhone, relay, input.rentCents, input.depositCents, input.moveInDate, input.leaseEndDate, now,
     ],
   );
@@ -423,11 +427,11 @@ export async function updateUnit(userId: string, unitId: string, input: UnitInpu
   if (unit.role !== "owner") throw new HttpError("Only the person who added the unit can edit the landlord and address.");
   await run(
     `update units set street=?, unit_number=?, city=?, postal_code=?, region=?, jurisdiction=?, jurisdiction_confirmed=?,
-     rso_status=?, rstpo_tier=?, landlord_name=?, landlord_email=?, landlord_phone=?, rent_cents=?, deposit_cents=?, move_in_date=?, lease_end_date=?
+     supported=?, rso_status=?, rstpo_tier=?, landlord_name=?, landlord_email=?, landlord_phone=?, rent_cents=?, deposit_cents=?, move_in_date=?, lease_end_date=?
      where id=?`,
     [
       input.street, input.unitNumber, input.city, input.postalCode, input.region, input.jurisdiction,
-      input.jurisdictionConfirmed, input.rsoStatus, input.rstpoTier, input.landlordName, input.landlordEmail,
+      input.jurisdictionConfirmed, input.supported !== false, input.rsoStatus, input.rstpoTier, input.landlordName, input.landlordEmail,
       input.landlordPhone, input.rentCents, input.depositCents, input.moveInDate, input.leaseEndDate, unitId,
     ],
   );
@@ -1068,6 +1072,8 @@ export type ReminderCandidate = {
   source_id: string | null;
   slots: string[];
   user_ids: string[];
+  supported?: boolean | number | null;
+  jurisdiction?: string | null;
 };
 
 /** Open deadlines, the reminder slots already sent, and the members, in one read. */
@@ -1084,11 +1090,15 @@ export async function reminderCandidates(): Promise<ReminderCandidate[]> {
     source_id: string | null;
     slots: string[] | null;
     user_ids: string[] | null;
+    supported: boolean | number | null;
+    jurisdiction: string | null;
   }>(
     `select d.id, d.unit_id, d.rule_id, d.kind, d.due_date::text as due_date, d.explanation,
             d.tenant_reminder_on::text as tenant_reminder_on,
             d.source_id::text as source_id,
             (select le.description from log_entries le where le.id = d.source_id limit 1) as issue,
+            (select u.supported from units u where u.id = d.unit_id) as supported,
+            (select u.jurisdiction from units u where u.id = d.unit_id) as jurisdiction,
             coalesce(json_agg(distinct rs.slot) filter (where rs.slot is not null), '[]'::json) as slots,
             coalesce(json_agg(distinct m.user_id::text) filter (where m.user_id is not null), '[]'::json) as user_ids
      from deadlines d

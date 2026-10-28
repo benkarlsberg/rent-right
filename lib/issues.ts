@@ -1,3 +1,4 @@
+import { coversLaw } from "@/lib/coverage";
 import type { Locale } from "@/lib/disclaimer";
 import {
   discardDraftMessage,
@@ -321,7 +322,7 @@ async function noteTier(user: User, unit: Unit, issueId: string, description: st
 }
 
 export async function refreshIssueTiers(user: User, unit: Unit, logs: LogEntry[], messages: Message[], deadlines: Deadline[]): Promise<boolean> {
-  if (unit.archivedAt) return false;
+  if (unit.archivedAt || !coversLaw(unit)) return false;
   const today = todayISO();
   let responses: Awaited<ReturnType<typeof listLandlordResponses>> | null = null;
   const landlordResponses = async () => {
@@ -393,6 +394,7 @@ export async function refreshIssueTiers(user: User, unit: Unit, logs: LogEntry[]
 }
 
 export async function setIssueTier(user: User, unit: Unit, id: string, tier: IssueTier): Promise<void> {
+  if (!coversLaw(unit)) return;
   const log = await getLog(user.id, id);
   if (log.unitId !== unit.id) throw new Error(tx(user.locale, "That request was not found.", "No se encontró esa solicitud."));
   if (log.flags?.removed === true) throw new Error(tx(user.locale, "That request was removed.", "Esa solicitud se eliminó."));
@@ -466,6 +468,7 @@ export async function recordRulesIssue(user: User, unit: Unit, input: {
   citation: string;
   unsure: boolean;
 }): Promise<void> {
+  if (!coversLaw(unit)) return;
   const logs = await listLogs(user.id, unit.id);
   const existing = logs.find((log) => log.flags?.rulesKind === input.kind && log.flags?.removed !== true && log.description === input.description);
   if (existing) {

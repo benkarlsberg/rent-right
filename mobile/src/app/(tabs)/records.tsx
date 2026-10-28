@@ -24,6 +24,7 @@ type Segment = "issues" | "documents" | "evidence";
 export type Records = {
   name: string;
   address: string;
+  coverageNotice?: string | null;
   street?: string;
   unitNumber?: string;
   city?: string;
@@ -363,6 +364,7 @@ export default function Records() {
             <Text style={styles.address}>{address}</Text>
           )}
           {data?.sample ? <Text style={styles.sample}>{es ? "Muestra" : "Sample"}</Text> : null}
+          {data?.coverageNotice ? <Text style={styles.coverage}>{data.coverageNotice}</Text> : null}
           {data?.archivedNote ? <Text style={styles.note}>{data.archivedNote}</Text> : null}
           {me?.needsUnit ? (
             <Pressable style={styles.linkHit} accessibilityRole="button" accessibilityLabel={es ? "Agregar su vivienda" : "Add your place"} onPress={() => router.push("/setup")}>
@@ -463,7 +465,7 @@ export default function Records() {
                           <Text style={styles.link}>{link.name}</Text>
                         </Pressable>
                       ))}
-                      {!data?.archived ? (
+                      {!data?.archived && !data?.coverageNotice ? (
                         <View style={styles.tiers}>
                           {([
                             ["routine", es ? "Rutina" : "Routine"],
@@ -722,6 +724,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "flex-start", paddingHorizontal: 16, paddingTop: 8, gap: 8 },
   headerText: { flex: 1, minWidth: 0 },
   address: { ...wrapText, fontSize: 17, lineHeight: 23, color: colors.ink, fontWeight: "600" },
+  coverage: { ...wrapText, fontSize: 15, lineHeight: 22, color: colors.ink, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: 12, padding: 12, marginTop: 8 },
   sample: { ...wrapText, marginTop: 4, color: colors.mute, fontSize: 13 },
   note: { ...wrapText, marginTop: 4, color: colors.mute, fontSize: 14, lineHeight: 20 },
   gear: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 22, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
