@@ -194,7 +194,7 @@ jobs:
             fi
             sleep 5
           done
-          node -e 'const fs = require("fs"); const raw = fs.readFileSync("/tmp/cron.json", "utf8"); let body = {}; try { body = JSON.parse(raw); } catch { body = {}; } console.log("reminders:", body.reminders); console.log("queries:", body.queries);'
+          node -e 'const fs = require("fs"); const raw = fs.readFileSync("/tmp/cron.json", "utf8"); let body = {}; try { body = JSON.parse(raw); } catch { body = { error: raw.slice(0, 180) }; } console.log("reminders:", body.reminders); console.log("queries:", body.queries); if (body.error) console.log("error:", String(body.error).slice(0, 180));'
           test "$ok" = 1
       - name: Check the database answers
         if: steps.hyperdrive.outcome == 'success'
