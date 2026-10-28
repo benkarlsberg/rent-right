@@ -50,6 +50,7 @@ import {
   type RepairSeverity,
 } from "@/lib/rules/engine";
 import { isSampleAccount } from "@/lib/sample";
+import { reviewerEmail } from "@/lib/reviewer";
 import { appUrl, relayAddress, tx } from "@/lib/text";
 import { randomToken } from "@/lib/crypto";
 import { daysBetween, todayISO } from "@/lib/rules/dates";
@@ -292,13 +293,15 @@ export async function emailLandlord(input: {
     ? tx(input.user.locale, "General information, not legal advice.", "Información general, no es consejo legal.")
     : "";
   const options = tx(input.user.locale, "You can reply, or tap Respond to acknowledge, schedule, or dispute.", "Puede responder, o toque Responder para acusar recibo, programar o disputar.");
-  if (isSampleAccount(input.user.email)) {
+  if (isSampleAccount(input.user.email) || input.user.email.trim().toLowerCase() === reviewerEmail()) {
     const messageId = await storeLandlordMail({
       ...input,
       subject,
       body: landlordMessageBody(letter, `${appUrl()}/r/sample`, header, footer, options),
       deliveryStatus: "local_only",
-      deliveryDetail: "This sample home does not email a landlord.",
+      deliveryDetail: isSampleAccount(input.user.email)
+        ? "This sample home does not email a landlord."
+        : "This review home does not email a landlord.",
     });
     await persistPhotos(input.user, input.unit, messageId, input.logEntryId, photos);
     return "local_only";
@@ -554,7 +557,13 @@ export async function dispatchReminders(today = todayISO()) {
   const deliveredSlots = new Set<string>();
   const pushJobs: { userIds: string[]; issue: string; count: number; logId: string | null }[] = [];
   let sent = 0;
+  const quietReviewer = reviewerEmail();
   for (const letter of letters) {
+    if (quietReviewer && letter.email === quietReviewer) {
+      sent += 1;
+      for (const slot of letter.slots) deliveredSlots.add(`${slot.deadlineId}:${slot.slot}`);
+      continue;
+    }
     const body = letter.paragraphs.join("\n\n");
     for (const userId of letter.userIds) await addNotification(userId, letter.heading, body, "/reminders");
     const mail = renderMail({

@@ -1628,14 +1628,58 @@ export async function assistantReplyExists(userId: string, messageId: string) {
   return Boolean(row);
 }
 
-export async function createInvite(userId: string, unitId: string) {
+export async function createInvite(userId: string, unitId: string, email = "") {
   const unit = await requireWritable(userId, unitId);
   if (unit.role !== "owner") throw new HttpError("Only the person who added the unit can invite a roommate.");
   const token = randomToken();
-  await run("insert into invites (id, unit_id, token_hash, created_by, expires_at, created_at) values (?, ?, ?, ?, ?, ?)", [
-    randomUUID(), unitId, hashToken(token), userId, new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), new Date().toISOString(),
+  await run("insert into invites (id, unit_id, token_hash, email, created_by, expires_at, created_at) values (?, ?, ?, ?, ?, ?, ?)", [
+    randomUUID(), unitId, hashToken(token), email.toLowerCase(), userId, new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), new Date().toISOString(),
   ]);
   return token;
+}
+
+export type HouseholdMember = { userId: string; role: "owner" | "roommate"; name: string; email: string };
+export type PendingInvite = { id: string; email: string; expiresAt: string };
+
+export async function listHousehold(userId: string): Promise<{ role: "owner" | "roommate"; members: HouseholdMember[]; pending: PendingInvite[] } | null> {
+  const unit = await primaryUnit(userId);
+  if (!unit) return null;
+  const members = await all<{ user_id: string; role: string; name: string; email: string }>(
+    `select m.user_id::text as user_id, m.role, p.name, p.email
+     from unit_members m join profiles p on p.id = m.user_id
+     where m.unit_id = ? order by m.created_at asc`,
+    [unit.id],
+  );
+  const pending = await all<{ id: string; email: string; expires_at: string }>(
+    "select id::text as id, email, expires_at from invites where unit_id = ? and accepted_by is null and expires_at > ? order by created_at desc",
+    [unit.id, new Date().toISOString()],
+  );
+  return {
+    role: unit.role,
+    members: members.map((row) => ({
+      userId: row.user_id,
+      role: row.role === "owner" ? "owner" : "roommate",
+      name: row.name || "",
+      email: row.email,
+    })),
+    pending: pending.map((row) => ({ id: row.id, email: row.email || "", expiresAt: row.expires_at })),
+  };
+}
+
+export async function removeRoommate(ownerId: string, memberId: string) {
+  const unit = await primaryUnit(ownerId);
+  if (!unit || unit.role !== "owner") throw new HttpError("Only the person who added the home can remove a roommate.");
+  if (memberId === ownerId) throw new HttpError("You stay on this home.");
+  await run("delete from unit_members where unit_id = ? and user_id = ? and role = 'roommate'", [unit.id, memberId]);
+  await run("update profiles set active_unit_id = null where id = ? and active_unit_id = ?", [memberId, unit.id]);
+}
+
+export async function leaveHome(userId: string) {
+  const unit = await primaryUnit(userId);
+  if (!unit || unit.role !== "roommate") throw new HttpError("Only a roommate can leave this home.");
+  await run("delete from unit_members where unit_id = ? and user_id = ?", [unit.id, userId]);
+  await run("update profiles set active_unit_id = null where id = ? and active_unit_id = ?", [userId, unit.id]);
+  dropRequestMemo(`unit:${userId}:${unit.id}`);
 }
 
 export async function acceptInvite(userId: string, token: string): Promise<void> {
@@ -1651,6 +1695,7 @@ export async function acceptInvite(userId: string, token: string): Promise<void>
     ]);
   }
   await run("update invites set accepted_by = ? where id = ?", [userId, row.id]);
+  await run("update profiles set active_unit_id = ? where id = ?", [row.unit_id, userId]);
 }
 
 export async function logMailed(userId: string, unitId: string, logEntryId: string | null, receiptFileId: string | null) {
@@ -1696,18 +1741,18 @@ export async function deleteExpoToken(userId: string, token: string) {
   await run("delete from expo_push_tokens where user_id = ? and token = ?", [userId, token]);
 }
 
-export async function expoTokensForUsers(userIds: string[]): Promise<{ token: string; user_id: string; locale: Locale }[]> {
+export async function expoTokensForUsers(userIds: string[]): Promise<{ token: string; user_id: string; locale: Locale; email: string }[]> {
   const list = [...new Set(userIds.map((id) => id.trim()).filter(Boolean))];
   if (!list.length) return [];
-  const rows = await all<{ token: string; user_id: string; locale: string }>(
-    `select t.token, t.user_id::text as user_id, p.locale
+  const rows = await all<{ token: string; user_id: string; locale: string; email: string }>(
+    `select t.token, t.user_id::text as user_id, p.locale, p.email
      from expo_push_tokens t
      join profiles p on p.id = t.user_id
      where p.push_enabled = true and t.user_id::text = any(string_to_array(?, ','))
      order by t.token`,
     [list.join(",")],
   );
-  return rows.map((row) => ({ token: row.token, user_id: row.user_id, locale: row.locale === "es" ? "es" : "en" }));
+  return rows.map((row) => ({ token: row.token, user_id: row.user_id, locale: row.locale === "es" ? "es" : "en", email: row.email }));
 }
 
 export async function dropExpoTokens(tokens: string[]) {

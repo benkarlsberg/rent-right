@@ -3,6 +3,7 @@ import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import { Image, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { api } from "@/api";
+import { saveAuthorizedFile } from "@/files";
 import { PhotoThumb } from "@/photo-thumb";
 import { colors } from "@/theme";
 import { Button, ErrorLine, Field, H1, Muted, Page } from "@/ui";
@@ -193,10 +194,23 @@ export default function Photos() {
       {(data?.reports || []).map((report) => {
         const open = openId === report.id;
         return (
-          <Pressable key={report.id} style={styles.card} accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={`${report.kind}, ${report.count} photos`} onPress={() => setOpenId(open ? null : report.id)}>
-            <Text style={styles.cardTitle}>{report.kind}</Text>
-            <Text style={styles.meta}>{report.when}</Text>
-            <Text style={styles.meta}>{report.count === 1 ? "1 photo" : `${report.count} photos`}</Text>
+          <View key={report.id} style={styles.card}>
+            <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={`${report.kind}, ${report.count} photos`} onPress={() => setOpenId(open ? null : report.id)}>
+              <Text style={styles.cardTitle}>{report.kind}</Text>
+              <Text style={styles.meta}>{report.when}</Text>
+              <Text style={styles.meta}>{report.count === 1 ? "1 photo" : `${report.count} photos`}</Text>
+            </Pressable>
+            {token ? (
+              <Button
+                label="Download PDF"
+                ghost
+                onPress={() => {
+                  void saveAuthorizedFile(`/api/condition/${report.id}/pdf`, "condition-report.pdf", token).catch((err: unknown) => {
+                    setError(err instanceof Error ? err.message : "Could not download the report.");
+                  });
+                }}
+              />
+            ) : null}
             <View style={styles.thumbs}>
               {report.photos.slice(0, 4).map((photo) => <PhotoThumb key={photo.id} fileId={photo.fileId} token={token} />)}
             </View>
@@ -207,7 +221,7 @@ export default function Photos() {
                 {photo.caption ? <Text style={styles.body}>{photo.caption}</Text> : null}
               </View>
             )) : null}
-          </Pressable>
+          </View>
         );
       })}
       {(data?.loose || []).length ? <Text style={styles.label}>Other photos</Text> : null}

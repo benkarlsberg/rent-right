@@ -15,7 +15,7 @@ export default async function RulesPage() {
       <div className="mt-6 space-y-4">
         {RULES.map((rule) => (
           <article key={rule.id} className="card p-4">
-            <p className="pill">{rule.placeholder ? tx(locale, "Placeholder — pending clinic review", "Borrador — pendiente de revisión clínica") : ""}</p>
+            <p className="pill">{rule.placeholder ? tx(locale, "General information based on California law, checked Oct 12, 2026. Not legal advice.", "Información general basada en la ley de California, revisada el 12 de octubre de 2026. No es asesoramiento legal.") : ""}</p>
             <h2 className="mt-2 text-2xl">{locale === "es" ? rule.titleEs : rule.titleEn}</h2>
             <p className="text-sm font-semibold">{rule.id} · {rule.jurisdiction} · {rule.citation}</p>
             <p className="mt-2 text-sm">{locale === "es" ? rule.summaryEs : rule.summaryEn}</p>

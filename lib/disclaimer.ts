@@ -5,18 +5,22 @@ export const DISCLAIMER_EN =
 export const DISCLAIMER_ES =
   "Esta es información legal general, no es asesoramiento legal, y no se crea una relación abogado-cliente. Las leyes cambian y dependen de los hechos de su caso. Para asesoramiento, contacte a un abogado con licencia en California o a asistencia legal gratuita.";
 
+/** The date on the rules catalog. User-facing text uses this, not an internal review flag. */
+export const LIBRARY_CHECKED_EN = "Oct 12, 2026";
+export const LIBRARY_CHECKED_ES = "12 de octubre de 2026";
+
 export const CLINIC_REVIEW_BANNER_EN =
-  "Rules library placeholder. Entries cite official government sources and are flagged for review by a law-school clinic or legal aid partner. They have not been approved for launch.";
+  `These notes cite public California statutes and official pages. They were checked ${LIBRARY_CHECKED_EN}. They are general information, not legal advice, and they are not a lawyer's review.`;
 
 export const CLINIC_REVIEW_BANNER_ES =
-  "Biblioteca de reglas provisional. Las fichas citan fuentes oficiales del gobierno y están marcadas para revisión por una clínica de una facultad de derecho o por asistencia legal. Aún no están aprobadas para el lanzamiento.";
+  `Estas notas citan leyes públicas de California y páginas oficiales. Se revisaron el ${LIBRARY_CHECKED_ES}. Son información general, no asesoramiento legal, y no son la revisión de un abogado.`;
 
 /** Always visible on a legal result. The full disclaimer opens from "Learn more". */
 export const DISCLAIMER_SHORT_EN = "General information, not legal advice.";
 export const DISCLAIMER_SHORT_ES = "Información general, no es asesoramiento legal.";
 
-export const CLINIC_SHORT_EN = "Rules pending clinic review.";
-export const CLINIC_SHORT_ES = "Reglas pendientes de revisión clínica.";
+export const CLINIC_SHORT_EN = `General information based on California law, checked ${LIBRARY_CHECKED_EN}. Not legal advice.`;
+export const CLINIC_SHORT_ES = `Información general basada en la ley de California, revisada el ${LIBRARY_CHECKED_ES}. No es asesoramiento legal.`;
 
 export const LIBRARY_VERSION = "2026-10-12-draft1";
 

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Linking, Pressable, StyleSheet, Switch, Text, TextInput, View, type LayoutChangeEvent } from "react-native";
 import { api } from "@/api";
 import { DeleteAccount } from "@/delete-account";
+import { Household } from "@/household";
 import { saveAuthorizedFile } from "@/files";
 import type { Me } from "@/session";
 import { useSession } from "@/session";
@@ -151,6 +152,7 @@ export default function Settings() {
           {account.detail ? <Muted>{account.detail}</Muted> : null}
         </View>
       ) : null}
+      {token && me?.unit ? <Household token={token} spanish={spanish} onSession={(session) => void signIn(session)} /> : null}
       {me?.unit?.relay ? (
         <View style={styles.block}>
           <Text style={styles.label}>{spanish ? "Dirección de respuesta del propietario" : "Your landlord reply address"}</Text>

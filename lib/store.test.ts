@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { signSession } from "@/lib/crypto";
-import { createNamedUser, createUnit, deleteUserAccount, getUser, insertMessage, listMessages, primaryUnit, type UnitInput } from "@/lib/db";
+import { createNamedUser, createUnit, deleteUserAccount, getUser, getUserByEmail, insertMessage, listMessages, primaryUnit, type UnitInput } from "@/lib/db";
 import { handlePhone } from "@/lib/phone-api";
 import { getSql } from "@/lib/pg";
 import { DEMO_EMAIL, startSampleTenancy } from "@/lib/seed";
@@ -125,11 +125,52 @@ describe("account deletion and reviewer sign-in", () => {
     expect(JSON.stringify(opened.json)).toContain("Maya Chen");
     expect(JSON.stringify(opened.json)).toContain("1842 N Echo Park Ave");
     expect(JSON.stringify(opened.json)).not.toContain("review-code-9");
-    expect((opened.json?.user as { email?: string }).email).toBe(DEMO_EMAIL);
+    expect((opened.json?.user as { email?: string }).email).toBe("reviewer-store@example.com");
+    expect(await getUserByEmail(DEMO_EMAIL)).toBeNull();
+    const token = String(opened.json?.token);
+    const records = await api("GET", "records", undefined, token);
+    expect(((records.json?.issues as unknown[]) || []).length).toBeGreaterThan(0);
+    expect(JSON.stringify(records.json)).toMatch(/sink|fan|leak/i);
+    const reviewer = await getUserByEmail("reviewer-store@example.com");
+    const home = reviewer ? await primaryUnit(reviewer.id) : null;
+    process.env.RESEND_API_KEY = "test-key";
+    process.env.RESEND_FROM = "Rent Right <mail@example.com>";
+    const spy = vi.spyOn(globalThis, "fetch");
+    const status = await emailLandlord({
+      user: reviewer!,
+      unit: home!,
+      logEntryId: null,
+      subject: "Please fix the sink",
+      tenantText: "The sink is leaking.",
+    });
+    expect(status).toBe("local_only");
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
 
     delete process.env.REVIEWER_LOGIN;
     const closed = await api("POST", "auth/reviewer", { email: "reviewer-store@example.com", code: "review-code-9" });
     expect(closed.status).toBe(400);
+  });
+
+  it("lets a roommate join the home and then leave it", async () => {
+    const suffix = randomUUID().slice(0, 8);
+    const owner = await createNamedUser(`ownerh-${suffix}@example.com`, "Owner");
+    const room = await createNamedUser(`roomh-${suffix}@example.com`, "Roommate");
+    await createUnit(owner.id, unitInput(`${suffix} Roommate St`));
+    const invited = await api("POST", "invite", { email: room.email }, signSession(owner.id));
+    expect(invited.status).toBe(200);
+    expect(String(invited.json?.link)).toContain("/invite/");
+    const code = String(invited.json?.link).split("/invite/")[1];
+    const joined = await api("POST", "invite/accept", { token: code }, signSession(room.id));
+    expect(joined.status).toBe(200);
+    const shared = await api("GET", "records", undefined, signSession(room.id));
+    expect(JSON.stringify(shared.json)).toContain("Roommate St");
+    const household = await api("GET", "household", undefined, signSession(owner.id));
+    expect(JSON.stringify(household.json)).toContain(room.email);
+    const left = await api("POST", "invite/leave", {}, signSession(room.id));
+    expect(left.status).toBe(200);
+    const after = await api("GET", "household", undefined, signSession(owner.id));
+    expect(JSON.stringify(after.json)).not.toContain(room.email);
   });
 
   it("stops accepting reviewer tries after eight attempts in an hour", async () => {

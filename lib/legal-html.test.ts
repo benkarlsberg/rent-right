@@ -12,7 +12,8 @@ import { GET as terms } from "@/app/terms/route";
 
 describe("public legal pages", () => {
   it("puts the contact address and the disclaimer in crawlable HTML", async () => {
-    expect(privacyDocument).toContain("benelliot16@gmail.com");
+    expect(privacyDocument).toContain("support@rentrightportal.com");
+    expect(privacyDocument).not.toContain("gmail.com");
     expect(privacyDocument).toContain("not a law firm");
     expect(privacyDocument).toContain("only after you confirm");
     expect(privacyDocument).toContain("chat messages");
@@ -72,14 +73,16 @@ describe("public legal pages", () => {
     expect(deleteAccountDocument).toContain(DISCLAIMER_EN);
     expect(deleteAccountDocument).toContain("Ajustes");
     expect(privacyDocument).toContain('href="/delete-account"');
-    expect(supportDocument).toContain("benelliot16@gmail.com");
+    expect(supportDocument).toContain("support@rentrightportal.com");
+    expect(supportDocument).not.toContain("gmail.com");
     expect(supportDocument).toContain("https://app.rentrightportal.com/privacy");
     expect(supportDocument).toContain('href="/terms"');
     expect(supportDocument).toContain("<h1>Support</h1>");
     expect(homeIntro).toContain('href="/support"');
     const supportBody = await (await support()).text();
     expect(supportBody).toContain("<h1>Support</h1>");
-    expect(supportBody).toContain("benelliot16@gmail.com");
+    expect(supportBody).toContain("support@rentrightportal.com");
+    expect(supportBody).not.toContain("gmail.com");
     expect(supportBody).not.toContain("id=\"root\"");
     const deleteBody = await (await deleteAccount()).text();
     expect(deleteBody).toContain("<h1>Delete your account</h1>");

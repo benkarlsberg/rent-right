@@ -28,9 +28,19 @@ export { DEMO_EMAIL };
 
 export async function startSampleTenancy(): Promise<string> {
   if (hasUserActor()) return withActor(null, () => startSampleTenancy());
-  const existing = await getUserByEmail(DEMO_EMAIL);
+  return seedNamedHome(DEMO_EMAIL);
+}
+
+/** Resets only this address. The shared sample account is left alone. */
+export async function startReviewerTenancy(email: string): Promise<string> {
+  if (hasUserActor()) return withActor(null, () => startReviewerTenancy(email));
+  return seedNamedHome(email.trim().toLowerCase());
+}
+
+async function seedNamedHome(email: string): Promise<string> {
+  const existing = await getUserByEmail(email);
   if (existing) await deleteUserAccount(existing.id);
-  const user = await createNamedUser(DEMO_EMAIL, "Maya Chen", "en");
+  const user = await createNamedUser(email, "Maya Chen", "en");
   const today = todayISO();
   const unit = await createUnit(user.id, {
     street: "1842 N Echo Park Ave",

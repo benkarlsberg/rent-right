@@ -67,8 +67,8 @@ export function renderAnswer(question: string, locale: Locale, rules: Rule[], ha
   const disclaimer = locale === "es" ? DISCLAIMER_ES : DISCLAIMER_EN;
   const reviewNote =
     locale === "es"
-      ? "El texto en español de la biblioteca está pendiente de revisión por voluntarios."
-      : "Spanish library text is pending volunteer review.";
+      ? "El texto en español es información general, no una traducción revisada por un abogado."
+      : "The Spanish text is general information, not a lawyer's translation.";
   if (rules.length === 0) {
     const handoffLead = handoff
       ? locale === "es"
@@ -95,7 +95,7 @@ export function renderAnswer(question: string, locale: Locale, rules: Rule[], ha
   const blocks = rules.map((rule) => {
     const title = locale === "es" ? rule.titleEs : rule.titleEn;
     const summary = locale === "es" ? rule.summaryEs : rule.summaryEn;
-    return `${title}\nRule ID: ${rule.id}\nCitation: ${rule.citation}\nSource: ${rule.sourceUrl}\n\n"${summary}"`;
+    return `${title}\n${rule.citation}\n${rule.sourceUrl}\n\n"${summary}"`;
   });
   const lead = handoff
     ? locale === "es"
@@ -104,8 +104,8 @@ export function renderAnswer(question: string, locale: Locale, rules: Rule[], ha
     : "";
   const tail =
     locale === "es"
-      ? `\n\nBiblioteca ${LIBRARY_VERSION}. Cada ficha es un borrador pendiente de revisión clínica. ${reviewNote}`
-      : `\n\nLibrary ${LIBRARY_VERSION}. Each entry is a draft pending clinic review. ${reviewNote}`;
+      ? `\n\nInformación general basada en la ley de California, revisada el 12 de octubre de 2026. No es asesoramiento legal. ${reviewNote}`
+      : `\n\nGeneral information based on California law, checked Oct 12, 2026. Not legal advice. ${reviewNote}`;
   return {
     locale,
     unsure: false,

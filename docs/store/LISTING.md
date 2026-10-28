@@ -1,6 +1,6 @@
 # Store listing
 
-Copy these answers into App Store Connect and Google Play Console. The support contact on the public pages is benelliot16@gmail.com.
+Copy these answers into App Store Connect and Google Play Console. The support contact on the public pages is support@rentrightportal.com.
 
 ## Name and category
 

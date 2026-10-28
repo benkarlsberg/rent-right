@@ -177,7 +177,8 @@ describe("short chat context", () => {
     const abstained = citeFromConversation(followUp, "en", `${retrieval}\n${followUp}`, []);
     expect(abstained.unsure).toBe(false);
     expect(abstained.ruleIds).toContain("CA-CC-1950.5");
-    expect(abstained.text).toContain("CA-CC-1950.5");
+    expect(abstained.text).toContain("1950.5");
+    expect(abstained.text).not.toContain("Rule ID:");
     const missed = citeFromConversation(followUp, "en", `${retrieval}\n${followUp}`, ["NOT-A-RULE"]);
     expect(missed.ruleIds).toContain("CA-CC-1950.5");
     const narrowed = citeFromConversation(followUp, "en", `${retrieval}\n${followUp}`, ["CA-CC-1950.5", "NOT-A-RULE"]);
@@ -248,7 +249,8 @@ describe("short chat context", () => {
     const rulesPrompt = prompts.all.find((prompt) => prompt.startsWith("Pick up to 3"));
     expect(rulesPrompt).toContain("CA-CC-1950.5");
     const cited = (await listAssistant(user.id, "visible")).filter((row) => row.role === "assistant").at(-1);
-    expect(cited?.content).toContain("CA-CC-1950.5");
+    expect(cited?.content).toContain("1950.5");
+    expect(cited?.content).not.toContain("Rule ID:");
 
     prompts.all.length = 0;
     await archiveChat(user.id);

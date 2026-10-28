@@ -6,7 +6,11 @@ import {
   addFeedback,
   addLedger,
   archiveChat,
+  acceptInvite,
   createInvite,
+  leaveHome,
+  listHousehold,
+  removeRoommate,
   createMagicLink,
   consumeMagicLink,
   createUnit,
@@ -93,7 +97,7 @@ import { lookupProviderDelivery, sendTenantEmail } from "@/lib/email";
 import { signInMessage, signInUrl } from "@/lib/email-template";
 import { currentUser, sessionUserId } from "@/lib/session";
 import { reviewerEmail, reviewerMatch } from "@/lib/reviewer";
-import { DEMO_EMAIL, startSampleTenancy } from "@/lib/seed";
+import { DEMO_EMAIL, startReviewerTenancy, startSampleTenancy } from "@/lib/seed";
 import { userFromAppleIdToken } from "@/lib/supabase-auth";
 import { appUrl, relayAddress, tx } from "@/lib/text";
 import { chatTurnShowsSteps, parseCard, replyShowsNotice } from "@/lib/chat-card";
@@ -109,6 +113,7 @@ import { cleanLetterText, confirmedOutbound, ensureRepairDeadline, ensureRepairD
 import { isBrandAsset, photoFilename, rejectPhotoSet } from "@/lib/message-photos";
 import { askAssistant, emailLandlord, extractPdfOrText, recordLog, runLeaseReview, sampleLeaseText, saveDepositAndDeadline, type OutgoingPhoto } from "@/lib/workflow";
 import { isExpoPushToken } from "@/lib/push";
+import { inviteLetter } from "@/lib/invite-mail";
 
 function json(data: unknown, status = 200) {
   return Response.json(data, {
@@ -381,7 +386,7 @@ async function route(request: Request, path: string[]): Promise<Response> {
     if (!expected || email !== expected) throw new Error("That code did not work.");
     if (!(await reviewerAttemptOpen(email))) throw new Error("Too many tries. Wait an hour and try again.");
     if (!reviewerMatch(email, code)) throw new Error("That code did not work.");
-    const id = await startSampleTenancy();
+    const id = await startReviewerTenancy(expected);
     const user = await getUser(id);
     if (!user) throw new Error("Could not open the sample.");
     return json(await sessionPayload(user));
@@ -513,10 +518,41 @@ async function route(request: Request, path: string[]): Promise<Response> {
     if (!fresh) throw new Error("Sign in required.");
     return json(await sessionPayload(fresh));
   }
+  if (method === "GET" && key === "household") {
+    const user = await actor();
+    return json({ household: await listHousehold(user.id) });
+  }
   if (method === "POST" && key === "invite") {
     const { user, unit } = await withUnit();
-    const token = await createInvite(user.id, unit.id);
-    return json({ link: `${appUrl()}/invite/${token}` });
+    const input = await readBody(request);
+    const email = emailValue(text(input.email));
+    const token = await createInvite(user.id, unit.id, email);
+    const link = `${appUrl()}/invite/${token}`;
+    const letter = inviteLetter({ name: user.name, link, locale: user.locale });
+    const sent = await sendTenantEmail(email, letter.subject, letter.text);
+    if (!sent && process.env.RESEND_API_KEY && process.env.RESEND_FROM) throw new Error("Could not send the invite.");
+    return json({ link, sent: Boolean(sent), household: await listHousehold(user.id) });
+  }
+  if (method === "POST" && key === "invite/accept") {
+    const user = await actor();
+    const token = text((await readBody(request)).token);
+    if (!token) throw new Error("This invite is not valid.");
+    await acceptInvite(user.id, token);
+    const fresh = await getUser(user.id);
+    if (!fresh) throw new Error("Sign in required.");
+    return json(await sessionPayload(fresh));
+  }
+  if (method === "POST" && key === "invite/remove") {
+    const user = await actor();
+    await removeRoommate(user.id, text((await readBody(request)).userId));
+    return json({ household: await listHousehold(user.id) });
+  }
+  if (method === "POST" && key === "invite/leave") {
+    const user = await actor();
+    await leaveHome(user.id);
+    const fresh = await getUser(user.id);
+    if (!fresh) throw new Error("Sign in required.");
+    return json(await sessionPayload(fresh));
   }
   if (method === "POST" && key === "devices") {
     const user = await actor();

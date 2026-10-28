@@ -1,5 +1,6 @@
 import type { Locale } from "@/lib/disclaimer";
 import { dropExpoTokens, expoTokensForUsers } from "@/lib/db";
+import { reviewerEmail } from "@/lib/reviewer";
 import { tx } from "@/lib/text";
 
 const EXPO_PUSH = "https://exp.host/--/api/v2/push/send";
@@ -59,7 +60,8 @@ type PushJob = { userIds: string[]; bodyFor: (locale: Locale) => string; data: P
 export async function deliverPushes(jobs: PushJob[]): Promise<number> {
   const ids = [...new Set(jobs.flatMap((job) => job.userIds.map((id) => id.trim()).filter(Boolean)))];
   if (!ids.length) return 0;
-  const rows = await expoTokensForUsers(ids);
+  const quiet = reviewerEmail();
+  const rows = (await expoTokensForUsers(ids)).filter((row) => !quiet || row.email !== quiet);
   if (!rows.length) return 0;
   const messages = rows.flatMap((row) => {
     const job = jobs.find((item) => item.userIds.includes(row.user_id));

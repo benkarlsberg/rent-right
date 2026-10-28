@@ -6,17 +6,35 @@ type InboundMessage = {
   headers: Headers;
   raw: ReadableStream<Uint8Array>;
   setReject(reason: string): void;
+  forward(address: string): Promise<void>;
 };
 
 type MailEnv = {
   EMAIL_WEBHOOK_SECRET?: string;
   INBOUND_URL?: string;
+  SUPPORT_FORWARD_TO?: string;
 };
+
+const SUPPORT = "support@rentrightportal.com";
+
+/** Support mail is forwarded. Everything else is a possible landlord reply. */
+export function mailRoute(to: string): "support" | "relay" {
+  return to.toLowerCase().includes(SUPPORT) ? "support" : "relay";
+}
 
 const inboundUrl = "https://api.rentrightportal.com/api/email/inbound";
 
 const mailWorker = {
   async email(message: InboundMessage, env: MailEnv): Promise<void> {
+    if (mailRoute(message.to) === "support") {
+      const dest = (env.SUPPORT_FORWARD_TO || "").trim();
+      if (!dest) {
+        message.setReject("Support forwarding is not configured.");
+        return;
+      }
+      await message.forward(dest);
+      return;
+    }
     const secret = env.EMAIL_WEBHOOK_SECRET;
     if (!secret) {
       message.setReject("Inbound mail is not configured.");

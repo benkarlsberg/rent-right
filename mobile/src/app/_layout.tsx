@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { Platform, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { captureLoadedPath } from "@/back-nav";
+import { OfflineGate } from "@/offline-gate";
 import { listenForPush } from "@/push";
 import { SessionProvider } from "@/session";
 import { colors } from "@/theme";
@@ -41,6 +42,7 @@ export default function RootLayout() {
       <SessionProvider>
         <PushBridge />
         <StatusBar style="dark" />
+        <OfflineGate>
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.paper } }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="(tabs)" />
@@ -55,7 +57,9 @@ export default function RootLayout() {
           <Stack.Screen name="residence" />
           <Stack.Screen name="log-new" />
           <Stack.Screen name="log/[id]" />
+          <Stack.Screen name="invite/[token]" />
         </Stack>
+        </OfflineGate>
       </SessionProvider>
     </SafeAreaProvider>
   );

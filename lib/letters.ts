@@ -53,7 +53,6 @@ export function demandLetter(input: DemandInput): string {
     "I filled in this letter and I am sending it myself. Rent Right did not send it and is not my lawyer.",
     "",
     DISCLAIMER_EN,
-    "Rule ID: CA-CC-1950.5. Library placeholder pending clinic review.",
     "Sent with Rent Right, free for renters.",
   ].join("\n");
 }

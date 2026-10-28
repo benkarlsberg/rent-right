@@ -21,10 +21,10 @@ export function buildPack(record: OrdinanceRecord): CityPack {
   const sources = verified.coverage.sourceUrl === record.sourceUrl
     ? `Official page: ${record.sourceUrl}.`
     : `Official page: ${record.sourceUrl}. Coverage source: ${verified.coverage.sourceUrl}.`;
-  const summaryEn = `${record.name} (${record.citation}). ${verified.effectiveNote} ${verified.capDetail} ${figureSentence} ${verified.coverage.summary} Retrieved ${verified.retrieved}. ${applySentence} ${sources} Chart: ${CHART}. Placeholder pending clinic review.`;
+  const summaryEn = `${record.name} (${record.citation}). ${verified.effectiveNote} ${verified.capDetail} ${figureSentence} ${verified.coverage.summary} Retrieved ${verified.retrieved}. ${applySentence} ${sources} Chart: ${CHART}. General information checked Oct 12, 2026. Not legal advice.`;
   const summaryEs = verified.cap === "verified"
-    ? `${record.name}. Hay una cifra local citada en la fuente oficial para la ventana indicada en inglés. Esta ficha aplica esa cifra solo si los datos coinciden con la clase cubierta. Si no, usa la tabla estatal. Ficha provisional pendiente de revisión clínica.`
-    : `${record.name}. El porcentaje local está marcado unsure o esta ordenanza no es un tope local. La herramienta usa la tabla estatal salvo que una clase cubierta confirmada diga otra cosa. Lea ${record.sourceUrl}. Ficha provisional pendiente de revisión clínica.`;
+    ? `${record.name}. Hay una cifra local citada en la fuente oficial para la ventana indicada en inglés. Esta ficha aplica esa cifra solo si los datos coinciden con la clase cubierta. Si no, usa la tabla estatal. Información general revisada el 12 de octubre de 2026. No es asesoramiento legal.`
+    : `${record.name}. El porcentaje local está marcado unsure o esta ordenanza no es un tope local. La herramienta usa la tabla estatal salvo que una clase cubierta confirmada diga otra cosa. Lea ${record.sourceUrl}. Información general revisada el 12 de octubre de 2026. No es asesoramiento legal.`;
   const reasonEn = verified.cap === "verified"
     ? "A local figure is on file from an official source. It is applied only when the facts match a covered class confirmed on a city or ordinance page."
     : "The current local percentage is unsure, or this ordinance is not a local percentage cap. The statewide chart is the fallback.";

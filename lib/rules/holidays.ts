@@ -1,14 +1,14 @@
 /**
  * Placeholder California court-holiday calendar for 3-day notice math.
  * Weekends are excluded in code. This list is NOT a substitute for the
- * court's published calendar. Pending clinic review.
+ * court's published calendar. Checked with the library on Oct 12, 2026.
  *
  * Sources to confirm: California Courts holiday schedule and
  * Code of Civil Procedure §1161 (weekends and judicial holidays excluded
  * from 3-day notice periods).
  */
 export const HOLIDAY_CALENDAR_NOTE =
-  "Placeholder judicial-holiday list for 2026–2027, pending clinic review. Confirm dates on the California Courts holiday calendar before you rely on a 3-day deadline.";
+  "Judicial-holiday list for 2026–2027, checked Oct 12, 2026. Confirm dates on the California Courts holiday calendar before you rely on a 3-day deadline.";
 
 export const JUDICIAL_HOLIDAYS: readonly string[] = [
   "2026-01-01",

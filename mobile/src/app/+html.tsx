@@ -28,6 +28,7 @@ export default function Root({ children }: { children: ReactNode }) {
         <meta name="twitter:image" content="https://app.rentrightportal.com/og.png" />
         <link rel="canonical" href="https://app.rentrightportal.com" />
         <ScrollViewStyleReset />
+        <script dangerouslySetInnerHTML={{ __html: "if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){})})}" }} />
         <style dangerouslySetInnerHTML={{ __html: viewportCss }} />
       </head>
       <body>{children}</body>

@@ -375,7 +375,8 @@ describe("rights assistant", () => {
     const answer = answerQuestion("How long does my landlord have to return my security deposit?", "en");
     expect(answer.unsure).toBe(false);
     expect(answer.ruleIds).toContain("CA-CC-1950.5");
-    expect(answer.text).toContain("CA-CC-1950.5");
+    expect(answer.text).toContain("1950.5");
+    expect(answer.text).not.toContain("Rule ID:");
     expect(answer.disclaimer).toBe(DISCLAIMER_EN);
     expect(answer.text.toLowerCase()).not.toContain("you should file");
   });

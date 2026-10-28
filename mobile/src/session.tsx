@@ -88,7 +88,18 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     readToken()
       .then(async (saved) => {
         if (!saved) return;
-        const data = await api<Me>("me", { token: saved });
+        let data = await api<Me>("me", { token: saved });
+        if (Platform.OS === "web" && typeof window !== "undefined") {
+          const invite = window.localStorage.getItem("rr_invite");
+          if (invite) {
+            try {
+              data = await api<Me>("invite/accept", { token: saved, body: { token: invite } });
+              window.localStorage.removeItem("rr_invite");
+            } catch {
+              window.localStorage.removeItem("rr_invite");
+            }
+          }
+        }
         setToken(saved);
         setMe({ ...data, token: saved });
       })

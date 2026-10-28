@@ -23,7 +23,8 @@ describe("local ordinance packs", () => {
       expect(rule.jurisdiction).toBe("LOCAL");
       expect(rule.sourceUrl.startsWith("https://")).toBe(true);
       expect(rule.summaryEn).toContain(record.sourceUrl);
-      expect(rule.summaryEn.toLowerCase()).toMatch(/pending clinic review/);
+      expect(rule.summaryEn).toMatch(/checked Oct 12, 2026/);
+      expect(rule.summaryEn.toLowerCase()).not.toMatch(/clinic review|placeholder/);
       const verification = pack!.verification!;
       expect(verification.retrieved).toBe("2026-10-12");
       if (record.effectiveDate) expect(rule.summaryEn).toContain(record.effectiveDate);

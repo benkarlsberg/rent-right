@@ -156,7 +156,7 @@ Without Resend and without Supabase, a local sign-in completes in the app. The l
 | Demand letter the tenant fills and sends themselves | Done |
 | English and Spanish, on the welcome screen and in the Records account menu | Done |
 | Privacy and terms pages | Done |
-| Statewide rules and local placeholder packs | Done, pending clinic review |
+| Statewide rules and local packs | Done. General information checked Oct 12, 2026, not legal advice |
 | Postgres, migrations, RLS, encrypted message bodies and files | Done |
 | GitHub Actions CI | Done |
 | Cloudflare Worker and Pages | Live |
@@ -167,7 +167,7 @@ Without Resend and without Supabase, a local sign-in completes in the app. The l
 | Web push | Later (VAPID names are reserved) |
 | Landlord ratings, SMS, referrals, paid features | Later — out of scope |
 
-Every library entry is `placeholder: true`, `clinicReview: "pending_clinic_review"`, `spanishReview: "pending_volunteer_review"`, version `2026-10-12-draft1`. The phone shows “Rules pending clinic review.” Do not treat the percentages or clause labels as approved legal advice. Coverage is listed in [docs/COVERAGE.md](docs/COVERAGE.md).
+Every library entry keeps the internal flags `placeholder: true`, `clinicReview: "pending_clinic_review"`, and `spanishReview: "pending_volunteer_review"`, version `2026-10-12-draft1`. Those flags are not shown. The phone says “General information based on California law, checked Oct 12, 2026. Not legal advice.” Do not treat the percentages or clause labels as a lawyer's advice. Coverage is listed in [docs/COVERAGE.md](docs/COVERAGE.md).
 
 ## Local setup
 
