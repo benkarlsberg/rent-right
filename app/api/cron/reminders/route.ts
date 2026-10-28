@@ -1,4 +1,4 @@
-import { withActor } from "@/lib/pg";
+import { drainRoundTrips, withActor } from "@/lib/pg";
 import { dispatchReminders } from "@/lib/workflow";
 
 export async function POST(request: Request) {
@@ -6,6 +6,7 @@ export async function POST(request: Request) {
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
     return new Response("Unauthorized", { status: 401 });
   }
+  drainRoundTrips();
   const sent = await withActor(null, () => dispatchReminders());
-  return Response.json({ reminders: sent });
+  return Response.json({ reminders: sent, queries: drainRoundTrips() });
 }

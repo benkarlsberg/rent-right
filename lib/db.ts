@@ -1126,10 +1126,17 @@ export async function reminderSlotsSent(deadlineId: string) {
   return (await all<{ slot: string }>("select slot from reminder_sent where deadline_id = ?", [deadlineId])).map((row) => row.slot);
 }
 
-export async function markReminder(deadlineId: string, slot: string, channel: string) {
-  await run("insert into reminder_sent (deadline_id, slot, sent_at, channel) values (?, ?, ?, ?) on conflict do nothing", [
-    deadlineId, slot, new Date().toISOString(), channel,
-  ]);
+/** Claim this reminder slot. A second claim the same day does nothing, so the email cannot be sent twice. */
+export async function claimReminder(deadlineId: string, slot: string, channel: string): Promise<boolean> {
+  const rows = await all<{ deadline_id: string }>(
+    "insert into reminder_sent (deadline_id, slot, sent_at, channel) values (?, ?, ?, ?) on conflict (deadline_id, slot) do nothing returning deadline_id",
+    [deadlineId, slot, new Date().toISOString(), channel],
+  );
+  return rows.length > 0;
+}
+
+export async function releaseReminder(deadlineId: string, slot: string) {
+  await run("delete from reminder_sent where deadline_id = ? and slot = ?", [deadlineId, slot]);
 }
 
 export async function unitMemberUserIds(unitId: string) {

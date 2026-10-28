@@ -369,7 +369,8 @@ describe("renter workflows", () => {
 
     const today = todayISO();
     await api("POST", "records/reminder", { id: repair!.id, date: today }, token);
-    await dispatchReminders(today);
+    expect(await dispatchReminders(today)).toBeGreaterThan(0);
+    expect(await dispatchReminders(today)).toBe(0);
     const nudges = await getSql()<{ title: string; body: string }[]>`
       select title, body from notifications where title = 'Your reminder' order by created_at desc limit 1
     `;

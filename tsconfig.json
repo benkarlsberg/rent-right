@@ -17,5 +17,5 @@
     "paths": { "@/*": ["./*"] }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "types/cloudflare-workers.d.ts"],
-  "exclude": ["node_modules", "mobile", "open-next.config.ts"]
+  "exclude": ["node_modules", "mobile", "open-next.config.ts", "cloudflare-worker.ts"]
 }

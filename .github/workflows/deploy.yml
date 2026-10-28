@@ -172,6 +172,19 @@ jobs:
           '
           npx wrangler secret bulk worker-secrets.json
           rm -f worker-secrets.json
+      - name: Run the daily reminder job once
+        if: steps.hyperdrive.outcome == 'success'
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET is not set."
+            exit 1
+          fi
+          code=$(curl -sS -o /tmp/cron.json -w '%{http_code}' --max-time 30 -A "Mozilla/5.0" -X POST -H "authorization: Bearer $CRON_SECRET" https://api.rentrightportal.com/api/cron/reminders || true)
+          echo "cron_status: $code"
+          node -e 'const body = require("/tmp/cron.json"); console.log("reminders:", body.reminders); console.log("queries:", body.queries);'
+          test "$code" = 200
       - name: Check the database answers
         if: steps.hyperdrive.outcome == 'success'
         run: |

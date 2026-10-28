@@ -519,7 +519,7 @@ function isoDay(value: unknown): string {
 }
 
 export async function dispatchReminders(today = todayISO()) {
-  const { reminderCandidates, profilesByIds, markReminder } = await import("@/lib/db");
+  const { reminderCandidates, profilesByIds, claimReminder, releaseReminder } = await import("@/lib/db");
   const { sendTenantEmail } = await import("@/lib/email");
   const rows = await reminderCandidates();
   type Job = {
@@ -587,10 +587,13 @@ export async function dispatchReminders(today = todayISO()) {
   const byId = new Map(people.map((person) => [person.id, person]));
   let sent = 0;
   for (const job of jobs) {
+    const claimed = await claimReminder(job.deadlineId, job.slot, "in_app_email");
+    if (!claimed) continue;
     let failed = false;
+    let deliveredAny = false;
     for (const userId of job.userIds) {
       const user = byId.get(userId);
-      if (!user) continue;
+      if (!user?.email) continue;
       await addNotification(userId, job.heading, job.body, job.href);
       const mail = renderMail({
         subject: job.subject,
@@ -598,14 +601,16 @@ export async function dispatchReminders(today = todayISO()) {
         paragraphs: job.paragraphs,
         button: { label: job.button, href: `${appUrl()}${job.href}` },
       });
+      // Profiles are the tenant and any roommate. The landlord address is not a profile.
       const delivered = await sendTenantEmail(user.email, mail.subject, mail.text, mail.html);
       if (!delivered && process.env.RESEND_API_KEY && process.env.RESEND_FROM) {
         failed = true;
         continue;
       }
+      deliveredAny = true;
       sent += 1;
     }
-    if (!failed) await markReminder(job.deadlineId, job.slot, "in_app_email");
+    if (failed && !deliveredAny) await releaseReminder(job.deadlineId, job.slot);
   }
   return sent;
 }
