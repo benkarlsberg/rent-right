@@ -172,30 +172,6 @@ jobs:
           '
           npx wrangler secret bulk worker-secrets.json
           rm -f worker-secrets.json
-      - name: Run the daily reminder job once
-        if: steps.hyperdrive.outcome == 'success'
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
-        run: |
-          if [ -z "$CRON_SECRET" ]; then
-            CRON_SECRET="$(openssl rand -base64 32 | tr -d '\n')"
-            printf '%s' "$CRON_SECRET" | npx wrangler secret put CRON_SECRET
-            sleep 8
-          fi
-          ok=0
-          for attempt in 1 2 3; do
-            code=$(curl -sS -o /tmp/cron.json -w '%{http_code}' --max-time 30 -A "Mozilla/5.0" -X POST -H "authorization: Bearer $CRON_SECRET" https://api.rentrightportal.com/api/cron/reminders || true)
-            echo "cron_status: $code"
-            if [ "$code" = "200" ]; then
-              ok=1
-              break
-            fi
-            sleep 5
-          done
-          node -e 'const fs = require("fs"); const raw = fs.readFileSync("/tmp/cron.json", "utf8"); let body = {}; try { body = JSON.parse(raw); } catch { body = { error: raw.slice(0, 180) }; } console.log("reminders:", body.reminders); console.log("queries:", body.queries); if (body.error) console.log("error:", String(body.error).slice(0, 180));'
-          test "$ok" = 1
       - name: Check the database answers
         if: steps.hyperdrive.outcome == 'success'
         run: |

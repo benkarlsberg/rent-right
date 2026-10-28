@@ -35,6 +35,7 @@ import { repairOpening } from "@/lib/repair-draft";
 import { mailHeader, outboundSubject, REPLY_LINE, requireTenantMail } from "@/lib/tenant-mail";
 import { isBrandAsset, photoFilename, rejectPhotoSet } from "@/lib/message-photos";
 import { messageParagraphs, renderMail } from "@/lib/email-template";
+import { lettersForPeople, type ReminderMailItem } from "@/lib/reminder-mail";
 import { LIBRARY_VERSION, type Locale } from "@/lib/disclaimer";
 import { isIssueTier, reminderPace, tierForSeverity } from "@/lib/triage";
 import { LEASE_REVIEW_MONTHLY_CAP, mergeModelFindings, redactPii, reviewLease, type ModelFinding } from "@/lib/lease/review";
@@ -522,39 +523,15 @@ export async function dispatchReminders(today = todayISO()) {
   const { reminderCandidates, profilesByIds, claimReminder, releaseReminder } = await import("@/lib/db");
   const { sendTenantEmail } = await import("@/lib/email");
   const rows = await reminderCandidates();
-  type Job = {
-    deadlineId: string;
-    slot: string;
-    userIds: string[];
-    subject: string;
-    heading: string;
-    body: string;
-    paragraphs: string[];
-    href: string;
-    button: string;
-  };
-  const jobs: Job[] = [];
+  const due: ReminderMailItem[] = [];
   for (const row of rows) {
     const sentSlots = row.slots || [];
     const userIds = row.user_ids || [];
+    const issue = row.kind === "custom_reminder" ? row.explanation : (row.issue || "");
     if (row.due_date) {
-      for (const slot of pendingReminderSlots(String(row.due_date).slice(0, 10), today, sentSlots)) {
-        const title = slot === "0d" ? "A tracked date is today" : `A tracked date is ${slot === "7d" ? "7" : "3"} days away`;
-        jobs.push({
-          deadlineId: row.id,
-          slot,
-          userIds,
-          subject: `Rent Right: ${title}`,
-          heading: title,
-          body: row.explanation,
-          paragraphs: [
-            row.explanation,
-            `Rule ID: ${row.rule_id}`,
-            "This is a reminder of a date computed from what you entered. Confirm with the official source.",
-          ],
-          href: "/deadlines",
-          button: "Open deadlines",
-        });
+      const dueDate = String(row.due_date).slice(0, 10);
+      for (const slot of pendingReminderSlots(dueDate, today, sentSlots)) {
+        due.push({ deadlineId: row.id, slot, kind: row.kind, date: dueDate, issue, userIds });
       }
     }
     if (row.tenant_reminder_on) {
@@ -562,55 +539,38 @@ export async function dispatchReminders(today = todayISO()) {
       const late = daysBetween(on, today);
       const slot = `nudge:${on}`;
       if (late >= 0 && late <= 1 && !sentSlots.includes(slot)) {
-        const label = row.kind === "custom_reminder" && row.explanation ? row.explanation : "A reminder you saved on a record.";
-        const body = `This is a reminder you set for yourself for ${on}. It is not a legal deadline. ${label} Nothing was sent to the landlord.`;
-        jobs.push({
-          deadlineId: row.id,
-          slot,
-          userIds,
-          subject: "Rent Right: Your reminder",
-          heading: "Your reminder",
-          body,
-          paragraphs: [
-            `This is a reminder you set for yourself for ${on}. It is not a legal deadline.`,
-            label,
-            "Nothing was sent to the landlord.",
-          ],
-          href: "/records",
-          button: "Open records",
-        });
+        due.push({ deadlineId: row.id, slot, kind: row.kind, date: on, issue: row.explanation || issue, userIds });
       }
     }
   }
-  if (!jobs.length) return 0;
-  const people = await profilesByIds([...new Set(jobs.flatMap((job) => job.userIds))]);
-  const byId = new Map(people.map((person) => [person.id, person]));
+  if (!due.length) return 0;
+  const claimed: ReminderMailItem[] = [];
+  for (const item of due) {
+    if (await claimReminder(item.deadlineId, item.slot, "in_app_email")) claimed.push(item);
+  }
+  if (!claimed.length) return 0;
+  const people = await profilesByIds([...new Set(claimed.flatMap((item) => item.userIds))]);
+  const letters = lettersForPeople(claimed, people);
+  const deliveredSlots = new Set<string>();
   let sent = 0;
-  for (const job of jobs) {
-    const claimed = await claimReminder(job.deadlineId, job.slot, "in_app_email");
-    if (!claimed) continue;
-    let failed = false;
-    let deliveredAny = false;
-    for (const userId of job.userIds) {
-      const user = byId.get(userId);
-      if (!user?.email) continue;
-      await addNotification(userId, job.heading, job.body, job.href);
-      const mail = renderMail({
-        subject: job.subject,
-        heading: job.heading,
-        paragraphs: job.paragraphs,
-        button: { label: job.button, href: `${appUrl()}${job.href}` },
-      });
-      // Profiles are the tenant and any roommate. The landlord address is not a profile.
-      const delivered = await sendTenantEmail(user.email, mail.subject, mail.text, mail.html);
-      if (!delivered && process.env.RESEND_API_KEY && process.env.RESEND_FROM) {
-        failed = true;
-        continue;
-      }
-      deliveredAny = true;
-      sent += 1;
-    }
-    if (failed && !deliveredAny) await releaseReminder(job.deadlineId, job.slot);
+  for (const letter of letters) {
+    const body = letter.paragraphs.join("\n\n");
+    for (const userId of letter.userIds) await addNotification(userId, letter.heading, body, "/reminders");
+    const mail = renderMail({
+      subject: letter.subject,
+      heading: letter.heading,
+      paragraphs: letter.paragraphs,
+      button: { label: "Open reminders", href: `${appUrl()}/reminders` },
+      footer: "General information, not legal advice.",
+    });
+    const delivered = await sendTenantEmail(letter.email, mail.subject, mail.text, mail.html);
+    const failed = !delivered && Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM);
+    if (failed) continue;
+    sent += 1;
+    for (const slot of letter.slots) deliveredSlots.add(`${slot.deadlineId}:${slot.slot}`);
+  }
+  for (const item of claimed) {
+    if (!deliveredSlots.has(`${item.deadlineId}:${item.slot}`)) await releaseReminder(item.deadlineId, item.slot);
   }
   return sent;
 }

@@ -1061,6 +1061,7 @@ export type ReminderCandidate = {
   due_date: string | null;
   explanation: string;
   tenant_reminder_on: string | null;
+  issue: string;
   slots: string[];
   user_ids: string[];
 };
@@ -1075,11 +1076,13 @@ export async function reminderCandidates(): Promise<ReminderCandidate[]> {
     due_date: string | null;
     explanation: string;
     tenant_reminder_on: string | null;
+    issue: string | null;
     slots: string[] | null;
     user_ids: string[] | null;
   }>(
     `select d.id, d.unit_id, d.rule_id, d.kind, d.due_date::text as due_date, d.explanation,
             d.tenant_reminder_on::text as tenant_reminder_on,
+            (select le.description from log_entries le where le.id = d.source_id limit 1) as issue,
             coalesce(json_agg(distinct rs.slot) filter (where rs.slot is not null), '[]'::json) as slots,
             coalesce(json_agg(distinct m.user_id::text) filter (where m.user_id is not null), '[]'::json) as user_ids
      from deadlines d
@@ -1090,6 +1093,7 @@ export async function reminderCandidates(): Promise<ReminderCandidate[]> {
   );
   return rows.map((row) => ({
     ...row,
+    issue: row.issue || "",
     slots: textList(row.slots),
     user_ids: textList(row.user_ids),
   }));

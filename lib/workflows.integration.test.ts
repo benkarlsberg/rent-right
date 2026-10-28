@@ -372,10 +372,11 @@ describe("renter workflows", () => {
     expect(await dispatchReminders(today)).toBeGreaterThan(0);
     expect(await dispatchReminders(today)).toBe(0);
     const nudges = await getSql()<{ title: string; body: string }[]>`
-      select title, body from notifications where title = 'Your reminder' order by created_at desc limit 1
+      select title, body from notifications order by created_at desc limit 1
     `;
+    expect(nudges[0]?.title).not.toMatch(/tracked date/i);
     expect(nudges[0]?.body).toMatch(/not a legal deadline/);
-    expect(nudges[0]?.body).toMatch(/Nothing was sent to the landlord/);
+    expect(nudges[0]?.body).toMatch(/not sent to your landlord/i);
     const slots = await getSql()<{ slot: string }[]>`select slot from reminder_sent where deadline_id = ${repair!.id}`;
     expect(slots.map((row) => row.slot)).toContain(`nudge:${today}`);
     const still = await getSql()<{ due: string }[]>`select due_date::text as due from deadlines where id = ${repair!.id}`;
