@@ -10,7 +10,7 @@ import { Button, Card, ErrorLine, H1, LearnMore, LegalNote, Muted, Page } from "
 import { refreshBootstrap } from "@/tab-cache";
 import { useLoad } from "@/use-load";
 
-type HistoryRow = { id: string; at: string; title: string; body: string };
+type HistoryRow = { id: string; at: string; title: string; body: string; details?: string[] };
 
 type Detail = {
   kind: string;
@@ -49,6 +49,7 @@ export default function LogDetail() {
   const { data, error, reload, token, setError } = useLoad<Detail>(`log/${id}`);
   const { me } = useSession();
   const [busy, setBusy] = useState(false);
+  const [openDetails, setOpenDetails] = useState<string | null>(null);
   const spanish = me?.user.locale === "es";
 
   async function resolve(input: { note: string; date: string }) {
@@ -128,6 +129,12 @@ export default function LogDetail() {
               <Text style={{ fontWeight: "700" }}>{`${row.title}\n`}</Text>
               <Text style={{ color: colors.mute }}>{row.at}</Text>
               {`\n${row.body}`}
+              {row.details?.length ? (
+                <Text onPress={() => setOpenDetails(openDetails === row.id ? null : row.id)} style={{ color: colors.pine, fontWeight: "700" }}>
+                  {`\n${openDetails === row.id ? (spanish ? "Ocultar los cambios" : "Hide the changes") : (spanish ? "Ver los cambios" : "Show the changes")}`}
+                </Text>
+              ) : null}
+              {openDetails === row.id && row.details?.length ? `\n${row.details.join("\n")}` : null}
             </Text>
           ))}
         </Card>

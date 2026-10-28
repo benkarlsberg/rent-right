@@ -20,6 +20,7 @@ import {
   type User,
 } from "@/lib/db";
 import { formatDate, formatTimestamp } from "@/lib/format";
+import { landlordReplyPreview, parseTierChange, presentHistory, reminderHistoryText, tenantMessagePreview } from "@/lib/history-view";
 import {
   isResolvedClaim,
   issueTitle,
@@ -34,7 +35,7 @@ import {
 import { confirmedOutbound } from "@/lib/repair-draft";
 import { todayISO } from "@/lib/rules/dates";
 import { repairReminder } from "@/lib/rules/engine";
-import { landlordBubble, landlordWords } from "@/lib/inbound-reply";
+import { landlordWords } from "@/lib/inbound-reply";
 import { asRepairSeverity, escalationNote, isHabitability, isIssueTier, reminderPace, shouldEscalate, tierForSeverity, tierShort, violationFlag, type IssueTier } from "@/lib/triage";
 import { tx } from "@/lib/text";
 
@@ -199,7 +200,7 @@ export async function findResolutionTarget(user: User, unitId: string, text: str
   };
 }
 
-export type HistoryRow = { id: string; at: string; title: string; body: string };
+export type HistoryRow = { id: string; at: string; title: string; body: string; details?: string[] };
 
 export async function issueHistory(user: User, issueId: string): Promise<HistoryRow[] | null> {
   const entry = await getLog(user.id, issueId);
@@ -212,33 +213,39 @@ export async function issueHistory(user: User, issueId: string): Promise<History
   ]);
   const linkedMessages = messages.filter((message) => message.logEntryId === entry.id);
   const messageIds = new Set(linkedMessages.map((message) => message.id));
-  const rows: { at: string; title: string; body: string }[] = [{
-    at: entry.createdAt,
+  const rows: { atIso: string; at: string; title: string; body: string; details?: string[]; tier?: { from: string; to: string } | null }[] = [{
+    atIso: entry.createdAt,
+    at: formatTimestamp(entry.createdAt, user.locale),
     title: tx(user.locale, "Request logged", "Solicitud anotada"),
     body: entry.description,
   }];
   for (const message of linkedMessages) {
     const reply = message.direction === "inbound";
+    const shown = reply ? landlordReplyPreview(message.body, message.providerId) : null;
     rows.push({
-      at: message.createdAt,
-      title: reply
-        ? tx(user.locale, "Reply from the landlord", "Respuesta del propietario")
-        : tx(user.locale, "Message to the landlord", "Mensaje al propietario"),
-      body: `${formatTimestamp(message.createdAt, user.locale)}\n${message.subject}\n${reply ? landlordBubble(message.body, user.locale) : message.body}`,
+      atIso: message.createdAt,
+      at: formatTimestamp(message.createdAt, user.locale),
+      title: shown?.title === "Acknowledged"
+        ? tx(user.locale, "Acknowledged", "Acusado recibo")
+        : reply
+          ? tx(user.locale, "Reply from the landlord", "Respuesta del propietario")
+          : tx(user.locale, "Message to the landlord", "Mensaje al propietario"),
+      body: reply ? (shown?.text || "") : tenantMessagePreview(message.body),
     });
   }
   for (const deadline of deadlines.filter((item) => item.sourceId === entry.id)) {
     rows.push({
-      at: deadline.createdAt,
+      atIso: deadline.createdAt,
+      at: formatTimestamp(deadline.createdAt, user.locale),
       title: deadline.status === "resolved"
         ? tx(user.locale, "Reminder closed", "Recordatorio cerrado")
         : tx(user.locale, "Reminder saved", "Recordatorio guardado"),
-      body: [
-        user.locale === "es" ? deadline.explanationEs : deadline.explanation,
-        deadline.ruleId,
-        deadline.dueDate ? tx(user.locale, `Date ${deadline.dueDate}`, `Fecha ${deadline.dueDate}`) : "",
-        tx(user.locale, `Status ${deadline.status}`, `Estado ${deadline.status}`),
-      ].filter(Boolean).join("\n"),
+      body: reminderHistoryText({
+        locale: user.locale,
+        ruleId: deadline.ruleId,
+        anchorDate: deadline.anchorDate,
+        dueDate: deadline.dueDate,
+      }),
     });
   }
   const inbound = linkedMessages.filter((message) => message.direction === "inbound");
@@ -250,23 +257,30 @@ export async function issueHistory(user: User, issueId: string): Promise<History
       return Boolean(note && message.body.includes(note));
     });
     if (covered) continue;
+    const shown = response.action === "acknowledge"
+      ? { title: tx(user.locale, "Acknowledged", "Acusado recibo"), text: note || tx(user.locale, "Acknowledged", "Acusado recibo") }
+      : { title: tx(user.locale, "Reply from the landlord", "Respuesta del propietario"), text: note || landlordWords(response.action, "", user.locale) };
     rows.push({
-      at: response.created_at,
-      title: tx(user.locale, "Reply from the landlord", "Respuesta del propietario"),
-      body: landlordWords(response.action, note, user.locale),
+      atIso: response.created_at,
+      at: formatTimestamp(response.created_at, user.locale),
+      title: shown.title,
+      body: shown.text,
     });
   }
   for (const log of logs) {
     const issue = log.flags.issueId;
     if (log.type !== "issue_event" || issue !== entry.id) continue;
+    const tier = log.flags.event === "tier" || /^tier changed from /i.test(log.description) ? parseTierChange(log.description, log.flags) : null;
     rows.push({
-      at: log.createdAt,
-      title: tx(user.locale, "Record", "Registro"),
-      body: `${formatTimestamp(log.createdAt, user.locale)}\n${log.description}`,
+      atIso: log.createdAt,
+      at: formatTimestamp(log.createdAt, user.locale),
+      title: tier ? tx(user.locale, "Tier changed", "Nivel cambiado") : tx(user.locale, "Record", "Registro"),
+      body: log.description,
+      tier,
     });
   }
-  rows.sort((a, b) => a.at.localeCompare(b.at));
-  return rows.map((row, index) => ({ id: `${entry.id}-${index}`, ...row, at: formatTimestamp(row.at, user.locale) }));
+  rows.sort((a, b) => a.atIso.localeCompare(b.atIso));
+  return presentHistory(rows, user.locale).map((row, index) => ({ id: `${entry.id}-${index}`, ...row }));
 }
 
 export function issueSummary(entry: LogEntry, messages: { logEntryId: string | null; direction: string }[], locale: Locale) {
@@ -295,14 +309,14 @@ function openRepair(log: LogEntry): boolean {
   return log.type === "repair" && log.status !== "resolved" && log.flags?.removed !== true;
 }
 
-async function noteTier(user: User, unit: Unit, issueId: string, description: string) {
+async function noteTier(user: User, unit: Unit, issueId: string, description: string, from = "", to = "") {
   await insertLog({
     unitId: unit.id,
     userId: user.id,
     type: "issue_event",
     description,
     eventDate: todayISO(),
-    flags: { issueId, event: "tier" },
+    flags: { issueId, event: "tier", ...(from && to ? { from, to } : {}) },
   });
 }
 
@@ -389,7 +403,7 @@ export async function setIssueTier(user: User, unit: Unit, id: string, tier: Iss
     user.locale,
     `Tier changed from ${tierShort(current, "en")} to ${tierShort(tier, "en")} by tenant`,
     `El nivel cambió de ${tierShort(current, "es")} a ${tierShort(tier, "es")} por el inquilino`,
-  ));
+  ), tierShort(current, user.locale), tierShort(tier, user.locale));
   const anchor = (log.eventDate || todayISO()).slice(0, 10);
   const reminder = repairReminder(anchor, asRepairSeverity(log.severity), reminderPace(tier, log.severity));
   const open = (await listDeadlines(user.id, unit.id)).find((item) => item.kind === "repair" && item.sourceId === id && item.status === "open");

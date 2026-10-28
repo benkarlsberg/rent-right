@@ -1448,6 +1448,8 @@ function presentRecords(user: User, unit: Unit, loaded: HomeRows, photos: Awaite
       logEntryId: item.logEntryId,
       direction: item.direction,
       subject: item.subject,
+      body: item.body,
+      providerId: item.providerId,
       deliveryStatus: item.deliveryStatus,
       createdAt: item.createdAt,
     })),
@@ -1456,6 +1458,8 @@ function presentRecords(user: User, unit: Unit, loaded: HomeRows, photos: Awaite
     logEntryId: item.logEntryId,
     direction: item.direction,
     subject: item.subject,
+    body: item.body,
+    providerId: item.providerId,
     deliveryStatus: item.deliveryStatus,
     createdAt: item.createdAt,
   }));

@@ -1,5 +1,6 @@
 import type { Locale } from "@/lib/disclaimer";
 import { formatDate, formatTimestamp } from "@/lib/format";
+import { cardReplyLine, tenantMessagePreview } from "@/lib/history-view";
 import { issueTitle, landlordFixedNote, resolutionPhrase, sourceLabel, timelineSummary, type ResolutionSource } from "@/lib/resolution";
 import { daysBetween } from "@/lib/rules/dates";
 import { tx } from "@/lib/text";
@@ -35,6 +36,8 @@ export type MessageInput = {
   logEntryId: string | null;
   direction: string;
   subject: string;
+  body?: string;
+  providerId?: string | null;
   deliveryStatus: string;
   createdAt: string;
 };
@@ -289,11 +292,11 @@ export function logCards(logs: LogInput[], messages: MessageInput[], locale: Loc
     const outbound = related.find((message) => message.direction === "outbound");
     const inbound = [...related].reverse().find((message) => message.direction === "inbound");
     const parts: string[] = [];
-    if (outbound?.subject) {
-      parts.push(tx(locale, `With the message “${outbound.subject}”`, `Con el mensaje “${outbound.subject}”`));
-    }
-    if (inbound?.subject) {
-      parts.push(tx(locale, `Reply: “${inbound.subject}”`, `Respuesta: “${inbound.subject}”`));
+    if (inbound?.body) {
+      parts.push(cardReplyLine({ body: inbound.body, providerId: inbound.providerId, at: formatTimestamp(inbound.createdAt, locale) }, locale));
+    } else if (outbound?.body) {
+      const preview = tenantMessagePreview(outbound.body);
+      if (preview) parts.push(tx(locale, `Message: ${preview}`, `Mensaje: ${preview}`));
     }
     const title = log.type === "conversation" || log.type === "notice_received" ? noteTitle(log, locale) : logTitle(log.type, locale);
     return {

@@ -99,9 +99,11 @@ describe("resolving a request", () => {
     expect(deadlines.some((card) => /sink/i.test(card.title))).toBe(false);
 
     const detail = await api(user.id, "GET", `log/${entry.id}`);
-    const history = detail.json?.history as { body: string }[];
+    const history = detail.json?.history as { title: string; body: string }[];
     expect(history.some((row) => row.body.includes("The plumber came."))).toBe(true);
-    expect(history.some((row) => /CA-CC-1942|status resolved|Estado resolved|Reminder closed|Recordatorio cerrado/.test(row.body))).toBe(true);
+    const closed = history.find((row) => row.title === "Reminder closed");
+    expect(closed?.body).toMatch(/Reminder set for .+Civil Code §1942/);
+    expect(closed?.body).not.toMatch(/CA-CC-1942|Status/);
 
     await reopenRepair(user, entry.id);
     expect((await listDeadlines(user.id, unit.id)).find((item) => item.id === reminder!.id)?.status).toBe("open");

@@ -1128,14 +1128,20 @@ describe("renter workflows", () => {
     const routineDue = await getSql()<{ due: string }[]>`select due_date::text as due from deadlines where unit_id = ${unitId} and kind = 'repair' and status = 'open'`;
     expect(routineDue[0]?.due > urgentDue[0]?.due).toBe(true);
     const history = await api("GET", `log/${issue.id}`, undefined, token);
-    expect(JSON.stringify(history.json)).toMatch(/Tier changed from Urgent to Routine by tenant/);
+    const tierRows = await getSql()<{ n: number }[]>`select count(*)::int as n from log_entries where unit_id = ${unitId} and type = 'issue_event'`;
+    expect(tierRows[0]?.n).toBe(1);
+    expect(JSON.stringify(history.json)).toMatch(/Tier changed/);
+    expect(JSON.stringify(history.json)).toMatch(/Changed from Urgent to Routine/);
 
     const back = await api("POST", "records/tier", { id: issue.id, tier: "urgent" }, token);
     expect((back.json?.issues as { tier?: string }[])[0]?.tier).toBe("urgent");
     const urgentAgain = await getSql()<{ due: string }[]>`select due_date::text as due from deadlines where unit_id = ${unitId} and kind = 'repair' and status = 'open'`;
     expect(urgentAgain[0]?.due).toBe(urgentDue[0]?.due);
     const historyAgain = await api("GET", `log/${issue.id}`, undefined, token);
-    expect(JSON.stringify(historyAgain.json)).toMatch(/Tier changed from Routine to Urgent by tenant/);
+    const tierRowsAgain = await getSql()<{ n: number }[]>`select count(*)::int as n from log_entries where unit_id = ${unitId} and type = 'issue_event'`;
+    expect(tierRowsAgain[0]?.n).toBe(2);
+    expect(JSON.stringify(historyAgain.json)).toMatch(/Left as Urgent/);
+    expect(JSON.stringify(historyAgain.json)).toMatch(/Show the changes|Urgent → Routine/);
 
     const gas = await api("POST", "thread", { text: "I smell gas in the kitchen" }, token);
     const gasCard = (gas.json?.items as { safety?: string; legal?: boolean; headline?: string }[] | undefined)?.at(-1);

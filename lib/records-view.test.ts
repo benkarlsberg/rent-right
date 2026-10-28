@@ -144,14 +144,15 @@ describe("records view", () => {
       eventDate: "2026-10-23",
       createdAt: "2026-10-23T18:05:00.000Z",
     }], [
-      { logEntryId: "log1", direction: "outbound", subject: "Kitchen sink leak", deliveryStatus: "delivered", createdAt: "2026-10-23T18:05:00.000Z" },
-      { logEntryId: "log1", direction: "inbound", subject: "Re: Kitchen sink leak", deliveryStatus: "received", createdAt: "2026-10-24T16:00:00.000Z" },
+      { logEntryId: "log1", direction: "outbound", subject: "Repair request: The sink is leaking", body: "I'm writing about a repair.\n\nIssue: The sink is leaking\nDate: Oct 23, 2026", deliveryStatus: "delivered", createdAt: "2026-10-23T18:05:00.000Z" },
+      { logEntryId: "log1", direction: "inbound", subject: "Re: Repair request: The sink is leaking", body: "Will do", providerId: "email:abc", deliveryStatus: "received", createdAt: "2026-10-24T16:00:00.000Z" },
     ], "en");
     expect(row.title).toBe("Repair request");
     expect(row.status).toBe("Reply from the landlord");
     expect(row.when).toMatch(/2026/);
     expect(row.issue).toBe("Kitchen sink leak.");
-    expect(row.message).toBe("With the message “Kitchen sink leak” Reply: “Re: Kitchen sink leak”");
+    expect(row.message).toMatch(/^Landlord replied: Will do · /);
+    expect(row.message).not.toMatch(/Re:/);
     expect(row.line).toBe("Repair request · Reply from the landlord");
   });
 

@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SvgXml } from "react-native-svg";
@@ -161,7 +161,12 @@ export default function Records() {
   const [confirmIssue, setConfirmIssue] = useState<string | null>(null);
   const [confirmNote, setConfirmNote] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
-  const tierLock = useRef(false);
+  const tierWait = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tierOrigin = useRef<{ id: string; tier: "routine" | "urgent" | "possible_violation" } | null>(null);
+  const tierLatest = useRef<{ id: string; tier: "routine" | "urgent" | "possible_violation" } | null>(null);
+  const tierGen = useRef(0);
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
   const [removedNote, setRemovedNote] = useState("");
   const [openNote, setOpenNote] = useState<string | null>(null);
   const [openArchive, setOpenArchive] = useState<string | null>(null);
@@ -215,24 +220,52 @@ export default function Records() {
     }
   }
 
-  async function setTier(id: string, tier: "routine" | "urgent" | "possible_violation") {
-    if (!token || !data || data.archived || tierLock.current) return;
-    const previous = data;
-    const tierLabel = tier === "urgent" ? (es ? "Urgente" : "Urgent") : tier === "possible_violation" ? (es ? "Reglas" : "Rules") : (es ? "Rutina" : "Routine");
-    try {
-      tierLock.current = true;
-      setError("");
-      rememberSlice(token, "records", {
-        ...data,
-        issues: (data.issues || []).map((issue) => issue.id === id ? { ...issue, tier, tierLabel } : issue),
-      });
-      await reload(await api<Records>("records/tier", { token, body: { id, tier } }));
-    } catch (err) {
-      rememberSlice(token, "records", previous);
-      setError(err instanceof Error ? err.message : "Could not change the label.");
-    } finally {
-      tierLock.current = false;
+  function flushTier() {
+    if (tierWait.current) {
+      clearTimeout(tierWait.current);
+      tierWait.current = null;
     }
+    const latest = tierLatest.current;
+    const origin = tierOrigin.current;
+    tierLatest.current = null;
+    tierOrigin.current = null;
+    const currentToken = tokenRef.current;
+    if (!latest || !origin || latest.tier === origin.tier || !currentToken) return;
+    const gen = ++tierGen.current;
+    void api<Records>("records/tier", { token: currentToken, body: { id: latest.id, tier: latest.tier } })
+      .then((next) => {
+        if (tierGen.current !== gen) return;
+        void reload(next);
+      })
+      .catch((err: unknown) => {
+        if (tierGen.current !== gen) return;
+        setError(err instanceof Error ? err.message : "Could not change the label.");
+        void reload();
+      });
+  }
+
+  useEffect(() => () => {
+    flushTier();
+  }, []);
+
+  function setTier(id: string, tier: "routine" | "urgent" | "possible_violation") {
+    if (!token || !data || data.archived) return;
+    if (tierLatest.current && tierLatest.current.id !== id) flushTier();
+    const current = (data.issues || []).find((issue) => issue.id === id);
+    const currentTier = current?.tier === "urgent" || current?.tier === "possible_violation" || current?.tier === "routine" ? current.tier : "routine";
+    if (!tierOrigin.current || tierOrigin.current.id !== id) tierOrigin.current = { id, tier: currentTier };
+    tierLatest.current = { id, tier };
+    const tierLabel = tier === "urgent" ? (es ? "Urgente" : "Urgent") : tier === "possible_violation" ? (es ? "Posible infracción" : "Possible violation") : (es ? "Rutina" : "Routine");
+    setError("");
+    rememberSlice(token, "records", {
+      ...data,
+      issues: (data.issues || []).map((issue) => issue.id === id ? { ...issue, tier, tierLabel } : issue),
+    });
+    if (tierWait.current) clearTimeout(tierWait.current);
+    tierWait.current = setTimeout(() => {
+      tierWait.current = null;
+      flushTier();
+    }, 800);
   }
 
   async function hideNote(id: string) {
@@ -435,7 +468,7 @@ export default function Records() {
                           {([
                             ["routine", es ? "Rutina" : "Routine"],
                             ["urgent", es ? "Urgente" : "Urgent"],
-                            ["possible_violation", es ? "Reglas" : "Rules"],
+                            ["possible_violation", es ? "Posible infracción" : "Possible violation"],
                           ] as const).map(([tier, label]) => (
                             <Pressable
                               key={tier}
