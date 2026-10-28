@@ -12,7 +12,7 @@ export type Me = {
   token: string;
   needsUnit: boolean;
   needsLandlord?: boolean;
-  user: { name: string; email: string; locale: "en" | "es"; lowBandwidth: boolean; sample: boolean };
+  user: { name: string; email: string; locale: "en" | "es"; lowBandwidth: boolean; pushEnabled?: boolean; sample: boolean };
   unit: {
     id?: string;
     address: string;
@@ -74,11 +74,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [token]);
 
   const signOut = useCallback(async () => {
+    if (Platform.OS !== "web" && token) {
+      const { unregisterPush } = await import("@/push");
+      await unregisterPush(token);
+    }
     clearTabCache();
     await writeToken(null);
     setToken(null);
     setMe(null);
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     readToken()

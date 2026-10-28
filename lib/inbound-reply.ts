@@ -170,8 +170,15 @@ export async function recordLandlordChatReply(input: {
     throw error;
   }
   if (!input.quiet) {
-    for (const userId of await unitMemberUserIds(input.unit.id)) {
+    const members = await unitMemberUserIds(input.unit.id);
+    for (const userId of members) {
       await addNotification(userId, "Landlord reply", input.subject || "New reply from your landlord", "/landlord");
+    }
+    try {
+      const { pushLandlordReply } = await import("@/lib/push");
+      await pushLandlordReply(members, input.subject || "");
+    } catch {
+      // The reply is already stored. The notification is extra.
     }
   }
   return "stored";

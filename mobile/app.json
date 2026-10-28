@@ -21,6 +21,7 @@
         "CFBundleDisplayName": "Rent Right",
         "CFBundleName": "Rent Right",
         "NSPhotoLibraryUsageDescription": "Rent Right attaches photos you choose to a condition report or a message.",
+        "NSCameraUsageDescription": "Rent Right uses the camera when you take a photo for a condition report.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "privacyManifests": {
@@ -75,10 +76,16 @@
       "expo-sharing",
       "expo-apple-authentication",
       [
+        "expo-notifications",
+        {
+          "color": "#0B5C6E"
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "Rent Right attaches photos you choose to a condition report or a message.",
-          "cameraPermission": false,
+          "cameraPermission": "Rent Right uses the camera when you take a photo for a condition report.",
           "microphonePermission": false
         }
       ]

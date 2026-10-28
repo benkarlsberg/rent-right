@@ -141,6 +141,10 @@ export default function AssistantChat() {
         next = await post();
       }
       await reload(next);
+      if (extra?.action === "send" || extra?.action?.startsWith("repair-save:")) {
+        const { offerPushRegistration } = await import("@/push");
+        void offerPushRegistration(token);
+      }
       setDraft("");
       setFile(null);
       setLinkIssue(null);

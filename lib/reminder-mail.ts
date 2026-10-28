@@ -8,6 +8,7 @@ export type ReminderMailItem = {
   date: string;
   issue: string;
   userIds: string[];
+  sourceId?: string | null;
 };
 
 export type ReminderLetter = {
@@ -17,6 +18,9 @@ export type ReminderLetter = {
   subject: string;
   heading: string;
   paragraphs: string[];
+  pushIssue: string;
+  pushCount: number;
+  pushLogId: string | null;
 };
 
 function prettyDate(iso: string): string {
@@ -125,6 +129,15 @@ export function lettersForPeople(items: ReminderMailItem[], people: { id: string
   }
   return [...groups.values()].map((group) => {
     const letter = reminderLetter(group.items);
-    return { email: group.email, userIds: group.userIds, slots: group.slots, ...letter };
+    const only = group.items.length === 1 ? group.items[0] : null;
+    return {
+      email: group.email,
+      userIds: group.userIds,
+      slots: group.slots,
+      ...letter,
+      pushIssue: only?.issue || group.items.find((item) => item.issue)?.issue || "",
+      pushCount: group.items.length,
+      pushLogId: only?.sourceId || null,
+    };
   });
 }

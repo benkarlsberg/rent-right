@@ -531,7 +531,7 @@ export async function dispatchReminders(today = todayISO()) {
     if (row.due_date) {
       const dueDate = String(row.due_date).slice(0, 10);
       for (const slot of pendingReminderSlots(dueDate, today, sentSlots)) {
-        due.push({ deadlineId: row.id, slot, kind: row.kind, date: dueDate, issue, userIds });
+        due.push({ deadlineId: row.id, slot, kind: row.kind, date: dueDate, issue, userIds, sourceId: row.source_id });
       }
     }
     if (row.tenant_reminder_on) {
@@ -539,7 +539,7 @@ export async function dispatchReminders(today = todayISO()) {
       const late = daysBetween(on, today);
       const slot = `nudge:${on}`;
       if (late >= 0 && late <= 1 && !sentSlots.includes(slot)) {
-        due.push({ deadlineId: row.id, slot, kind: row.kind, date: on, issue: row.explanation || issue, userIds });
+        due.push({ deadlineId: row.id, slot, kind: row.kind, date: on, issue: row.explanation || issue, userIds, sourceId: row.source_id });
       }
     }
   }
@@ -552,6 +552,7 @@ export async function dispatchReminders(today = todayISO()) {
   const people = await profilesByIds([...new Set(claimed.flatMap((item) => item.userIds))]);
   const letters = lettersForPeople(claimed, people);
   const deliveredSlots = new Set<string>();
+  const pushJobs: { userIds: string[]; issue: string; count: number; logId: string | null }[] = [];
   let sent = 0;
   for (const letter of letters) {
     const body = letter.paragraphs.join("\n\n");
@@ -567,7 +568,16 @@ export async function dispatchReminders(today = todayISO()) {
     const failed = !delivered && Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM);
     if (failed) continue;
     sent += 1;
+    pushJobs.push({ userIds: letter.userIds, issue: letter.pushIssue, count: letter.pushCount, logId: letter.pushLogId });
     for (const slot of letter.slots) deliveredSlots.add(`${slot.deadlineId}:${slot.slot}`);
+  }
+  if (pushJobs.length) {
+    try {
+      const { pushReminders } = await import("@/lib/push");
+      await pushReminders(pushJobs);
+    } catch {
+      // The email already went out. A missed notification can wait for the next open of the app.
+    }
   }
   for (const item of claimed) {
     if (!deliveredSlots.has(`${item.deadlineId}:${item.slot}`)) await releaseReminder(item.deadlineId, item.slot);

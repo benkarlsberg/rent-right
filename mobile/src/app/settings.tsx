@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { StyleSheet, Text, TextInput, View, type LayoutChangeEvent } from "react-native";
+import { StyleSheet, Switch, Text, TextInput, View, type LayoutChangeEvent } from "react-native";
 import { api } from "@/api";
 import { DeleteAccount } from "@/delete-account";
 import { saveAuthorizedFile } from "@/files";
@@ -21,7 +21,7 @@ function signedInAs(email: string, spanish: boolean): { title: string; detail: s
 export default function Settings() {
   const params = useLocalSearchParams<{ focus?: string | string[] }>();
   const focusName = (Array.isArray(params.focus) ? params.focus[0] : params.focus) === "name";
-  const { me, token, signIn, signOut } = useSession();
+  const { me, token, signIn, signOut, refresh } = useSession();
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [pendingLocale, setPendingLocale] = useState<"en" | "es" | null>(null);
@@ -61,6 +61,23 @@ export default function Settings() {
       setError(err instanceof Error ? err.message : "Could not save the language.");
     } finally {
       setPendingLocale(null);
+    }
+  }
+
+  async function togglePush(next: boolean) {
+    if (!token || !me) return;
+    try {
+      setError("");
+      await signIn(await api<Me>("settings", {
+        token,
+        body: { pushEnabled: next, name: me.user.name, locale: me.user.locale, lowBandwidth: me.user.lowBandwidth },
+      }));
+      if (!next) return;
+      const { offerPushRegistration } = await import("@/push");
+      await offerPushRegistration(token, true);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : spanish ? "No se pudieron guardar las notificaciones." : "Could not save notifications.");
     }
   }
 
@@ -111,6 +128,22 @@ export default function Settings() {
         {notice ? <Text style={styles.notice}>{notice}</Text> : null}
       </View>
       <LanguageToggle locale={spanish ? "es" : "en"} onChange={(next) => void language(next)} />
+      <View style={styles.block}>
+        <View style={styles.switchRow}>
+          <Text style={styles.label}>{spanish ? "Notificaciones" : "Notifications"}</Text>
+          <Switch
+            value={me?.user.pushEnabled !== false}
+            onValueChange={(next) => void togglePush(next)}
+            accessibilityLabel={spanish ? "Notificaciones" : "Notifications"}
+            trackColor={{ true: colors.pine, false: colors.line }}
+          />
+        </View>
+        <Muted>
+          {spanish
+            ? "En el iPhone y en Android, Rent Right pide permiso la primera vez que guarda un recordatorio o envía un mensaje al propietario. El sitio web no envía notificaciones."
+            : "On iPhone and Android, Rent Right asks the first time you save a reminder or send a landlord message. The website does not send notifications."}
+        </Muted>
+      </View>
       {account ? (
         <View style={styles.block}>
           <Text style={styles.label}>{spanish ? "Sesión iniciada como" : "Signed in as"}</Text>
@@ -151,6 +184,7 @@ const styles = StyleSheet.create({
   section: { color: colors.ink, fontSize: 13, fontWeight: "700", letterSpacing: 0.4, textTransform: "uppercase", marginTop: 20 },
   notice: { color: colors.pine, fontSize: 15, fontWeight: "700", marginTop: 8 },
   block: { marginTop: 20 },
+  switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 44 },
   label: { color: colors.mute, fontSize: 13, fontWeight: "700" },
   value: { color: colors.ink, fontSize: 17, lineHeight: 24, marginTop: 4 },
 });

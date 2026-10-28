@@ -1,8 +1,10 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useEffect } from "react";
 import { Platform, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { captureLoadedPath } from "@/back-nav";
+import { listenForPush } from "@/push";
 import { SessionProvider } from "@/session";
 import { colors } from "@/theme";
 
@@ -27,11 +29,17 @@ function installWebViewport() {
 
 installWebViewport();
 
+function PushBridge() {
+  useEffect(() => listenForPush(), []);
+  return null;
+}
+
 export default function RootLayout() {
   installWebViewport();
   const app = (
     <SafeAreaProvider>
       <SessionProvider>
+        <PushBridge />
         <StatusBar style="dark" />
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.paper } }}>
           <Stack.Screen name="index" />

@@ -76,6 +76,8 @@ export default function Reminders() {
       setError("");
       await reload(await api<Records>("records/reminder", { token, body: { id, date } }));
       setEditing(null);
+      const { offerPushRegistration } = await import("@/push");
+      void offerPushRegistration(token);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the reminder.");
     } finally {
@@ -93,6 +95,8 @@ export default function Reminders() {
       setBusy(true);
       setError("");
       await reload(await api<Records>("records/reminder/new", { token, body: { label: customLabel.trim(), date: customDate } }));
+      const { offerPushRegistration } = await import("@/push");
+      void offerPushRegistration(token);
       setCustomLabel("");
       setCustomDate("");
       setSheet(false);

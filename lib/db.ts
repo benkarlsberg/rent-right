@@ -36,6 +36,7 @@ export type User = {
   name: string;
   locale: Locale;
   lowBandwidth: boolean;
+  pushEnabled: boolean;
   phone: string;
   createdAt: string;
 };
@@ -72,6 +73,7 @@ type UserRow = {
   name: string;
   locale: string;
   low_bandwidth: number;
+  push_enabled: boolean | number;
   phone: string;
   created_at: string;
 };
@@ -109,6 +111,7 @@ function mapUser(row: UserRow): User {
     name: row.name,
     locale: row.locale === "es" ? "es" : "en",
     lowBandwidth: isOn(row.low_bandwidth),
+    pushEnabled: row.push_enabled == null ? true : isOn(row.push_enabled),
     phone: row.phone || "",
     createdAt: row.created_at,
   };
@@ -1062,6 +1065,7 @@ export type ReminderCandidate = {
   explanation: string;
   tenant_reminder_on: string | null;
   issue: string;
+  source_id: string | null;
   slots: string[];
   user_ids: string[];
 };
@@ -1077,11 +1081,13 @@ export async function reminderCandidates(): Promise<ReminderCandidate[]> {
     explanation: string;
     tenant_reminder_on: string | null;
     issue: string | null;
+    source_id: string | null;
     slots: string[] | null;
     user_ids: string[] | null;
   }>(
     `select d.id, d.unit_id, d.rule_id, d.kind, d.due_date::text as due_date, d.explanation,
             d.tenant_reminder_on::text as tenant_reminder_on,
+            d.source_id::text as source_id,
             (select le.description from log_entries le where le.id = d.source_id limit 1) as issue,
             coalesce(json_agg(distinct rs.slot) filter (where rs.slot is not null), '[]'::json) as slots,
             coalesce(json_agg(distinct m.user_id::text) filter (where m.user_id is not null), '[]'::json) as user_ids
@@ -1094,6 +1100,7 @@ export async function reminderCandidates(): Promise<ReminderCandidate[]> {
   return rows.map((row) => ({
     ...row,
     issue: row.issue || "",
+    source_id: row.source_id,
     slots: textList(row.slots),
     user_ids: textList(row.user_ids),
   }));
@@ -1671,6 +1678,44 @@ export async function listPush(userId: string) {
   return await all<{ endpoint: string; p256dh: string; auth: string }>("select * from push_subscriptions where user_id = ?", [userId]);
 }
 
+export async function setPushEnabled(userId: string, enabled: boolean) {
+  await run("update profiles set push_enabled = ? where id = ?", [enabled, userId]);
+}
+
+export async function saveExpoToken(userId: string, token: string, platform: "ios" | "android") {
+  const now = new Date().toISOString();
+  await run(
+    `insert into expo_push_tokens (token, user_id, platform, created_at, updated_at)
+     values (?, ?, ?, ?, ?)
+     on conflict (token) do update set user_id = excluded.user_id, platform = excluded.platform, updated_at = excluded.updated_at`,
+    [token, userId, platform, now, now],
+  );
+}
+
+export async function deleteExpoToken(userId: string, token: string) {
+  await run("delete from expo_push_tokens where user_id = ? and token = ?", [userId, token]);
+}
+
+export async function expoTokensForUsers(userIds: string[]): Promise<{ token: string; user_id: string; locale: Locale }[]> {
+  const list = [...new Set(userIds.map((id) => id.trim()).filter(Boolean))];
+  if (!list.length) return [];
+  const rows = await all<{ token: string; user_id: string; locale: string }>(
+    `select t.token, t.user_id::text as user_id, p.locale
+     from expo_push_tokens t
+     join profiles p on p.id = t.user_id
+     where p.push_enabled = true and t.user_id::text = any(string_to_array(?, ','))
+     order by t.token`,
+    [list.join(",")],
+  );
+  return rows.map((row) => ({ token: row.token, user_id: row.user_id, locale: row.locale === "es" ? "es" : "en" }));
+}
+
+export async function dropExpoTokens(tokens: string[]) {
+  const list = [...new Set(tokens.map((token) => token.trim()).filter(Boolean))];
+  if (!list.length) return;
+  await run("delete from expo_push_tokens where token = any(string_to_array(?, ','))", [list.join(",")]);
+}
+
 export async function deleteUserAccount(userId: string): Promise<void> {
   if (hasUserActor()) return withActor(null, () => deleteUserAccount(userId));
   const personal = await all<{ id: string }>("select id from files where user_id = ? and unit_id is null", [userId]);
@@ -1692,6 +1737,7 @@ export async function deleteUserAccount(userId: string): Promise<void> {
   await run("delete from chat_drafts where user_id = ?", [userId]);
   await run("delete from notifications where user_id = ?", [userId]);
   await run("delete from push_subscriptions where user_id = ?", [userId]);
+  await run("delete from expo_push_tokens where user_id = ?", [userId]);
   await run("delete from feedback where user_id = ?", [userId]);
   const user = await getUser(userId);
   if (user) await run("delete from magic_links where email = ?", [user.email]);

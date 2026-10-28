@@ -276,6 +276,8 @@ export default function Landlord() {
       setError("");
       await reload(await api<ChatData>("chat/draft/send", { token, body: { id, body } }));
       setEditingId(null);
+      const { offerPushRegistration } = await import("@/push");
+      void offerPushRegistration(token);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send.");
     } finally {

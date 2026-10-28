@@ -11,6 +11,9 @@ import {
   consumeMagicLink,
   createUnit,
   deleteUserAccount,
+  deleteExpoToken,
+  saveExpoToken,
+  setPushEnabled,
   reviewerAttemptOpen,
   getDeposit,
   getLog,
@@ -105,6 +108,7 @@ import { deleteReminder, dismissReminder, restoreReminder } from "@/lib/reminder
 import { cleanLetterText, confirmedOutbound, ensureRepairDeadline, ensureRepairDrafts } from "@/lib/repair-draft";
 import { isBrandAsset, photoFilename, rejectPhotoSet } from "@/lib/message-photos";
 import { askAssistant, emailLandlord, extractPdfOrText, recordLog, runLeaseReview, sampleLeaseText, saveDepositAndDeadline, type OutgoingPhoto } from "@/lib/workflow";
+import { isExpoPushToken } from "@/lib/push";
 
 function json(data: unknown, status = 200) {
   return Response.json(data, {
@@ -181,6 +185,7 @@ function publicUser(user: User) {
     email: user.email,
     locale: user.locale,
     lowBandwidth: user.lowBandwidth,
+    pushEnabled: user.pushEnabled,
     sample: user.email === DEMO_EMAIL,
   };
 }
@@ -512,6 +517,22 @@ async function route(request: Request, path: string[]): Promise<Response> {
     const { user, unit } = await withUnit();
     const token = await createInvite(user.id, unit.id);
     return json({ link: `${appUrl()}/invite/${token}` });
+  }
+  if (method === "POST" && key === "devices") {
+    const user = await actor();
+    const input = await readBody(request);
+    const token = text(input.token);
+    const platform = text(input.platform);
+    if (!isExpoPushToken(token)) throw new Error("That notification token is not valid.");
+    if (platform !== "ios" && platform !== "android") throw new Error("Notifications are for the iPhone and Android apps.");
+    await saveExpoToken(user.id, token, platform);
+    return json({ ok: true });
+  }
+  if (method === "POST" && key === "devices/remove") {
+    const user = await actor();
+    const token = text((await readBody(request)).token);
+    if (token) await deleteExpoToken(user.id, token);
+    return json({ ok: true });
   }
   if (method === "POST" && key === "account/delete") {
     const user = await actor();
@@ -1942,6 +1963,7 @@ async function saveSettings(input: Record<string, unknown>) {
     locale,
     lowBandwidth: typeof input.lowBandwidth === "boolean" ? input.lowBandwidth : user.lowBandwidth,
   });
+  if (typeof input.pushEnabled === "boolean") await setPushEnabled(user.id, input.pushEnabled);
   const fresh = await getUser(user.id);
   if (!fresh) throw new Error("Sign in required.");
   return sessionPayload(fresh);
