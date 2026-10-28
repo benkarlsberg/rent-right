@@ -7,6 +7,7 @@
     "development": {
       "distribution": "internal",
       "channel": "development",
+      "node": "22.14.0",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.rentrightportal.com"
       }
@@ -14,6 +15,7 @@
     "preview": {
       "distribution": "internal",
       "channel": "preview",
+      "node": "22.14.0",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.rentrightportal.com",
         "EXPO_PUBLIC_APPLE_AUTH": "1"
@@ -22,6 +24,7 @@
     "production": {
       "autoIncrement": true,
       "channel": "production",
+      "node": "22.14.0",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.rentrightportal.com",
         "EXPO_PUBLIC_APPLE_AUTH": "1"

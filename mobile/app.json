@@ -4,6 +4,12 @@
     "slug": "rent-right",
     "scheme": "rentright",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/c5fc1877-2f83-482a-a8cf-146506723a60"
+    },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -75,6 +81,7 @@
       ],
       "expo-sharing",
       "expo-apple-authentication",
+      "expo-updates",
       [
         "expo-notifications",
         {
