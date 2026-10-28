@@ -21,6 +21,11 @@ function installWebViewport() {
   }
   document.getElementById("rr-home")?.remove();
   document.getElementById("rr-legal")?.remove();
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      void navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    });
+  }
   if (document.getElementById("rr-viewport")) return;
   const style = document.createElement("style");
   style.id = "rr-viewport";
