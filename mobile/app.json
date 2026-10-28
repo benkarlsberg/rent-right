@@ -34,11 +34,15 @@
         "NSPrivacyAccessedAPITypes": [
           {
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
-            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+            "NSPrivacyAccessedAPITypeReasons": [
+              "CA92.1"
+            ]
           },
           {
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
-            "NSPrivacyAccessedAPITypeReasons": ["C617.1"]
+            "NSPrivacyAccessedAPITypeReasons": [
+              "C617.1"
+            ]
           }
         ]
       }
@@ -77,7 +81,9 @@
       ],
       [
         "expo-secure-store",
-        { "faceIDPermission": false }
+        {
+          "faceIDPermission": false
+        }
       ],
       "expo-sharing",
       "expo-apple-authentication",
@@ -95,7 +101,8 @@
           "cameraPermission": "Rent Right uses the camera when you take a photo for a condition report.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "extra": {
       "router": {},

@@ -33,6 +33,15 @@ function redirectTo(): string {
   return `${appUrl()}/auth/verify`;
 }
 
+/** Custom scheme the iOS and Android apps register. Supabase must allow this exact URL. */
+export const NATIVE_GOOGLE_REDIRECT = "rentright://auth/callback";
+
+export function googleRedirect(value?: string): string {
+  if (!value) return redirectTo();
+  if (value === NATIVE_GOOGLE_REDIRECT || value === redirectTo()) return value;
+  throw new Error("That sign-in redirect is not allowed.");
+}
+
 /** Returns a token hash when the service role can mint a link. Otherwise Supabase emails the user. */
 export async function sendSupabaseMagicLink(email: string): Promise<string | null> {
   if (!supabaseAuthConfigured() && !supabaseAdminConfigured()) throw new Error("Supabase Auth is not configured.");
@@ -78,14 +87,14 @@ function pkceClient(storage: ReturnType<typeof memoryStorage>) {
   });
 }
 
-async function startOAuth(provider: "google" | "apple"): Promise<{ url: string; pkce: string }> {
+async function startOAuth(provider: "google" | "apple", redirect?: string): Promise<{ url: string; pkce: string }> {
   const label = provider === "apple" ? "Apple" : "Google";
   if (!supabaseAuthConfigured()) throw new Error(`${label} sign-in is not available yet.`);
   const storage = memoryStorage();
   const supabase = pkceClient(storage);
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider,
-    options: { redirectTo: redirectTo(), skipBrowserRedirect: true },
+    options: { redirectTo: googleRedirect(redirect), skipBrowserRedirect: true },
   });
   if (error || !data.url) throw new Error(error?.message || `Could not start ${label} sign-in.`);
   const flowId = data.flowId ?? null;
@@ -96,8 +105,8 @@ async function startOAuth(provider: "google" | "apple"): Promise<{ url: string; 
   return { url: data.url, pkce: JSON.stringify({ flowId, entries }) };
 }
 
-export function startGoogleSignIn(): Promise<{ url: string; pkce: string }> {
-  return startOAuth("google");
+export function startGoogleSignIn(redirect?: string): Promise<{ url: string; pkce: string }> {
+  return startOAuth("google", redirect);
 }
 
 export function startAppleSignIn(): Promise<{ url: string; pkce: string }> {

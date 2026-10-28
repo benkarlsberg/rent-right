@@ -18,7 +18,8 @@
       "node": "22.14.0",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.rentrightportal.com",
-        "EXPO_PUBLIC_APPLE_AUTH": "1"
+        "EXPO_PUBLIC_APPLE_AUTH": "1",
+        "EXPO_PUBLIC_GOOGLE_AUTH": "1"
       }
     },
     "production": {
@@ -27,7 +28,8 @@
       "node": "22.14.0",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.rentrightportal.com",
-        "EXPO_PUBLIC_APPLE_AUTH": "1"
+        "EXPO_PUBLIC_APPLE_AUTH": "1",
+        "EXPO_PUBLIC_GOOGLE_AUTH": "1"
       }
     }
   },

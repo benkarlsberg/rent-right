@@ -47,6 +47,7 @@ import {
   setLandlordEmail,
   insertCondition,
   primaryUnit,
+  fillEmptyProfileName,
   profileForAuthUser,
   saveFile,
   saveRentCheck,
@@ -98,7 +99,7 @@ import { signInMessage, signInUrl } from "@/lib/email-template";
 import { currentUser, sessionUserId } from "@/lib/session";
 import { reviewerEmail, reviewerMatch } from "@/lib/reviewer";
 import { DEMO_EMAIL, startReviewerTenancy, startSampleTenancy } from "@/lib/seed";
-import { userFromAppleIdToken } from "@/lib/supabase-auth";
+import { NATIVE_GOOGLE_REDIRECT, startGoogleSignIn, userFromAppleIdToken, userFromGoogleCode } from "@/lib/supabase-auth";
 import { appUrl, relayAddress, tx } from "@/lib/text";
 import { chatTurnShowsSteps, parseCard, replyShowsNotice } from "@/lib/chat-card";
 import { inboundDisplay, EMPTY_REPLY } from "@/email/plain";
@@ -390,6 +391,22 @@ async function route(request: Request, path: string[]): Promise<Response> {
     const user = await getUser(id);
     if (!user) throw new Error("Could not open the sample.");
     return json(await sessionPayload(user));
+  }
+
+  if (method === "POST" && key === "auth/google/start") {
+    const { url, pkce } = await startGoogleSignIn(NATIVE_GOOGLE_REDIRECT);
+    return json({ url, pkce });
+  }
+
+  if (method === "POST" && key === "auth/google/finish") {
+    const input = await readBody(request);
+    const remote = await userFromGoogleCode(text(input.code), text(input.pkce));
+    if (!remote) throw new Error("Could not sign in with Google.");
+    const user = await profileForAuthUser(remote.id, remote.email);
+    await fillEmptyProfileName(user.id, remote.name);
+    const fresh = await getUser(user.id);
+    if (!fresh) throw new Error("Could not sign in with Google.");
+    return json(await sessionPayload(fresh));
   }
 
   if (method === "POST" && key === "auth/apple") {

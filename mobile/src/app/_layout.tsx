@@ -63,6 +63,7 @@ export default function RootLayout() {
           <Stack.Screen name="log-new" />
           <Stack.Screen name="log/[id]" />
           <Stack.Screen name="invite/[token]" />
+          <Stack.Screen name="auth/callback" />
         </Stack>
         </OfflineGate>
       </SessionProvider>

@@ -12,6 +12,7 @@ import { Logo } from "@/logo";
 import { skippedSetup } from "@/setup-later";
 import { colors } from "@/theme";
 import { Button, ErrorLine, Field } from "@/ui";
+import { signInWithGoogleNative } from "@/google-auth";
 import { callbackNeedsCleanUrl, finishSessionHandoff, forgetSessionHandoff, readWebCallback, takeWebSession } from "@/web-handoff";
 
 const demoEnabled = process.env.EXPO_PUBLIC_DEMO === "1";
@@ -320,10 +321,21 @@ export default function Welcome() {
     if (Platform.OS === "web" && typeof window !== "undefined") window.localStorage.setItem("rr_locale", next);
   }
 
-  function google() {
-    const start = Platform.OS === "web" ? `${window.location.origin}/auth/google` : "https://app.rentrightportal.com/auth/google";
-    if (Platform.OS === "web") window.location.assign(start);
-    else void Linking.openURL(start);
+  async function google() {
+    if (Platform.OS === "web") {
+      window.location.assign(`${window.location.origin}/auth/google`);
+      return;
+    }
+    try {
+      setError("");
+      setBusy(true);
+      const session = await signInWithGoogleNative();
+      if (session) await signIn(session);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not sign in with Google.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   installSignInCss();
@@ -397,7 +409,7 @@ export default function Welcome() {
                 </View>
               ) : null}
               {googleEnabled ? (
-                <Pressable style={styles.google} onPress={google} disabled={busy} accessibilityRole="button" accessibilityLabel={text.google}>
+                <Pressable style={styles.google} onPress={() => void google()} disabled={busy} accessibilityRole="button" accessibilityLabel={text.google}>
                   <GoogleMark />
                   <Text style={styles.googleText}>{text.google}</Text>
                 </Pressable>

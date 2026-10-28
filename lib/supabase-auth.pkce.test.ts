@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { startGoogleSignIn, userFromGoogleCode } from "@/lib/supabase-auth";
+import { NATIVE_GOOGLE_REDIRECT, startGoogleSignIn, userFromGoogleCode } from "@/lib/supabase-auth";
 
 const userId = "11111111-1111-4111-8111-111111111111";
 
@@ -48,6 +48,15 @@ describe("Google PKCE", () => {
     expect(remote).toEqual({ id: userId, email: "google@example.com", name: "" });
     expect(bodies.some((body) => body.includes(verifier) && body.includes("auth-code"))).toBe(true);
     expect(bodies.join("\n")).not.toContain("access-token");
+  });
+
+  it("sends the app scheme as the only extra redirect", async () => {
+    process.env.APP_URL = "https://app.rentrightportal.com";
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_ANON_KEY = "sb_publishable_test_key";
+    const started = await startGoogleSignIn(NATIVE_GOOGLE_REDIRECT);
+    expect(new URL(started.url).searchParams.get("redirect_to")).toBe("rentright://auth/callback");
+    await expect(startGoogleSignIn("https://evil.example/steal")).rejects.toThrow(/not allowed/);
   });
 
   it("reports a missing verifier without throwing", async () => {
