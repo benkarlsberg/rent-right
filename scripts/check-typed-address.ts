@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { formatAddressPlain } from "@/lib/address-format";
 import { signSession } from "@/lib/crypto";
 import { deleteUserAccount, getUser } from "@/lib/db";
 import { closeSql, getSql } from "@/lib/pg";
@@ -162,7 +163,7 @@ async function main(): Promise<void> {
     const differs = offered && houseNumber(String(suggestion?.street)) !== "1604";
     const city = String(kept?.city || "Thousand Oaks");
     const zip = String(kept?.postalCode || "91360");
-    const expected = `${keptStreet}, Apt 2\n${city}, CA ${zip}`;
+    const expected = formatAddressPlain({ street: keptStreet, unit: "Apt 2", city, region: "CA", postalCode: zip });
     const shown = String((saved.json?.unit as { address?: string } | undefined)?.address || "");
     const records = await call(token, "records");
     const recordsAddress = String(records.json?.address || "");
