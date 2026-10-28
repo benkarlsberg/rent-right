@@ -1,6 +1,7 @@
 import type { Locale } from "@/lib/disclaimer";
 import { formatDate, formatTimestamp } from "@/lib/format";
 import { cardReplyLine, tenantMessagePreview } from "@/lib/history-view";
+import { followUpTitle } from "@/lib/phrase";
 import { issueTitle, landlordFixedNote, resolutionPhrase, sourceLabel, timelineSummary, type ResolutionSource } from "@/lib/resolution";
 import { daysBetween } from "@/lib/rules/dates";
 import { tx } from "@/lib/text";
@@ -158,7 +159,7 @@ function cardFor(item: DeadlineInput, log: LogInput | null, locale: Locale, toda
     "Esta fecha se guardó con sus registros. No decide lo que alguien debe.",
   );
   if (item.kind === "repair") {
-    title = tx(locale, `Reminder: follow up on ${issue}`, `Recordatorio: dar seguimiento a ${issue}`);
+    title = followUpTitle(issue, locale);
     started = anchor
       ? tx(locale, `You logged this on ${anchor}.`, `Lo anotó el ${anchor}.`)
       : tx(locale, "You logged this repair.", "Anotó esta reparación.");
@@ -390,8 +391,8 @@ export function nextSteps(input: {
       button: tx(locale, "Send follow-up", "Enviar seguimiento"),
       detail: tx(
         locale,
-        `Your follow-up date for ${issue} was ${date}. Nothing is sent until you confirm on the Landlord tab.`,
-        `Su fecha de seguimiento para ${issue} fue el ${date}. No se envía nada hasta que lo confirme en la pestaña Propietario.`,
+        `Follow up: ${issue}. Your date was ${date}. Nothing is sent until you confirm on the Landlord tab.`,
+        `Seguimiento: ${issue}. Su fecha fue el ${date}. No se envía nada hasta que lo confirme en la pestaña Propietario.`,
       ),
     });
   } else if (futureRepair[0]?.dueDate || futureDeposit[0]?.dueDate) {
@@ -423,8 +424,8 @@ export function nextSteps(input: {
         button: tx(locale, `Wait until ${date}`, `Espere hasta el ${date}`),
         detail: tx(
           locale,
-          `This is your follow-up date for ${issue}. It does not mean the landlord must answer by then. Nothing is emailed from this step.`,
-          `Esta es su fecha de seguimiento para ${issue}. No significa que el propietario deba responder para entonces. Este paso no envía ningún correo.`,
+          `Follow up: ${issue}. It does not mean the landlord must answer by then. Nothing is emailed from this step.`,
+          `Seguimiento: ${issue}. No significa que el propietario deba responder para entonces. Este paso no envía ningún correo.`,
         ),
       });
     }

@@ -20,7 +20,7 @@ describe("reminder letters", () => {
   it("names the repair and the date, and does not say tracked date", () => {
     const letter = reminderLetter([item({})]);
     expect(letter.subject).toBe("Rent Right: Repair deadline Oct 30 — kitchen sink is leaking");
-    expect(letter.paragraphs[0]).toBe("The repair deadline for “The kitchen sink is leaking under the cabinet” is October 30, 2026. Follow up if that repair is still not done.");
+    expect(letter.paragraphs[0]).toBe("Follow up: The kitchen sink is leaking under the cabinet. The date is October 30, 2026. Follow up if that repair is still not done.");
     expect(letter.paragraphs.join("\n")).not.toMatch(/tracked date|Rule ID|days away/i);
     expect(letter.paragraphs.at(-1)).toMatch(/not sent to your landlord/i);
     const mail = renderMail({ subject: letter.subject, heading: letter.heading, paragraphs: letter.paragraphs, footer: "General information, not legal advice." });

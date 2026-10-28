@@ -420,7 +420,8 @@ describe("renter workflows", () => {
     const records = await api("GET", "records", undefined, token);
     const cards = records.json?.deadlines as { id: string; kind: string; title: string; due: string | null; reminder: string | null }[];
     const repair = cards.find((item) => item.kind === "repair");
-    expect(repair?.title).toMatch(/^Reminder: follow up on /);
+    expect(repair?.title).toMatch(/^Follow up: /);
+    expect(repair?.title).not.toMatch(/follow up on The /);
     expect(repair?.title).not.toMatch(/Landlord's deadline to respond/);
     expect(repair?.due).toMatch(/^Due /);
     const issues = records.json?.issues as { title: string; issue: string; status: string }[];

@@ -20,7 +20,8 @@ describe("push text", () => {
     const body = landlordPushBody("Re: Repair request: The sink is leaking under the cabinet", "en");
     expect(body).toBe("Your landlord replied about: Sink is leaking under the cabinet");
     expect(body).not.toMatch(/Will do|@|Re:/);
-    expect(reminderPushBody("The kitchen sink is leaking under the cabinet", 1, "en")).toBe("Reminder: Kitchen sink is leaking");
+    expect(reminderPushBody("The kitchen sink is leaking under the cabinet", 1, "en")).toBe("Follow up: The kitchen sink is leaking");
+    expect(reminderPushBody("HVAC is out in the hall", 1, "en")).toBe("Follow up: HVAC is out in the hall");
     expect(reminderPushBody("", 2, "es")).toBe("Tiene 2 recordatorios");
     expect(unregisteredTokens(["a", "b"], [{ status: "ok" }, { status: "error", details: { error: "DeviceNotRegistered" } }])).toEqual(["b"]);
   });

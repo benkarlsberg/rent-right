@@ -61,15 +61,15 @@ function lineFor(item: ReminderMailItem): string {
     return `Your reminder “${name}” is ${date}. You set this date for yourself. It is not a legal deadline.`;
   }
   if (item.kind === "repair") {
-    const name = issue ? `“${issue}”` : "a repair you logged";
-    return `The repair deadline for ${name} is ${date}. Follow up if that repair is still not done.`;
+    if (!issue) return `A repair you logged has a follow-up on ${date}. Follow up if that repair is still not done.`;
+    return `Follow up: ${issue}. The date is ${date}. Follow up if that repair is still not done.`;
   }
   if (item.kind === "deposit") {
     return `The deposit deadline is ${date}. That is the date for the itemized statement and any deposit still owed.`;
   }
   if (item.kind === "notice_3day") {
-    const name = issue ? `“${issue}”` : "the notice you logged";
-    return `The third day for ${name} is ${date}. Read that notice and decide what you need to do.`;
+    if (!issue) return `The third day for the notice you logged is ${date}. Read that notice and decide what you need to do.`;
+    return `Follow up: ${issue}. The third day is ${date}. Read that notice and decide what you need to do.`;
   }
   const name = issue ? `“${issue}”` : "a date you saved";
   return `The date for ${name} is ${date}. Open the record and see what it asks you to do.`;

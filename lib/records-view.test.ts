@@ -29,7 +29,7 @@ describe("records view", () => {
       eventDate: "2026-10-23",
       createdAt: "2026-10-23T18:00:00.000Z",
     }], "en", today);
-    expect(card.title).toBe("Reminder: follow up on Kitchen sink leak");
+    expect(card.title).toBe("Follow up: Kitchen sink leak");
     expect(card.sortOn).toBe("2026-10-30");
     expect(card.closed).toBe(false);
     expect(card.title).not.toMatch(/Landlord's deadline to respond/);

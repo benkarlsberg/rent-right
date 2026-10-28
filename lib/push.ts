@@ -1,4 +1,5 @@
 import type { Locale } from "@/lib/disclaimer";
+import { followUpTitle } from "@/lib/phrase";
 import { dropExpoTokens, expoTokensForUsers } from "@/lib/db";
 import { reviewerEmail } from "@/lib/reviewer";
 import { tx } from "@/lib/text";
@@ -27,11 +28,12 @@ export function landlordPushBody(subject: string, locale: Locale): string {
 
 export function reminderPushBody(issue: string, count: number, locale: Locale): string {
   if (count > 1) return tx(locale, `You have ${count} reminders`, `Tiene ${count} recordatorios`);
-  const name = issue.replace(/^(the|a|an|el|la|los|las)\s+/i, "").replace(/\s+/g, " ").trim();
-  const short = name.split(" ").slice(0, 4).join(" ");
-  const clipped = short ? short.charAt(0).toUpperCase() + short.slice(1) : "";
-  if (!clipped) return tx(locale, "A reminder is due", "Hay un recordatorio");
-  return tx(locale, `Reminder: ${clipped}`, `Recordatorio: ${clipped}`);
+  const name = issue.replace(/\s+/g, " ").trim();
+  if (!name) return tx(locale, "A reminder is due", "Hay un recordatorio");
+  const dangling = new Set(["a", "an", "and", "for", "in", "of", "on", "the", "to", "under", "with"]);
+  const words = name.split(" ").slice(0, 6);
+  while (words.length > 1 && dangling.has(words[words.length - 1].toLowerCase().replace(/[^a-z]/g, ""))) words.pop();
+  return followUpTitle(words.join(" "), locale);
 }
 
 type Ticket = { status?: string; details?: { error?: string } };

@@ -12,6 +12,7 @@ import {
   type User,
 } from "@/lib/db";
 import { formatDate } from "@/lib/format";
+import { repairSubject } from "@/lib/phrase";
 import { repairReminder } from "@/lib/rules/engine";
 import { relayAddress, tx } from "@/lib/text";
 import { asRepairSeverity, reminderPace, tierForSeverity, violationFlag } from "@/lib/triage";
@@ -37,8 +38,7 @@ export function repairDraftLetter(input: {
   const locale = input.locale;
   const day = input.eventDate.slice(0, 10);
   const issue = input.description.replace(/\s+/g, " ").trim();
-  const short = issue.length > 80 ? `${issue.slice(0, 77).trim()}…` : issue;
-  const subject = tx(locale, `Repair request: ${short}`, `Solicitud de reparación: ${short}`);
+  const subject = repairSubject(issue, locale);
   const date = formatDate(day, locale);
   if (input.covered === false) {
     return {

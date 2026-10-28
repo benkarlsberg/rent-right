@@ -15,7 +15,8 @@ describe("repair draft letter", () => {
     });
     expect(letter.ruleId).toBe("CA-CC-1942");
     expect(letter.dueDate).toBe("2026-11-22");
-    expect(letter.subject).toBe("Repair request: The kitchen sink is leaking under the cabinet");
+    expect(letter.subject).toBe("Repair request: kitchen sink is leaking under the cabinet");
+    expect(letter.subject.length).toBeLessThanOrEqual(60);
     expect(letter.body).toBe(
       [
         "I'm writing about a repair.",
