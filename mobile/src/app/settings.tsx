@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { StyleSheet, Switch, Text, TextInput, View, type LayoutChangeEvent } from "react-native";
+import { Linking, Pressable, StyleSheet, Switch, Text, TextInput, View, type LayoutChangeEvent } from "react-native";
 import { api } from "@/api";
 import { DeleteAccount } from "@/delete-account";
 import { saveAuthorizedFile } from "@/files";
@@ -162,6 +162,17 @@ export default function Settings() {
           </Muted>
         </View>
       ) : null}
+      <View style={styles.block}>
+        <Pressable style={styles.linkHit} accessibilityRole="link" onPress={() => void Linking.openURL("https://app.rentrightportal.com/privacy")}>
+          <Text style={styles.link}>{spanish ? "Política de privacidad" : "Privacy policy"}</Text>
+        </Pressable>
+        <Pressable style={styles.linkHit} accessibilityRole="link" onPress={() => void Linking.openURL("https://app.rentrightportal.com/terms")}>
+          <Text style={styles.link}>{spanish ? "Términos de uso" : "Terms of use"}</Text>
+        </Pressable>
+        <Pressable style={styles.linkHit} accessibilityRole="link" onPress={() => void Linking.openURL("https://app.rentrightportal.com/support")}>
+          <Text style={styles.link}>{spanish ? "Ayuda" : "Support"}</Text>
+        </Pressable>
+      </View>
       <Button label={spanish ? "Descargar mis datos" : "Download my data"} ghost onPress={() => token && saveAuthorizedFile("/api/export", "rent-right.json", token)} />
       {token ? (
         <DeleteAccount
@@ -185,6 +196,8 @@ const styles = StyleSheet.create({
   notice: { color: colors.pine, fontSize: 15, fontWeight: "700", marginTop: 8 },
   block: { marginTop: 20 },
   switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 44 },
+  linkHit: { minHeight: 44, justifyContent: "center" },
+  link: { color: colors.pine, fontSize: 16, fontWeight: "700" },
   label: { color: colors.mute, fontSize: 13, fontWeight: "700" },
   value: { color: colors.ink, fontSize: 17, lineHeight: 24, marginTop: 4 },
 });
