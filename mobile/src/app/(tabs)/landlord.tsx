@@ -277,10 +277,18 @@ export default function Landlord() {
 
   async function sendDraftMessage(id: string, body: string) {
     if (!token || sending || draftSendingId || discarding) return;
+    const post = () => api<ChatData>("chat/draft/send", { token, body: { id, body }, timeoutMs: 35_000 });
     try {
       setDraftSendingId(id);
       setError("");
-      await reload(await api<ChatData>("chat/draft/send", { token, body: { id, body }, timeoutMs: 35_000 }));
+      let payload: ChatData;
+      try {
+        payload = await post();
+      } catch (err) {
+        if (!(err instanceof Error) || err.message !== "The database connection timed out. Try again.") throw err;
+        payload = await post();
+      }
+      await reload(payload);
       setEditingId(null);
       const { offerPushRegistration } = await import("@/push");
       void offerPushRegistration(token);

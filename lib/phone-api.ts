@@ -108,7 +108,7 @@ import { inboundDisplay, EMPTY_REPLY } from "@/email/plain";
 import { isResponseNote, landlordBubble, refileResponseNotes, settleQuotedInbound } from "@/lib/inbound-reply";
 import { describeTenantMail, outboundSubject, REPLY_LINE, senderForCard } from "@/lib/tenant-mail";
 import { ChatTurnDone, runChatTurn } from "@/lib/chat-turn";
-import { all, drainRoundTrips, withActor } from "@/lib/pg";
+import { all, databaseTimedOut, drainRoundTrips, openTrace, runTraced, withActor, type Trace } from "@/lib/pg";
 import { archivedNote, previewResidence, residencePayload, saveResidence, selectResidence } from "@/lib/residence";
 import { hideIssue, hideNote, issueHistory, issueSummary, recordRulesIssue, refreshIssueTiers, reopenRepair, resolveRepair, restoreNote, setIssueTier } from "@/lib/issues";
 import { deleteReminder, dismissReminder, restoreReminder } from "@/lib/reminders";
@@ -316,24 +316,70 @@ function publicFailure(error: unknown): { message: string; status: number } {
   return { message: "Rent Right could not finish that just now. Wait a moment and try again.", status: 500 };
 }
 
-function stamp(response: Response, started: number): Response {
+function stamp(response: Response, started: number, traces: Trace[]): Response {
   const headers = new Headers(response.headers);
-  const trips = drainRoundTrips();
-  headers.set("server-timing", `app;dur=${Date.now() - started};desc="${trips} queries"`);
+  const trips = traces.reduce((sum, trace) => sum + trace.roundTrips, 0);
+  const connect = traces.reduce((sum, trace) => sum + trace.connectMs, 0);
+  const opens = traces.reduce((sum, trace) => sum + trace.opens, 0);
+  const slow = traces.flatMap((trace) => trace.queries).reduce((max, query) => query.ms > max.ms ? query : max, { op: "none", ms: 0 });
+  const runtime = traces.at(-1)?.runtime ?? "node";
+  headers.set(
+    "server-timing",
+    `app;dur=${Date.now() - started};desc="${trips} queries", connect;dur=${connect};desc="${opens} conn ${runtime} try ${traces.length} slow ${slow.ms}ms ${slow.op}"`,
+  );
   headers.set("access-control-expose-headers", "server-timing");
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+/** The draft send is idempotent. One timed-out attempt leaves the row unsent or already claimed, and the next attempt finishes it. */
+export function retryTimedOutDraftSend(method: string, key: string, attempt: number, error: unknown): boolean {
+  return method === "POST" && key === "chat/draft/send" && attempt === 1 && databaseTimedOut(error);
+}
+
+function timedOutLog(traces: Trace[]) {
+  const slow = traces.flatMap((trace) => trace.queries).sort((a, b) => b.ms - a.ms).slice(0, 8);
+  console.log(JSON.stringify({
+    event: "db-timeout",
+    tries: traces.length,
+    runtime: traces.at(-1)?.runtime ?? "node",
+    connectMs: traces.map((trace) => trace.connectMs),
+    opens: traces.map((trace) => trace.opens),
+    roundTrips: traces.map((trace) => trace.roundTrips),
+    slow,
+  }));
 }
 
 export async function handlePhone(request: Request, path: string[]): Promise<Response> {
   const started = Date.now();
   drainRoundTrips();
+  const key = path.join("/");
+  const replayBody = request.method === "POST" && key === "chat/draft/send" ? await request.arrayBuffer() : null;
+  const call = (attemptBody: ArrayBuffer | null) => {
+    const next = attemptBody
+      ? new Request(request.url, { method: request.method, headers: request.headers, body: attemptBody.byteLength ? attemptBody : undefined })
+      : request;
+    return next;
+  };
+  const traces: Trace[] = [];
   try {
     const id = await sessionUserId();
-    const response = await withActor(id, () => route(request, path));
-    return stamp(response, started);
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const trace = openTrace();
+      traces.push(trace);
+      try {
+        const response = await runTraced(trace, () => withActor(id, () => route(call(replayBody), path)));
+        trace.roundTrips = drainRoundTrips();
+        return stamp(response, started, traces);
+      } catch (error) {
+        trace.roundTrips = drainRoundTrips();
+        if (!retryTimedOutDraftSend(request.method, key, attempt, error)) throw error;
+      }
+    }
+    throw new Error("The database connection timed out.");
   } catch (error) {
+    if (databaseTimedOut(error)) timedOutLog(traces);
     const failure = publicFailure(error);
-    return stamp(json({ error: failure.message }, failure.status), started);
+    return stamp(json({ error: failure.message }, failure.status), started, traces);
   }
 }
 

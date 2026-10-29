@@ -1,24 +1,26 @@
 import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
-import { CONNECT_ATTEMPTS, CONNECT_TIMEOUT_SECONDS, DATABASE_WAIT_MS } from "@/lib/pg";
+import { CONNECT_BUDGET_MS, CONNECT_TIMEOUT_SECONDS, DATABASE_WAIT_MS } from "@/lib/pg";
 
 describe("database connect budget", () => {
   it("lets a cold Hyperdrive handshake finish before the 8s query deadline", () => {
-    expect(CONNECT_TIMEOUT_SECONDS * 1000).toBeGreaterThan(DATABASE_WAIT_MS);
-    expect(CONNECT_ATTEMPTS).toBe(2);
+    expect(CONNECT_BUDGET_MS).toBeGreaterThan(DATABASE_WAIT_MS);
+    expect(CONNECT_TIMEOUT_SECONDS * 1000).toBeGreaterThanOrEqual(CONNECT_BUDGET_MS);
     const source = readFileSync("lib/pg.ts", "utf8");
     const warm = source.indexOf("async function warmConnection");
     const call = source.indexOf("await warmConnection()");
     expect(warm).toBeGreaterThan(0);
     expect(call).toBeGreaterThan(0);
     expect(source.indexOf("pauseDatabaseClock()", warm)).toBeGreaterThan(warm);
-    expect(source.slice(warm, source.indexOf("async function closeSql"))).toContain("select 1");
+    const body = source.slice(warm, source.indexOf("async function closeSql"));
+    expect(body).toContain("select pg_backend_pid()");
+    expect(body).toContain("CONNECT_BUDGET_MS");
   });
 
   it("reuses the open Hyperdrive socket when a write drops the role", () => {
     const source = readFileSync("lib/pg.ts", "utf8");
     const fn = source.slice(source.indexOf("export async function withActor"));
-    const reuse = fn.indexOf("if (current?.sql)");
+    const reuse = fn.indexOf("if (current)");
     const fresh = fn.indexOf("const scope: Scope = { userId, memo: new Map() };");
     expect(reuse).toBeGreaterThan(0);
     expect(fresh).toBeGreaterThan(reuse);

@@ -60,6 +60,43 @@ export function requestMemo<T>(key: string, load: () => Promise<T>): Promise<T> 
 const actors = new AsyncLocalStorage<Scope>();
 let pool: Sql | null = null;
 
+export type QueryNote = { op: string; ms: number };
+
+export type Trace = {
+  connectMs: number;
+  opens: number;
+  queries: QueryNote[];
+  runtime: "cf" | "node";
+  roundTrips: number;
+};
+
+const traces = new AsyncLocalStorage<Trace>();
+
+export function openTrace(): Trace {
+  return { connectMs: 0, opens: 0, queries: [], runtime: cloudflareRuntime() ? "cf" : "node", roundTrips: 0 };
+}
+
+export function runTraced<T>(trace: Trace, fn: () => Promise<T>): Promise<T> {
+  return traces.run(trace, fn);
+}
+
+function noteOpen() {
+  const trace = traces.getStore();
+  if (trace) trace.opens += 1;
+}
+
+function noteConnect(ms: number) {
+  const trace = traces.getStore();
+  if (trace) trace.connectMs += ms;
+}
+
+function noteQuery(sql: string, ms: number) {
+  const trace = traces.getStore();
+  if (!trace || trace.queries.length >= 80) return;
+  const op = sql.trimStart().slice(0, 16).toLowerCase().split(/\s+/)[0] || "query";
+  trace.queries.push({ op, ms });
+}
+
 function cloudflareRuntime(): boolean {
   return typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers";
 }
@@ -125,6 +162,7 @@ async function openHyperdrive(): Promise<Sql> {
   const { env } = await import("cloudflare:workers");
   const binding = env.HYPERDRIVE?.connectionString;
   if (!binding) throw new Error("Database binding is not configured.");
+  noteOpen();
   return createSql(binding, true);
 }
 
@@ -156,24 +194,27 @@ async function discardClient() {
   await closeClient(sql);
 }
 
-/** Open Hyperdrive and run one query before the 8s budget starts. A cold pooler handshake can exceed that budget; retry once, still before any email. */
+/** Open a real origin backend before the 8s query budget starts. pg_backend_pid cannot be answered from cache. */
 async function warmConnection() {
   if (!cloudflareRuntime()) return;
   pauseDatabaseClock();
+  const started = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    let last: unknown;
-    for (let attempt = 0; attempt < CONNECT_ATTEMPTS; attempt += 1) {
-      try {
-        const db = await client();
-        await db.unsafe("select 1");
-        return;
-      } catch (error) {
-        last = error;
-        await discardClient();
-      }
+    const db = await client();
+    const budget = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("The database connection timed out.")), CONNECT_BUDGET_MS);
+    });
+    try {
+      await Promise.race([db.unsafe("select pg_backend_pid()"), budget]);
+    } finally {
+      if (timer) clearTimeout(timer);
     }
-    throw last instanceof Error ? last : new Error("The database connection timed out.");
+  } catch (error) {
+    await discardClient();
+    throw error instanceof Error ? error : new Error("The database connection timed out.");
   } finally {
+    noteConnect(Date.now() - started);
     resumeDatabaseClock();
   }
 }
@@ -378,10 +419,11 @@ async function applyRole(tx: Tx, userId: string | null) {
 // is opened, so this does not keep a reserved connection.
 export const DATABASE_WAIT_MS = 8_000;
 export const CONNECT_TIMEOUT_SECONDS = 15;
-export const CONNECT_ATTEMPTS = 2;
+/** One origin handshake, kept apart from the 8s query budget. A second try is the caller's. */
+export const CONNECT_BUDGET_MS = 12_000;
 const CLOSE_WAIT_SECONDS = 2;
 
-function databaseTimedOut(error: unknown): boolean {
+export function databaseTimedOut(error: unknown): boolean {
   return error instanceof Error && error.message === "The database connection timed out.";
 }
 
@@ -435,16 +477,13 @@ async function closeClient(sql: Sql | undefined) {
 export async function withActor<T>(userId: string | null, fn: () => Promise<T>): Promise<T> {
   const current = actors.getStore();
   if (current && current.userId === userId) return fn();
-  // Dropping the role (the draft claim, the sent-status write) used to open a
-  // second Hyperdrive client while this request still held the first socket in
-  // a read transaction. Hyperdrive then had to dial a new origin connection.
-  // Sign-in and saving the home only use one connection, so the first landlord
-  // send is the first request that pays that handshake, and it ran on the
-  // outer 8s clock and aborted before Resend. A later send finds the extra
-  // connection already pooled. Stay on the socket this request already has.
-  if (current?.sql) {
+  // Role-dropping writes (the draft claim, the sent-status row) stay on this
+  // request's socket. A second client would dial another origin connection
+  // while the first is still held, and that dial runs on the 8s budget.
+  if (current) {
     await releaseReads();
-    const scope: Scope = { userId, memo: new Map(), sql: current.sql };
+    if (cloudflareRuntime() && !current.sql) current.sql = await client();
+    const scope: Scope = { userId, memo: new Map(), sql: current.sql, abort: current.abort };
     let failed = false;
     try {
       return await actors.run(scope, fn);
@@ -597,6 +636,15 @@ async function executeAuthed(scope: Scope, userId: string, text: string, params:
 }
 
 async function execute(sql: string, params: unknown[]): Promise<{ rows: Record<string, unknown>[]; count: number }> {
+  const started = Date.now();
+  try {
+    return await executeStatement(sql, params);
+  } finally {
+    noteQuery(sql, Date.now() - started);
+  }
+}
+
+async function executeStatement(sql: string, params: unknown[]): Promise<{ rows: Record<string, unknown>[]; count: number }> {
   const text = placeholders(sql);
   const scope = actors.getStore();
   const userId = scope?.userId ?? null;
