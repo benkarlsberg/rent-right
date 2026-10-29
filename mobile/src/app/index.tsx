@@ -14,10 +14,12 @@ import { colors } from "@/theme";
 import { Button, ErrorLine, Field } from "@/ui";
 import { signInWithGoogleNative } from "@/google-auth";
 import { callbackNeedsCleanUrl, finishSessionHandoff, forgetSessionHandoff, readWebCallback, takeWebSession } from "@/web-handoff";
+import { authFlagEnabled, isDevBuild } from "@/release-config";
 
 const demoEnabled = process.env.EXPO_PUBLIC_DEMO === "1";
-const googleEnabled = process.env.EXPO_PUBLIC_GOOGLE_AUTH === "1";
-const appleEnabled = process.env.EXPO_PUBLIC_APPLE_AUTH === "1";
+const devBuild = isDevBuild();
+const googleEnabled = authFlagEnabled(process.env.EXPO_PUBLIC_GOOGLE_AUTH, devBuild);
+const appleEnabled = authFlagEnabled(process.env.EXPO_PUBLIC_APPLE_AUTH, devBuild);
 const LINK_MINUTES = 30;
 const PAGE = "#E6F0EE";
 

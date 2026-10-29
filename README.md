@@ -221,7 +221,7 @@ Create these accounts. Turn on MFA for Supabase and Cloudflare.
 
 `DATABASE_URL` must be the Supabase **postgres** connection string (direct, or the session pooler). A database password is also accepted: deploy turns it into the session pooler URI using `SUPABASE_URL`. The API sets the `authenticated` role per request so RLS applies. `SUPABASE_ANON_KEY` accepts the publishable key (`sb_publishable_…`). `SUPABASE_SERVICE_ROLE_KEY` accepts the secret key (`sb_secret_…`) and stays on the server. Do not put that secret in the Expo app or any `EXPO_PUBLIC_` / `NEXT_PUBLIC_` variable. Set `NEXT_PUBLIC_APP_URL` to `https://app.rentrightportal.com`. When that secret is empty, deploy uses the same URL. In the Supabase Auth settings, allow `https://app.rentrightportal.com/auth/verify` as a redirect URL.
 
-Google sign-in is off until `EXPO_PUBLIC_GOOGLE_AUTH` is `1`. That value is a GitHub Actions variable or secret of the same name. Leave it unset until the provider is configured. Then set it to `1` and run Deploy.
+Google and Apple sign-in are on in production app builds and over-the-air updates. Set `EXPO_PUBLIC_GOOGLE_AUTH` or `EXPO_PUBLIC_APPLE_AUTH` to `0` to turn one off. Local Expo (`__DEV__`) stays off until the flag is `1`. The website deploy still reads `mobile/eas.json` when the GitHub variable is empty.
 
 1. Google Cloud console → APIs & Services → Credentials → Create credentials → OAuth client ID → Application type **Web application**.
 2. Authorized redirect URI: `https://ijpkxcsnkqgmxkvykzrs.supabase.co/auth/v1/callback`
@@ -268,7 +268,7 @@ Copy `.env.example` to `.env.local`. Do not commit `.env.local`.
 | `AUTH_SECRET` | Signs the local session token. Required in production. |
 | `DATA_ENCRYPTION_KEY` | 32-byte base64 AES key. Required in production. |
 | `NEXT_PUBLIC_APP_URL` | Absolute URL used in mail and response links. Production value: `https://app.rentrightportal.com`. |
-| `EXPO_PUBLIC_API_URL` | Set in `mobile/.env` when the phone cannot infer the API host. |
+| `EXPO_PUBLIC_API_URL` | Dev only, in `mobile/.env`, when the phone cannot infer the API host. Release builds and OTA updates use `https://api.rentrightportal.com` when this is unset. |
 | `RELAY_DOMAIN` | Domain for `u-…@domain` relay addresses. Production value: `rentrightportal.com`. |
 | `RESEND_API_KEY`, `RESEND_FROM` | Outbound mail. Blank means the message is saved and marked `local_only`. |
 | `EMAIL_WEBHOOK_SECRET` | Bearer token for inbound mail and provider webhooks. |
@@ -333,3 +333,17 @@ Settings includes a JSON export (`GET /api/export`) and account deletion. The co
 - `npm run typecheck` — `tsc --noEmit`
 - `npm run build` — production API build
 - `cd mobile && npx expo export --platform web` — static phone web build
+- `cd mobile && npm run update:prod` — production over-the-air update. Do not run a bare `eas update`.
+
+## Over-the-air updates
+
+`eas update` does not read the `env` block in `mobile/eas.json`. A production update with those variables missing used to call `http://localhost:3000` and show “You are offline.” Release bundles now default to `https://api.rentrightportal.com` and turn Apple and Google sign-in on. Ship updates with the script anyway so the values are baked in:
+
+```bash
+cd mobile
+npm run update:prod
+```
+
+That sets `EXPO_PUBLIC_API_URL=https://api.rentrightportal.com`, `EXPO_PUBLIC_APPLE_AUTH=1`, and `EXPO_PUBLIC_GOOGLE_AUTH=1`, then runs `eas update --channel production --environment production`.
+
+Create the same three names once as EAS production environment variables (`npx eas-cli env:create --environment production --visibility plaintext`) so `--environment production` loads them even if the shell does not. Use `0` for an auth flag only when that button should stay hidden.

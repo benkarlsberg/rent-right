@@ -45,7 +45,25 @@ eas build --platform ios --profile production
 eas build --platform android --profile production
 ```
 
-`preview` and `development` in `eas.json` are internal builds for TestFlight-style installs and your own devices. `EXPO_PUBLIC_API_URL` is `https://api.rentrightportal.com` in all three profiles.
+`preview` and `development` in `eas.json` are internal builds for TestFlight-style installs and your own devices. `EXPO_PUBLIC_API_URL` is `https://api.rentrightportal.com` in all three profiles. `eas build` reads that file. `eas update` does not.
+
+## 4b. Over-the-air updates
+
+From `mobile`, after `git pull`:
+
+```bash
+npm run update:prod
+```
+
+That is the production update. It sets `EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_APPLE_AUTH`, and `EXPO_PUBLIC_GOOGLE_AUTH`, then runs `eas update --channel production --environment production`. A bare `eas update --channel production` is not the command to use. Release code also defaults the API to `https://api.rentrightportal.com` and turns Apple and Google on when those variables are missing.
+
+Optional, once, so the EAS production environment has the same values:
+
+```bash
+npx eas-cli env:create --name EXPO_PUBLIC_API_URL --value https://api.rentrightportal.com --environment production --visibility plaintext
+npx eas-cli env:create --name EXPO_PUBLIC_APPLE_AUTH --value 1 --environment production --visibility plaintext
+npx eas-cli env:create --name EXPO_PUBLIC_GOOGLE_AUTH --value 1 --environment production --visibility plaintext
+```
 
 The first iOS build asks you to sign in with the Apple ID for team `B5RNR69S8U` and to let EAS create the distribution certificate and provisioning profile. Accept that. The App ID must include Sign in with Apple before this build, because `mobile/app.json` sets `usesAppleSignIn`. That same file sets `appleTeamId` to `B5RNR69S8U` for the build. `eas.json` sends the team id on submit.
 

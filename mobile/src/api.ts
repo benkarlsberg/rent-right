@@ -1,13 +1,14 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
+import { isDevBuild, resolveApiBase } from "@/release-config";
 
 export function apiBase(): string {
-  const configured = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, "");
-  if (configured) return configured;
-  const host = Constants.expoConfig?.hostUri?.split(":")[0];
-  if (host && host !== "localhost" && host !== "127.0.0.1") return `http://${host}:3000`;
-  if (Platform.OS === "android") return "http://10.0.2.2:3000";
-  return "http://localhost:3000";
+  return resolveApiBase({
+    configured: process.env.EXPO_PUBLIC_API_URL,
+    dev: isDevBuild(),
+    host: Constants.expoConfig?.hostUri?.split(":")[0],
+    android: Platform.OS === "android",
+  });
 }
 
 export function reachError(error: unknown): string {
