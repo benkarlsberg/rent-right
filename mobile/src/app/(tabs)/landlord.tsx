@@ -74,6 +74,7 @@ export default function Landlord() {
   const listRef = useRef<FlatList<ChatItem>>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [draftSendingId, setDraftSendingId] = useState<string | null>(null);
   const [discarding, setDiscarding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBody, setEditBody] = useState("");
@@ -111,7 +112,7 @@ export default function Landlord() {
 
   async function send() {
     const text = draft.trim();
-    if (!text || !token || sending || discarding || data?.archived || identityBlocked) return;
+    if (!text || !token || sending || draftSendingId || discarding || data?.archived || identityBlocked) return;
     try {
       setSending(true);
       setError("");
@@ -275,18 +276,18 @@ export default function Landlord() {
   }
 
   async function sendDraftMessage(id: string, body: string) {
-    if (!token || sending || discarding) return;
+    if (!token || sending || draftSendingId || discarding) return;
     try {
-      setSending(true);
+      setDraftSendingId(id);
       setError("");
-      await reload(await api<ChatData>("chat/draft/send", { token, body: { id, body } }));
+      await reload(await api<ChatData>("chat/draft/send", { token, body: { id, body }, timeoutMs: 35_000 }));
       setEditingId(null);
       const { offerPushRegistration } = await import("@/push");
       void offerPushRegistration(token);
     } catch (err) {
       let message = err instanceof Error ? err.message : "Could not send.";
       try {
-        const fresh = await api<ChatData>("chat", { token });
+        const fresh = await api<ChatData>("chat", { token, timeoutMs: 20_000 });
         await reload(fresh);
         const item = fresh.items.find((row) => row.id === id);
         if (item && !item.draft && mailedBubble(item.status)) {
@@ -298,7 +299,7 @@ export default function Landlord() {
       }
       setError(message);
     } finally {
-      setSending(false);
+      setDraftSendingId(null);
     }
   }
 
@@ -427,17 +428,17 @@ export default function Landlord() {
                     <View>
                       <Text style={styles.prompt}>{labels?.emailPrompt}</Text>
                       <Field label={labels?.emailLabel || "Landlord email"} value={email} onChange={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" />
-                      <Pressable style={styles.primary} accessibilityRole="button" accessibilityLabel={labels?.save || "Save"} disabled={sending} onPress={() => void saveEmail()}>
+                      <Pressable style={[styles.primary, styles.stacked]} accessibilityRole="button" accessibilityLabel={labels?.save || "Save"} disabled={sending} onPress={() => void saveEmail()}>
                         <Text style={styles.primaryText}>{labels?.save || "Save"}</Text>
                       </Pressable>
                     </View>
                   ) : null}
                   <View style={styles.actions}>
-                    <Pressable style={styles.plus} accessibilityRole="button" accessibilityLabel={spanish ? "Agregar una foto" : "Add a photo"} disabled={Boolean(sending || data?.archived)} onPress={() => setMenu((open) => open?.id === item.id && open.where === "draft" ? null : { where: "draft", id: item.id })}>
+                    <Pressable style={styles.plus} accessibilityRole="button" accessibilityLabel={spanish ? "Agregar una foto" : "Add a photo"} disabled={Boolean(sending || draftSendingId || data?.archived)} onPress={() => setMenu((open) => open?.id === item.id && open.where === "draft" ? null : { where: "draft", id: item.id })}>
                       <Text style={styles.plusText}>+</Text>
                     </Pressable>
-                    <Pressable style={styles.primary} accessibilityRole="button" accessibilityLabel={labels?.send || "Send"} accessibilityState={{ disabled: Boolean(sending || discarding || data?.archived || data?.needsEmail || identityBlocked) }} disabled={sending || discarding || data?.archived || data?.needsEmail || identityBlocked} onPress={() => void sendDraftMessage(item.id, body)}>
-                      <Text style={styles.primaryText}>{labels?.send || "Send"}</Text>
+                    <Pressable style={styles.primary} accessibilityRole="button" accessibilityLabel={draftSendingId === item.id ? (spanish ? "Enviando" : "Sending") : (labels?.send || "Send")} accessibilityState={{ disabled: Boolean(sending || draftSendingId || discarding || data?.archived || data?.needsEmail || identityBlocked) }} disabled={Boolean(sending || draftSendingId || discarding || data?.archived || data?.needsEmail || identityBlocked)} onPress={() => void sendDraftMessage(item.id, body)}>
+                      <Text style={styles.primaryText}>{draftSendingId === item.id ? (spanish ? "Enviando…" : "Sending…") : (labels?.send || "Send")}</Text>
                     </Pressable>
                     {editing ? (
                       <Pressable style={styles.ghost} accessibilityRole="button" accessibilityLabel={labels?.done || "Done"} disabled={sending} onPress={() => void saveEdit(item.id)}>
@@ -448,7 +449,7 @@ export default function Landlord() {
                         style={styles.ghost}
                         accessibilityRole="button"
                         accessibilityLabel={labels?.edit || "Edit"}
-                        disabled={sending || data?.archived}
+                        disabled={sending || Boolean(draftSendingId) || data?.archived}
                         onPress={() => {
                           setEditingId(item.id);
                           setEditBody(item.text);
@@ -457,7 +458,7 @@ export default function Landlord() {
                         <Text style={styles.ghostText}>{labels?.edit || "Edit"}</Text>
                       </Pressable>
                     )}
-                    <Pressable style={styles.ghost} accessibilityRole="button" accessibilityLabel={labels?.discard || "Discard"} disabled={sending || discarding || data?.archived} onPress={() => void discard(item.id)}>
+                    <Pressable style={styles.ghost} accessibilityRole="button" accessibilityLabel={labels?.discard || "Discard"} disabled={sending || Boolean(draftSendingId) || discarding || data?.archived} onPress={() => void discard(item.id)}>
                       <Text style={styles.dangerText}>{labels?.discard || "Discard"}</Text>
                     </Pressable>
                   </View>
@@ -538,7 +539,7 @@ export default function Landlord() {
             <Text style={styles.plusText}>+</Text>
           </Pressable>
           <TextInput value={draft} onChangeText={setDraft} placeholder={spanish ? "Mensaje" : "Message"} placeholderTextColor={colors.mute} accessibilityLabel={spanish ? "Mensaje" : "Message"} editable={!data?.archived} style={styles.input} />
-          <Pressable onPress={send} disabled={Boolean(data?.archived) || sending || identityBlocked} style={styles.send} accessibilityRole="button" accessibilityLabel={spanish ? "Enviar" : "Send"} accessibilityState={{ disabled: Boolean(data?.archived) || sending || identityBlocked }}><Text style={styles.sendText}>{sending ? (spanish ? "Enviando" : "Sending") : (spanish ? "Enviar" : "Send")}</Text></Pressable>
+          <Pressable onPress={send} disabled={Boolean(data?.archived) || sending || Boolean(draftSendingId) || identityBlocked} style={styles.send} accessibilityRole="button" accessibilityLabel={spanish ? "Enviar" : "Send"} accessibilityState={{ disabled: Boolean(data?.archived) || sending || Boolean(draftSendingId) || identityBlocked }}><Text style={styles.sendText}>{sending ? (spanish ? "Enviando" : "Sending") : (spanish ? "Enviar" : "Send")}</Text></Pressable>
         </View>
       </KeyboardAvoidingView>
       )}
@@ -588,8 +589,9 @@ const styles = StyleSheet.create({
   mailPreview: { paddingHorizontal: 8, paddingBottom: 8 },
   senderName: { ...wrapText, color: colors.ink, fontSize: 16, lineHeight: 22, fontWeight: "700", marginTop: 8 },
   senderLine: { ...wrapText, color: colors.ink, fontSize: 15, lineHeight: 22 },
-  actions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
-  primary: { backgroundColor: colors.pine, borderRadius: 12, minHeight: 44, justifyContent: "center", paddingHorizontal: 14, marginTop: 8 },
+  actions: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 12 },
+  primary: { backgroundColor: colors.pine, borderRadius: 12, minHeight: 44, justifyContent: "center", paddingHorizontal: 14 },
+  stacked: { marginTop: 8 },
   primaryText: { color: "white", fontSize: 15, fontWeight: "700" },
   ghost: { borderWidth: 1, borderColor: colors.line, backgroundColor: colors.card, borderRadius: 12, minHeight: 44, justifyContent: "center", paddingHorizontal: 14 },
   ghostText: { color: colors.ink, fontSize: 15, fontWeight: "700" },

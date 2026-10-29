@@ -37,11 +37,11 @@ function requestDeadline(ms: number): AbortSignal {
   return controller.signal;
 }
 
-export async function api<T = Record<string, unknown>>(path: string, options?: { method?: string; body?: unknown; token?: string | null; signal?: AbortSignal }): Promise<T> {
+export async function api<T = Record<string, unknown>>(path: string, options?: { method?: string; body?: unknown; token?: string | null; signal?: AbortSignal; timeoutMs?: number }): Promise<T> {
   const headers: Record<string, string> = {};
   if (options?.body !== undefined) headers["content-type"] = "application/json";
   if (options?.token) headers.authorization = `Bearer ${options.token}`;
-  const deadline = requestDeadline(12_000);
+  const deadline = requestDeadline(options?.timeoutMs ?? 12_000);
   const signal = options?.signal && typeof AbortSignal.any === "function" ? AbortSignal.any([options.signal, deadline]) : options?.signal || deadline;
   let response: Response;
   try {
