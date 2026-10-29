@@ -15,6 +15,7 @@ type Scope = {
   tail?: Promise<void>;
   waitTimer?: ReturnType<typeof setTimeout>;
   rejectWait?: (error: Error) => void;
+  abort?: AbortController;
   timedOut?: boolean;
 };
 
@@ -89,7 +90,9 @@ function createSql(url: string, hyperdrive: boolean): Sql {
     // A per-request client is closed in withActor. An idle timer would drop
     // that socket while a model call is in flight.
     idle_timeout: hyperdrive ? 0 : 20,
-    connect_timeout: hyperdrive ? 10 : 20,
+    // Hyperdrive's own handshake is about 15s. The 8s query budget must not
+    // cancel that first connection, or the send is aborted before any email.
+    connect_timeout: hyperdrive ? CONNECT_TIMEOUT_SECONDS : 20,
     fetch_types: !hyperdrive,
     // Hyperdrive's transaction pool rejects the extra Describe message that
     // Postgres.js sends when prepare is false, and the socket closes with
@@ -139,6 +142,39 @@ async function client(): Promise<Sql> {
   } catch (error) {
     if (scope) scope.opening = undefined;
     throw error;
+  }
+}
+
+async function discardClient() {
+  const scope = actors.getStore();
+  const sql = scope?.sql;
+  if (scope) {
+    scope.sql = undefined;
+    scope.opening = undefined;
+    await finishShared(scope, false);
+  }
+  await closeClient(sql);
+}
+
+/** Open Hyperdrive and run one query before the 8s budget starts. A cold pooler handshake can exceed that budget; retry once, still before any email. */
+async function warmConnection() {
+  if (!cloudflareRuntime()) return;
+  pauseDatabaseClock();
+  try {
+    let last: unknown;
+    for (let attempt = 0; attempt < CONNECT_ATTEMPTS; attempt += 1) {
+      try {
+        const db = await client();
+        await db.unsafe("select 1");
+        return;
+      } catch (error) {
+        last = error;
+        await discardClient();
+      }
+    }
+    throw last instanceof Error ? last : new Error("The database connection timed out.");
+  } finally {
+    resumeDatabaseClock();
   }
 }
 
@@ -340,7 +376,9 @@ async function applyRole(tx: Tx, userId: string | null) {
 // cannot roll back a message that was already stored. postgres.js reserve()
 // never settles when fetch_types is false, which is how the Hyperdrive client
 // is opened, so this does not keep a reserved connection.
-const DATABASE_WAIT_MS = 8_000;
+export const DATABASE_WAIT_MS = 8_000;
+export const CONNECT_TIMEOUT_SECONDS = 15;
+export const CONNECT_ATTEMPTS = 2;
 const CLOSE_WAIT_SECONDS = 2;
 
 function databaseTimedOut(error: unknown): boolean {
@@ -349,10 +387,25 @@ function databaseTimedOut(error: unknown): boolean {
 
 function armDatabaseClock(scope: Scope) {
   if (scope.waitTimer) clearTimeout(scope.waitTimer);
+  if (!scope.abort) scope.abort = new AbortController();
   scope.waitTimer = setTimeout(() => {
     scope.timedOut = true;
+    // Promise.race does not stop the request. Abort so a timed-out send cannot
+    // keep going and hand the message to the email provider after the 503.
+    scope.abort?.abort();
     scope.rejectWait?.(new Error("The database connection timed out."));
   }, DATABASE_WAIT_MS);
+}
+
+/** True once the 8s budget has fired. Callers must not start an email after this. */
+export function databaseClockExpired(): boolean {
+  const scope = actors.getStore();
+  return Boolean(scope?.timedOut || scope?.abort?.signal.aborted);
+}
+
+/** Aborted when the budget fires. Paused during an email send, so a live send is not cancelled. */
+export function databaseAbortSignal(): AbortSignal | undefined {
+  return actors.getStore()?.abort?.signal;
 }
 
 /** The request budget is for database work. An email send must not spend it. */
@@ -382,6 +435,27 @@ async function closeClient(sql: Sql | undefined) {
 export async function withActor<T>(userId: string | null, fn: () => Promise<T>): Promise<T> {
   const current = actors.getStore();
   if (current && current.userId === userId) return fn();
+  // Dropping the role (the draft claim, the sent-status write) used to open a
+  // second Hyperdrive client while this request still held the first socket in
+  // a read transaction. Hyperdrive then had to dial a new origin connection.
+  // Sign-in and saving the home only use one connection, so the first landlord
+  // send is the first request that pays that handshake, and it ran on the
+  // outer 8s clock and aborted before Resend. A later send finds the extra
+  // connection already pooled. Stay on the socket this request already has.
+  if (current?.sql) {
+    await releaseReads();
+    const scope: Scope = { userId, memo: new Map(), sql: current.sql };
+    let failed = false;
+    try {
+      return await actors.run(scope, fn);
+    } catch (error) {
+      failed = true;
+      throw error;
+    } finally {
+      await scope.tail?.catch(() => {});
+      await finishShared(scope, !failed).catch(() => {});
+    }
+  }
   const scope: Scope = { userId, memo: new Map() };
   let timedOut = false;
   const wait = new Promise<never>((_, reject) => {
@@ -389,7 +463,13 @@ export async function withActor<T>(userId: string | null, fn: () => Promise<T>):
   });
   armDatabaseClock(scope);
   try {
-    return await Promise.race([actors.run(scope, fn), wait]);
+    return await Promise.race([
+      actors.run(scope, async () => {
+        await warmConnection();
+        return fn();
+      }),
+      wait,
+    ]);
   } catch (error) {
     if (databaseTimedOut(error)) timedOut = true;
     throw error;

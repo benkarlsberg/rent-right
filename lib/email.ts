@@ -1,4 +1,4 @@
-import { pauseDatabaseClock, releaseReads, resumeDatabaseClock } from "@/lib/pg";
+import { databaseAbortSignal, databaseClockExpired, pauseDatabaseClock, releaseReads, resumeDatabaseClock } from "@/lib/pg";
 import { REPLY_LINE } from "@/lib/tenant-mail";
 import { relayAddress } from "@/lib/text";
 
@@ -75,6 +75,7 @@ export async function sendRelayEmail(input: {
   }));
   try {
     await releaseReads();
+    if (databaseClockExpired()) throw new Error("The database connection timed out.");
     pauseDatabaseClock();
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -83,6 +84,7 @@ export async function sendRelayEmail(input: {
         "content-type": "application/json",
         ...(input.idempotencyKey ? { "Idempotency-Key": input.idempotencyKey } : {}),
       },
+      signal: databaseAbortSignal(),
       body: JSON.stringify({
         from,
         to: [to],
@@ -103,6 +105,9 @@ export async function sendRelayEmail(input: {
     }
     return { status: "sent", detail: "Accepted by the email provider. Delivery status updates when a webhook arrives.", providerId: json.id };
   } catch (error) {
+    if (databaseClockExpired() || (error instanceof Error && error.message === "The database connection timed out.")) {
+      throw new Error("The database connection timed out.");
+    }
     return { status: "failed", detail: error instanceof Error ? error.message : "Email send failed.", providerId: null, uncertain: true };
   } finally {
     resumeDatabaseClock();
