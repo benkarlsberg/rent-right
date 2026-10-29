@@ -35,6 +35,7 @@ import {
   discardDraftMessage,
   insertCustomReminder,
   listDeadlines,
+  messageWasMailed,
   listLeaseReviews,
   listLedger,
   listLogs,
@@ -1008,7 +1009,10 @@ async function sendDraft(input: Record<string, unknown>) {
   const id = text(input.id);
   if (!id) throw new Error(tx(user.locale, "Choose a draft.", "Elija un borrador."));
   const current = await messageForUser(user.id, id);
-  if (current.deliveryStatus !== "draft") throw new Error(tx(user.locale, "This message was already sent.", "Este mensaje ya se envió."));
+  if (messageWasMailed(current.deliveryStatus)) return chatPayload();
+  if (current.deliveryStatus !== "draft" && current.deliveryStatus !== "sending") {
+    throw new Error(tx(user.locale, "This message was already sent.", "Este mensaje ya se envió."));
+  }
   const body = text(input.body) || current.body;
   if (body.length < 2) throw new Error(tx(user.locale, "Write the message.", "Escriba el mensaje."));
   if (body.length > 8000) throw new Error(tx(user.locale, "Keep the message under 8000 characters.", "El mensaje debe tener menos de 8000 caracteres."));
@@ -1023,8 +1027,12 @@ async function sendDraft(input: Record<string, unknown>) {
     tenantText: body,
   });
   if (current.logEntryId) {
-    const entry = await getLog(user.id, current.logEntryId);
-    await ensureRepairDeadline(user, unit, entry);
+    try {
+      const entry = await getLog(user.id, current.logEntryId);
+      await ensureRepairDeadline(user, unit, entry);
+    } catch {
+      // The email is already recorded. The reminder can be filled in on the next open.
+    }
   }
   return chatPayload();
 }

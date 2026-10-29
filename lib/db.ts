@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { displayUnit, formatAddressPlain } from "@/lib/address-format";
 import { encryptChatText, openDraftPayload, readChatText, sealDraftPayload } from "@/lib/chat-text";
 import { decryptString, encryptString, hashToken, randomToken, shortCode } from "@/lib/crypto";
+import { retryMailedWrite } from "@/lib/mail-commit";
 import { all, dropRequestMemo, hasUserActor, one, requestMemo, run, seedRequestMemo, withActor } from "@/lib/pg";
 import { deleteSupabaseAuthUser, sendSupabaseMagicLink, supabaseAuthConfigured, userFromSupabaseOtp } from "@/lib/supabase-auth";
 import type { Locale } from "@/lib/disclaimer";
@@ -667,7 +668,7 @@ export async function listMessages(userId: string, unitId: string) {
 
 export async function countOutboundSince(unitId: string, sinceIso: string) {
   const row = await one<{ n: number }>(
-    "select count(*)::int as n from messages where unit_id = ? and direction = 'outbound' and delivery_status not in ('draft', 'discarded') and created_at > ?",
+    "select count(*)::int as n from messages where unit_id = ? and direction = 'outbound' and delivery_status not in ('draft', 'discarded', 'sending') and created_at > ?",
     [unitId, sinceIso],
   );
   return row?.n || 0;
@@ -748,6 +749,81 @@ export async function discardDraftMessage(userId: string, id: string): Promise<v
     [new Date().toISOString(), id],
   );
   if (!result.changes) throw new HttpError("This message was already sent.");
+}
+
+const MAILED_STATUS = new Set(["sent", "delivered", "delayed", "local_only", "blocked", "bounced", "complained"]);
+
+export function messageWasMailed(status: string): boolean {
+  return MAILED_STATUS.has(status);
+}
+
+export async function claimDraftSend(userId: string, id: string): Promise<{ action: "send" | "done"; status: string }> {
+  const current = await messageForUser(userId, id);
+  if (messageWasMailed(current.deliveryStatus) || current.providerId) return { action: "done", status: current.deliveryStatus };
+  if (current.deliveryStatus === "sending") return { action: "send", status: "sending" };
+  if (current.deliveryStatus !== "draft") throw new HttpError("This message was already sent.");
+  if (hasUserActor()) return withActor(null, () => claimDraftSend(userId, id));
+  const result = await run(
+    "update messages set delivery_status = 'sending', status_at = ? where id = ? and delivery_status = 'draft'",
+    [new Date().toISOString(), id],
+  );
+  if (result.changes) return { action: "send", status: "sending" };
+  const again = await messageForUser(userId, id);
+  if (messageWasMailed(again.deliveryStatus) || again.providerId) return { action: "done", status: again.deliveryStatus };
+  if (again.deliveryStatus === "sending") return { action: "send", status: "sending" };
+  throw new HttpError("This message was already sent.");
+}
+
+export async function finishDraftSend(userId: string, id: string, patch: {
+  body: string;
+  subject: string;
+  toEmail: string;
+  deliveryStatus: string;
+  deliveryDetail: string | null;
+  providerId: string | null;
+  responseToken: string | null;
+}): Promise<void> {
+  const current = await messageForUser(userId, id);
+  if (messageWasMailed(current.deliveryStatus)) return;
+  if (current.deliveryStatus !== "draft" && current.deliveryStatus !== "sending") {
+    throw new HttpError("This message was already sent.");
+  }
+  if (hasUserActor()) return withActor(null, () => finishDraftSend(userId, id, patch));
+  const now = new Date().toISOString();
+  const result = await run(
+    `update messages
+     set body_enc = ?, subject = ?, to_email = ?, delivery_status = ?, delivery_detail = ?, provider_id = ?, response_token = ?, created_at = ?, status_at = ?
+     where id = ? and delivery_status in ('draft', 'sending')`,
+    [encryptString(patch.body), patch.subject, patch.toEmail, patch.deliveryStatus, patch.deliveryDetail, patch.providerId, patch.responseToken, now, now, id],
+  );
+  if (result.changes) return;
+  const again = await messageForUser(userId, id);
+  if (messageWasMailed(again.deliveryStatus)) return;
+  throw new HttpError("This message was already sent.");
+}
+
+/** The provider already accepted the message. Retry the status write if the connection drops. */
+export async function commitMailedStatus(userId: string, id: string, patch: {
+  body: string;
+  subject: string;
+  toEmail: string;
+  deliveryStatus: string;
+  deliveryDetail: string | null;
+  providerId: string | null;
+  responseToken: string | null;
+}): Promise<void> {
+  await retryMailedWrite(
+    () => finishDraftSend(userId, id, patch),
+    async () => messageWasMailed((await messageForUser(userId, id)).deliveryStatus),
+  );
+}
+
+export async function releaseDraftClaim(userId: string, id: string): Promise<void> {
+  if (hasUserActor()) return withActor(null, () => releaseDraftClaim(userId, id));
+  await run(
+    "update messages set delivery_status = 'draft', status_at = ? where id = ? and delivery_status = 'sending' and provider_id is null",
+    [new Date().toISOString(), id],
+  );
 }
 
 export async function promoteDraftMessage(userId: string, id: string, patch: {

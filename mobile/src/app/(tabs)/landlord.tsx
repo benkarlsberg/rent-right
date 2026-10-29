@@ -269,6 +269,11 @@ export default function Landlord() {
     }
   }
 
+  function mailedBubble(status: string | undefined): boolean {
+    if (!status) return false;
+    return !/^Not sent|^No enviado|^Sending|^Enviando/.test(status);
+  }
+
   async function sendDraftMessage(id: string, body: string) {
     if (!token || sending || discarding) return;
     try {
@@ -279,7 +284,19 @@ export default function Landlord() {
       const { offerPushRegistration } = await import("@/push");
       void offerPushRegistration(token);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not send.");
+      let message = err instanceof Error ? err.message : "Could not send.";
+      try {
+        const fresh = await api<ChatData>("chat", { token });
+        await reload(fresh);
+        const item = fresh.items.find((row) => row.id === id);
+        if (item && !item.draft && mailedBubble(item.status)) {
+          message = "";
+          setEditingId(null);
+        }
+      } catch {
+        // The send error still stands when the refresh cannot reach the server.
+      }
+      setError(message);
     } finally {
       setSending(false);
     }

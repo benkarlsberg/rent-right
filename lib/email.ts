@@ -1,4 +1,4 @@
-import { releaseReads } from "@/lib/pg";
+import { pauseDatabaseClock, releaseReads, resumeDatabaseClock } from "@/lib/pg";
 import { REPLY_LINE } from "@/lib/tenant-mail";
 import { relayAddress } from "@/lib/text";
 
@@ -6,6 +6,8 @@ export type SendResult = {
   status: "sent" | "failed" | "local_only";
   detail: string;
   providerId: string | null;
+  /** The provider may have accepted the message. Retry with the same idempotency key. */
+  uncertain?: boolean;
 };
 
 export function landlordMessageBody(tenantText: string, responseUrl: string, header = "", footer = "", options = "You can reply, or tap Respond to acknowledge, schedule, or dispute."): string {
@@ -49,6 +51,7 @@ export async function sendRelayEmail(input: {
   text: string;
   html?: string;
   attachments?: MailAttachment[];
+  idempotencyKey?: string | null;
 }): Promise<SendResult> {
   const fromAddress = relayAddress(input.relayLocal);
   const apiKey = process.env.RESEND_API_KEY;
@@ -72,11 +75,13 @@ export async function sendRelayEmail(input: {
   }));
   try {
     await releaseReads();
+    pauseDatabaseClock();
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         authorization: `Bearer ${apiKey}`,
         "content-type": "application/json",
+        ...(input.idempotencyKey ? { "Idempotency-Key": input.idempotencyKey } : {}),
       },
       body: JSON.stringify({
         from,
@@ -98,7 +103,9 @@ export async function sendRelayEmail(input: {
     }
     return { status: "sent", detail: "Accepted by the email provider. Delivery status updates when a webhook arrives.", providerId: json.id };
   } catch (error) {
-    return { status: "failed", detail: error instanceof Error ? error.message : "Email send failed.", providerId: null };
+    return { status: "failed", detail: error instanceof Error ? error.message : "Email send failed.", providerId: null, uncertain: true };
+  } finally {
+    resumeDatabaseClock();
   }
 }
 
@@ -118,6 +125,7 @@ export async function lookupProviderDelivery(providerId: string): Promise<{ stat
   if (!apiKey || !/^[0-9a-f-]{36}$/i.test(providerId)) return null;
   try {
     await releaseReads();
+    pauseDatabaseClock();
     const response = await fetch(`https://api.resend.com/emails/${providerId}`, {
       headers: { authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(4000),
@@ -134,6 +142,8 @@ export async function lookupProviderDelivery(providerId: string): Promise<{ stat
     return { status: mapped.status, detail, open: Boolean(mapped.open) };
   } catch {
     return null;
+  } finally {
+    resumeDatabaseClock();
   }
 }
 

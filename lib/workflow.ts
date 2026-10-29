@@ -19,8 +19,10 @@ import {
   insertPhoto,
   isBlocked,
   linkPhotoMessage,
+  claimDraftSend,
+  commitMailedStatus,
   messagePhotoFiles,
-  promoteDraftMessage,
+  releaseDraftClaim,
   readFileForUser,
   saveFile,
   leaseTextHash,
@@ -190,7 +192,7 @@ async function storeLandlordMail(input: {
   responseToken?: string | null;
 }) {
   if (input.existingId) {
-    await promoteDraftMessage(input.user.id, input.existingId, {
+    await commitMailedStatus(input.user.id, input.existingId, {
       body: input.body,
       subject: input.subject,
       toEmail: input.unit.landlordEmail,
@@ -323,6 +325,12 @@ export async function emailLandlord(input: {
   if (await countOutboundSince(input.unit.id, since) >= EMAIL_DAILY_CAP) {
     throw new Error("This unit reached the daily email limit (20). Use a printed letter.");
   }
+  let claimed = false;
+  if (input.existingId) {
+    const claim = await claimDraftSend(input.user.id, input.existingId);
+    if (claim.action === "done") return claim.status;
+    claimed = true;
+  }
   const token = randomToken();
   const responseUrl = `${appUrl()}/r/${token}`;
   const body = landlordMessageBody(letter, responseUrl, header, footer, options);
@@ -338,25 +346,59 @@ export async function emailLandlord(input: {
     button: { label: "Respond", href: responseUrl },
     footer: footer || null,
   });
-  const sent = await sendRelayEmail({
-    relayLocal: input.unit.relayLocal,
-    to: input.unit.landlordEmail,
-    cc: input.user.email,
-    subject,
-    text: mail.text,
-    html: mail.html,
-    attachments,
-  });
-  const messageId = await storeLandlordMail({
-    ...input,
-    subject,
-    body,
-    deliveryStatus: sent.status,
-    deliveryDetail: sent.detail,
-    providerId: sent.providerId,
-    responseToken: token,
-  });
-  await persistPhotos(input.user, input.unit, messageId, input.logEntryId, photos);
+  let sent: Awaited<ReturnType<typeof sendRelayEmail>>;
+  try {
+    sent = await sendRelayEmail({
+      relayLocal: input.unit.relayLocal,
+      to: input.unit.landlordEmail,
+      cc: input.user.email,
+      subject,
+      text: mail.text,
+      html: mail.html,
+      attachments,
+      idempotencyKey: input.existingId || null,
+    });
+  } catch (error) {
+    if (claimed && input.existingId) await releaseDraftClaim(input.user.id, input.existingId).catch(() => {});
+    throw error;
+  }
+  if (sent.status === "failed" && sent.uncertain) {
+    if (claimed && input.existingId) await releaseDraftClaim(input.user.id, input.existingId).catch(() => {});
+    throw new Error(sent.detail);
+  }
+  let messageId: string;
+  try {
+    messageId = await storeLandlordMail({
+      ...input,
+      subject,
+      body,
+      deliveryStatus: sent.status,
+      deliveryDetail: sent.detail,
+      providerId: sent.providerId,
+      responseToken: token,
+    });
+  } catch (error) {
+    if (sent.status === "sent" || sent.status === "local_only") {
+      if (input.existingId && (sent.providerId || sent.status === "local_only")) {
+        await commitMailedStatus(input.user.id, input.existingId, {
+          body,
+          subject,
+          toEmail: input.unit.landlordEmail,
+          deliveryStatus: sent.status,
+          deliveryDetail: sent.detail,
+          providerId: sent.providerId,
+          responseToken: token,
+        }).catch(() => {});
+      }
+      return sent.status;
+    }
+    throw error;
+  }
+  try {
+    await persistPhotos(input.user, input.unit, messageId, input.logEntryId, photos);
+  } catch {
+    // The message is already marked. A photo link can be repaired on the next open.
+  }
   return sent.status;
 }
 

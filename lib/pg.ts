@@ -13,6 +13,9 @@ type Scope = {
   release?: (commit: boolean) => void;
   txDone?: Promise<void>;
   tail?: Promise<void>;
+  waitTimer?: ReturnType<typeof setTimeout>;
+  rejectWait?: (error: Error) => void;
+  timedOut?: boolean;
 };
 
 let roundTrips = 0;
@@ -344,6 +347,28 @@ function databaseTimedOut(error: unknown): boolean {
   return error instanceof Error && error.message === "The database connection timed out.";
 }
 
+function armDatabaseClock(scope: Scope) {
+  if (scope.waitTimer) clearTimeout(scope.waitTimer);
+  scope.waitTimer = setTimeout(() => {
+    scope.timedOut = true;
+    scope.rejectWait?.(new Error("The database connection timed out."));
+  }, DATABASE_WAIT_MS);
+}
+
+/** The request budget is for database work. An email send must not spend it. */
+export function pauseDatabaseClock(): void {
+  const scope = actors.getStore();
+  if (!scope?.waitTimer) return;
+  clearTimeout(scope.waitTimer);
+  scope.waitTimer = undefined;
+}
+
+export function resumeDatabaseClock(): void {
+  const scope = actors.getStore();
+  if (!scope || scope.timedOut) return;
+  armDatabaseClock(scope);
+}
+
 async function closeClient(sql: Sql | undefined) {
   if (!sql) return;
   // Hyperdrive's initial connection timeout is 15 seconds, and the free plan
@@ -359,21 +384,18 @@ export async function withActor<T>(userId: string | null, fn: () => Promise<T>):
   if (current && current.userId === userId) return fn();
   const scope: Scope = { userId, memo: new Map() };
   let timedOut = false;
-  let rejectWait: (error: Error) => void = () => {};
   const wait = new Promise<never>((_, reject) => {
-    rejectWait = reject;
+    scope.rejectWait = reject;
   });
-  const timer = setTimeout(() => {
-    timedOut = true;
-    rejectWait(new Error("The database connection timed out."));
-  }, DATABASE_WAIT_MS);
+  armDatabaseClock(scope);
   try {
     return await Promise.race([actors.run(scope, fn), wait]);
   } catch (error) {
     if (databaseTimedOut(error)) timedOut = true;
     throw error;
   } finally {
-    clearTimeout(timer);
+    if (scope.waitTimer) clearTimeout(scope.waitTimer);
+    scope.waitTimer = undefined;
     const sql = scope.sql;
     scope.sql = undefined;
     scope.opening = undefined;

@@ -63,6 +63,7 @@ export function deliveryLabel(status: string, openIndicative: boolean, locale: L
     delayed: ["Delayed", "Demorado"],
     opened: ["Delivered", "Entregado"],
     blocked: ["Blocked", "Bloqueado"],
+    sending: ["Sending", "Enviando"],
   };
   const pair = labels[status] || [status, status];
   const base = locale === "es" ? pair[1] : pair[0];

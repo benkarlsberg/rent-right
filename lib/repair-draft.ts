@@ -140,7 +140,7 @@ export async function ensureRepairDrafts(user: User, unit: Unit, logs: LogEntry[
   for (const log of logs) {
     if (log.type !== "repair" || log.status === "resolved" || log.flags?.removed === true) continue;
     const related = seen.filter((message) => message.logEntryId === log.id && message.direction === "outbound");
-    if (related.some((message) => confirmedOutbound(message.deliveryStatus) || message.deliveryStatus === "draft" || message.deliveryStatus === "discarded")) continue;
+    if (related.some((message) => confirmedOutbound(message.deliveryStatus) || message.deliveryStatus === "draft" || message.deliveryStatus === "sending" || message.deliveryStatus === "discarded")) continue;
     const letter = repairDraftLetter({
       locale: user.locale,
       tenantName: user.name,

@@ -58,4 +58,20 @@ describe("sendRelayEmail", () => {
     const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body)) as { cc?: string[] };
     expect(body.cc).toBeUndefined();
   });
+
+  it("sends the draft id as the provider idempotency key", async () => {
+    process.env.RESEND_API_KEY = "re_test";
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ id: "11111111-1111-4111-8111-111111111111" }), { status: 200 }));
+    const result = await sendRelayEmail({
+      relayLocal: "u-abc12345",
+      to: "landlord@example.com",
+      cc: "tenant@example.com",
+      subject: "Hello",
+      text: "Hello",
+      idempotencyKey: "draft-1",
+    });
+    expect(result.status).toBe("sent");
+    const headers = vi.mocked(fetch).mock.calls[0]?.[1]?.headers as Record<string, string>;
+    expect(headers["Idempotency-Key"]).toBe("draft-1");
+  });
 });
