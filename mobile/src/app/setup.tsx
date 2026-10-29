@@ -23,7 +23,7 @@ type PlaceResult = {
   kept?: Kept;
 };
 
-const STEPS = 5;
+const STEPS = 4;
 
 function usZip(value: string): boolean {
   return /^\d{5}$/.test(value);
@@ -70,10 +70,15 @@ export default function Setup() {
     setRegion(value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2));
     clearCheck();
   }
+  function editUnit(value: string) {
+    setUnit(value);
+    clearCheck();
+  }
 
   function applyKept() {
     if (kept) {
       setStreet(kept.street);
+      setUnit(kept.unit);
       setCity(kept.city);
       setPostal(kept.postalCode);
     }
@@ -142,7 +147,7 @@ export default function Setup() {
           return;
         }
         setBusy(true);
-        const found = await api<PlaceResult>("place", { token, body: { street: street.trim(), city: city.trim(), postalCode: zip, region: region.trim() || "CA" } });
+        const found = await api<PlaceResult>("place", { token, body: { street: street.trim(), unitNumber: unitNumber.trim(), city: city.trim(), postalCode: zip, region: region.trim() || "CA" } });
         if (!found.inCalifornia && found.jurisdiction !== "unsupported") {
           setError(found.summary);
           return;
@@ -157,6 +162,7 @@ export default function Setup() {
         }
         if (found.kept) {
           setStreet(found.kept.street);
+          setUnit(found.kept.unit);
           setCity(found.kept.city);
           setPostal(found.kept.postalCode);
         }
@@ -165,20 +171,16 @@ export default function Setup() {
         return;
       }
       if (step === 1) {
-        setStep(2);
-        return;
-      }
-      if (step === 2) {
         const name = landlordName.trim();
         const email = landlordEmail.trim();
         if ((name || email) && (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
           setError(es ? "Agregue el nombre y el correo del propietario." : "Add the landlord's name and email.");
           return;
         }
-        setStep(3);
+        setStep(2);
         return;
       }
-      if (step === 3) {
+      if (step === 2) {
         if (moveInDate.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(moveInDate.trim())) {
           setError(es ? "Use una fecha como 2024-06-01, o déjela en blanco." : "Use a date like 2024-06-01, or leave it blank.");
           return;
@@ -187,7 +189,7 @@ export default function Setup() {
           setError(es ? "Escriba la renta en dólares, o déjela en blanco." : "Enter the rent in dollars, or leave it blank.");
           return;
         }
-        setStep(4);
+        setStep(3);
         return;
       }
       setBusy(true);
@@ -218,12 +220,12 @@ export default function Setup() {
   }
 
   const titles = es
-    ? ["¿Dónde renta?", "Unidad o apartamento", "Su propietario", "Datos del contrato", "Reglas para esta dirección"]
-    : ["Where do you rent?", "Unit or apartment", "Your landlord", "Lease details", "Rules for this address"];
+    ? ["¿Dónde renta?", "Su propietario", "Datos del contrato", "Reglas para esta dirección"]
+    : ["Where do you rent?", "Your landlord", "Lease details", "Rules for this address"];
   const hints = es
-    ? ["Una dirección en Estados Unidos.", "Si es una casa, puede dejarlo en blanco.", "Deje ambos en blanco para agregarlos después. Nada se envía hasta que usted lo confirme.", "Los dos son opcionales.", summary]
-    : ["A US address.", "Leave this blank for a house.", "Leave both blank to add them later. Nothing is sent until you confirm it.", "Both of these are optional.", summary];
-  const action = step === 4 ? (es ? "Guardar" : "Save") : (es ? "Continuar" : "Continue");
+    ? ["Una dirección en Estados Unidos.", "Deje ambos en blanco para agregarlos después. Nada se envía hasta que usted lo confirme.", "Los dos son opcionales.", summary]
+    : ["A US address.", "Leave both blank to add them later. Nothing is sent until you confirm it.", "Both of these are optional.", summary];
+  const action = step === 3 ? (es ? "Guardar" : "Save") : (es ? "Continuar" : "Continue");
 
   return (
     <Page>
@@ -234,25 +236,25 @@ export default function Setup() {
       {step === 0 ? (
         <>
           <Field label={es ? "Calle" : "Street"} value={street} onChange={editStreet} autoComplete="street-address" textContentType="fullStreetAddress" />
+          <Field label={es ? "Apto / Unidad" : "Apt / Unit"} value={unitNumber} onChange={editUnit} placeholder={es ? "Apto, suite, unidad (opcional)" : "Apt, suite, unit (optional)"} autoComplete="address-line2" textContentType="streetAddressLine2" />
           <Field label={es ? "Ciudad" : "City"} value={city} onChange={editCity} placeholder="Los Angeles" autoComplete="postal-address-locality" textContentType="addressCity" />
           <Field label={es ? "Estado" : "State"} value={region} onChange={editRegion} placeholder="CA" autoCapitalize="characters" autoComplete="postal-address-region" textContentType="addressState" />
           <Field label={es ? "Código postal" : "ZIP"} value={postalCode} onChange={editPostal} placeholder="90026" keyboardType="number-pad" autoComplete="postal-code" textContentType="postalCode" />
         </>
       ) : null}
-      {step === 1 ? <Field label={es ? "Unidad" : "Unit"} value={unitNumber} onChange={setUnit} placeholder="3" /> : null}
-      {step === 2 ? (
+      {step === 1 ? (
         <>
           <Field label={es ? "Nombre del propietario" : "Landlord name"} value={landlordName} onChange={setLandlord} autoComplete="name" textContentType="name" />
           <Field label={es ? "Correo del propietario" : "Landlord email"} value={landlordEmail} onChange={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" textContentType="emailAddress" />
         </>
       ) : null}
-      {step === 3 ? (
+      {step === 2 ? (
         <>
           <Field label={es ? "Inicio del contrato" : "Lease start"} value={moveInDate} onChange={setMoveIn} placeholder="2024-06-01" autoComplete="off" />
           <Field label={es ? "Renta mensual" : "Monthly rent"} value={rent} onChange={setRent} placeholder="2150" keyboardType="decimal-pad" />
         </>
       ) : null}
-      {step === 4 ? (
+      {step === 3 ? (
         <Address street={street} unit={unitNumber} city={city} postalCode={postalCode} region={region || "CA"} style={styles.recap} />
       ) : null}
       {step === 0 && offer ? (
