@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { FlatList, Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/api";
+import { refreshBootstrap } from "@/tab-cache";
+import { actionChangesReminders } from "@/tab-store";
 import { Address } from "@/address";
 import { saveAuthorizedFile } from "@/files";
 import type { Notice } from "@/session";
@@ -141,7 +143,8 @@ export default function AssistantChat() {
         next = await post();
       }
       await reload(next);
-      if (extra?.action === "send" || extra?.action?.startsWith("repair-save:")) {
+      if (actionChangesReminders(extra?.action)) {
+        void refreshBootstrap(token, true);
         const { offerPushRegistration } = await import("@/push");
         void offerPushRegistration(token);
       }

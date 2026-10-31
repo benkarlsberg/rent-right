@@ -4,6 +4,7 @@ import { FlatList, Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet,
 import * as ImagePicker from "expo-image-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/api";
+import { refreshBootstrap } from "@/tab-cache";
 import { useSession } from "@/session";
 import { TabLoading } from "@/typing-dots";
 import { colors } from "@/theme";
@@ -124,6 +125,7 @@ export default function Landlord() {
           attachments: pending.filter((photo) => photo.base64).map((photo) => ({ name: photo.name, mime: photo.mime, base64: photo.base64, issueId: photo.issueId || "" })),
         },
       }));
+      void refreshBootstrap(token, true);
       setDraft("");
       setPending([]);
       setMenu(null);
@@ -248,6 +250,7 @@ export default function Landlord() {
       setSending(true);
       setError("");
       await reload(await api<ChatData>("landlord", { token, body: { name: trimmedName, email: trimmedEmail, phone: phone.trim() } }));
+      void refreshBootstrap(token, true);
       setAdding(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save.");
@@ -289,6 +292,7 @@ export default function Landlord() {
         payload = await post();
       }
       await reload(payload);
+      void refreshBootstrap(token, true);
       setEditingId(null);
       const { offerPushRegistration } = await import("@/push");
       void offerPushRegistration(token);
@@ -301,6 +305,7 @@ export default function Landlord() {
         if (item && !item.draft && mailedBubble(item.status)) {
           message = "";
           setEditingId(null);
+          void refreshBootstrap(token, true);
         }
       } catch {
         // The send error still stands when the refresh cannot reach the server.
@@ -317,6 +322,7 @@ export default function Landlord() {
       setDiscarding(true);
       setError("");
       await reload(await api<ChatData>("chat/draft/discard", { token, body: { id } }));
+      void refreshBootstrap(token, true);
       if (editingId === id) setEditingId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not discard the draft.");

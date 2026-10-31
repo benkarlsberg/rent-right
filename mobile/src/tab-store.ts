@@ -59,6 +59,37 @@ export function needsBootstrap(token: string, now = Date.now()): boolean {
   return TAB_PATHS.some((path) => sliceStale(token, path, now));
 }
 
+/** A stale tab has to load again. A recent bootstrap must not keep the old Reminders list on screen. */
+export function shouldFetchBootstrap(input: { force: boolean; stale: boolean }): boolean {
+  return input.force || input.stale;
+}
+
+export type BootstrapFlight = { userId: string; generation: number };
+
+/** Skip a fresh cache, reuse the request already started for this account, or start one. */
+export function bootstrapRequestPlan(input: {
+  force: boolean;
+  stale: boolean;
+  flight: BootstrapFlight | null;
+  userId: string;
+  generation: number;
+}): "skip" | "reuse" | "start" {
+  if (!shouldFetchBootstrap({ force: input.force, stale: input.stale })) return "skip";
+  if (input.flight && input.flight.userId === input.userId && input.flight.generation === input.generation) return "reuse";
+  return "start";
+}
+
+/** Actions that change the reminder list or the next-steps card, so Reminders has to load again. */
+export function actionChangesReminders(action: string | undefined): boolean {
+  if (!action) return false;
+  return action === "send"
+    || action === "repair-new"
+    || action.startsWith("repair-save:")
+    || action.startsWith("repair-undo:")
+    || action.startsWith("resolve:")
+    || action.startsWith("merge:");
+}
+
 export function rememberSlice(token: string, path: TabPath, data: unknown, now = Date.now()) {
   generation += 1;
   const userId = userIdFromToken(token);

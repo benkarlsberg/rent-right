@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  actionChangesReminders,
   applyBootstrap,
+  bootstrapRequestPlan,
   clearTabMemory,
   needsBootstrap,
+  publishSlice,
   readSlice,
+  shouldFetchBootstrap,
   sliceStale,
   rememberSlice,
   tabGeneration,
@@ -47,6 +51,76 @@ describe("tab store", () => {
     rememberSlice(alice, "records", { tier: "routine" }, 6_000);
     expect(applyBootstrap(alice, { thread: {}, chat: {}, records: { tier: "urgent" } }, started, 7_000)).toBe(false);
     expect(readSlice(alice, "records")).toEqual({ tier: "routine" });
+  });
+
+  it("keeps Reminders stale after a landlord send so the next open refetches", () => {
+    const opened = 1_700_000_000_000;
+    const sent = opened + 4_000;
+    const started = tabGeneration();
+    applyBootstrap(alice, {
+      thread: { items: [] },
+      chat: { items: [{ draft: true }] },
+      records: { deadlines: [], steps: { items: [{ action: "send" }] } },
+    }, started, opened);
+    publishSlice(alice, "chat", { items: [{ status: "Sent" }] }, sent);
+    expect(sliceStale(alice, "chat", sent)).toBe(false);
+    expect(sliceStale(alice, "records", sent)).toBe(true);
+    expect(readSlice(alice, "records")).toEqual({ deadlines: [], steps: { items: [{ action: "send" }] } });
+    expect(shouldFetchBootstrap({ force: false, stale: true })).toBe(true);
+    expect(shouldFetchBootstrap({ force: false, stale: false })).toBe(false);
+    expect(shouldFetchBootstrap({ force: true, stale: false })).toBe(true);
+    const generation = tabGeneration();
+    expect(bootstrapRequestPlan({ force: false, stale: true, flight: null, userId: userIdFromToken(alice), generation })).toBe("start");
+    expect(bootstrapRequestPlan({
+      force: true,
+      stale: true,
+      flight: { userId: userIdFromToken(alice), generation },
+      userId: userIdFromToken(alice),
+      generation,
+    })).toBe("reuse");
+    expect(bootstrapRequestPlan({
+      force: true,
+      stale: true,
+      flight: { userId: userIdFromToken(alice), generation: generation - 1 },
+      userId: userIdFromToken(alice),
+      generation,
+    })).toBe("start");
+  });
+
+  it("replaces the reminder list and the next steps together after a send", () => {
+    const beforeSend = tabGeneration();
+    applyBootstrap(alice, {
+      thread: { items: [] },
+      chat: { items: [{ draft: true }] },
+      records: { deadlines: [], steps: { items: [{ action: "send" }] } },
+    }, beforeSend, 1_000);
+    publishSlice(alice, "chat", { items: [{ status: "Sent" }] }, 2_000);
+    const started = tabGeneration();
+    expect(applyBootstrap(alice, {
+      thread: { items: [] },
+      chat: { items: [{ status: "Sent" }] },
+      records: {
+        deadlines: [{ id: "d1", title: "Follow up: kitchen sink", closed: false }],
+        steps: { items: [{ action: "wait" }] },
+      },
+    }, started, 3_000)).toBe(true);
+    expect(readSlice(alice, "records")).toEqual({
+      deadlines: [{ id: "d1", title: "Follow up: kitchen sink", closed: false }],
+      steps: { items: [{ action: "wait" }] },
+    });
+    expect(sliceStale(alice, "records", 3_000)).toBe(false);
+    expect(sliceStale(alice, "chat", 3_000)).toBe(false);
+  });
+
+  it("names the actions that change a reminder", () => {
+    expect(actionChangesReminders("send")).toBe(true);
+    expect(actionChangesReminders("repair-save:1")).toBe(true);
+    expect(actionChangesReminders("repair-undo:1")).toBe(true);
+    expect(actionChangesReminders("resolve:1")).toBe(true);
+    expect(actionChangesReminders("merge:1")).toBe(true);
+    expect(actionChangesReminders("repair-new")).toBe(true);
+    expect(actionChangesReminders("repair-keep:1")).toBe(false);
+    expect(actionChangesReminders(undefined)).toBe(false);
   });
 
   it("keeps a patched slice on that account until the other slices arrive", () => {

@@ -93,9 +93,9 @@ export function useLoad<T>(path: string) {
       void run(false);
       return;
     }
-    if (!sliceStale(token, tab) || readSlice(token, tab) != null) return;
+    if (!sliceStale(token, tab)) return;
     let alive = true;
-    void refreshBootstrap(token, false).catch((err: unknown) => {
+    void refreshBootstrap(token, true).catch((err: unknown) => {
       if (!alive) return;
       noteFailure(err, token);
     });
@@ -108,7 +108,7 @@ export function useLoad<T>(path: string) {
     const current = tokenRef.current;
     if (!current || !screenVisible()) return;
     if (tab) {
-      if (sliceStale(current, tab)) void refreshBootstrap(current, false).catch((err: unknown) => noteFailure(err, current));
+      if (sliceStale(current, tab)) void refreshBootstrap(current, true).catch((err: unknown) => noteFailure(err, current));
       return;
     }
     void run(false);
@@ -119,7 +119,7 @@ export function useLoad<T>(path: string) {
     const onShow = () => {
       if (document.visibilityState === "hidden") return;
       const current = tokenRef.current;
-      if (current && sliceStale(current, tab)) void refreshBootstrap(current, false).catch((err: unknown) => noteFailure(err, current));
+      if (current && sliceStale(current, tab)) void refreshBootstrap(current, true).catch((err: unknown) => noteFailure(err, current));
     };
     document.addEventListener("visibilitychange", onShow);
     return () => document.removeEventListener("visibilitychange", onShow);

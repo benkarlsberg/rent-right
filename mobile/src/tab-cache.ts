@@ -1,6 +1,7 @@
 import { api } from "@/api";
 import {
   applyBootstrap,
+  bootstrapRequestPlan,
   clearTabMemory,
   needsBootstrap,
   tabGeneration,
@@ -9,15 +10,13 @@ import {
 } from "@/tab-store";
 
 const FRESH_MS = 60_000;
-const BOOTSTRAP_GAP_MS = 20_000;
 
 type Slot = { data: unknown; at: number };
 
 const slots = new Map<string, Slot>();
 const inflight = new Map<string, Promise<unknown>>();
-let bootstrapFlight: { userId: string; promise: Promise<void> } | null = null;
+let bootstrapFlight: { userId: string; generation: number; promise: Promise<void> } | null = null;
 let bootstrapSerial = 0;
-const bootstrapAttempt = new Map<string, number>();
 
 function cacheKey(token: string, path: string) {
   return `${userIdFromToken(token)}\0${path}`;
@@ -26,7 +25,6 @@ function cacheKey(token: string, path: string) {
 export function clearTabCache() {
   bootstrapSerial += 1;
   bootstrapFlight = null;
-  bootstrapAttempt.clear();
   slots.clear();
   inflight.clear();
   clearTabMemory();
@@ -43,15 +41,18 @@ export function prefetchTabs(token: string) {
 
 export function refreshBootstrap(token: string, force: boolean): Promise<void> {
   const userId = userIdFromToken(token);
-  if (!force && !needsBootstrap(token)) return Promise.resolve();
-  if (!force && bootstrapFlight?.userId === userId) return bootstrapFlight.promise;
-  if (!force) {
-    const previous = bootstrapAttempt.get(userId) ?? 0;
-    if (Date.now() - previous < BOOTSTRAP_GAP_MS) return Promise.resolve();
-  }
-  bootstrapAttempt.set(userId, Date.now());
+  const generation = tabGeneration();
+  const plan = bootstrapRequestPlan({
+    force,
+    stale: needsBootstrap(token),
+    flight: bootstrapFlight ? { userId: bootstrapFlight.userId, generation: bootstrapFlight.generation } : null,
+    userId,
+    generation,
+  });
+  if (plan === "skip") return Promise.resolve();
+  if (plan === "reuse" && bootstrapFlight) return bootstrapFlight.promise;
   const serial = ++bootstrapSerial;
-  const started = tabGeneration();
+  const started = generation;
   const promise = api<BootstrapBody>("bootstrap", { token })
     .then((body) => {
       if (serial !== bootstrapSerial) return;
@@ -60,7 +61,7 @@ export function refreshBootstrap(token: string, force: boolean): Promise<void> {
     .finally(() => {
       if (bootstrapFlight?.promise === promise) bootstrapFlight = null;
     });
-  bootstrapFlight = { userId, promise };
+  bootstrapFlight = { userId, generation: started, promise };
   return promise;
 }
 
