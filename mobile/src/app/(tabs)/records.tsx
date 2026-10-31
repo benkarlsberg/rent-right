@@ -8,7 +8,7 @@ import { Address } from "@/address";
 import { DeleteAccount } from "@/delete-account";
 import { saveAuthorizedFile } from "@/files";
 import { LanguageToggle } from "@/language-toggle";
-import { NextSteps, type StepItem } from "@/next-steps";
+import type { StepItem } from "@/next-steps";
 import { ResolvePanel } from "@/resolve-panel";
 import type { Me, Notice } from "@/session";
 import { useSession } from "@/session";
@@ -49,6 +49,7 @@ export type Records = {
     closed?: boolean;
     deletable?: boolean;
     legalNote?: string | null;
+    tenantNote?: string | null;
   }[];
   notes: { id: string; line: string; title: string; status: string; when: string; issue: string; message: string | null; preview?: string }[];
   hiddenNotes?: { id: string; line: string; title: string; status: string; when: string; issue: string; message: string | null; preview?: string }[];
@@ -174,7 +175,6 @@ export default function Records() {
   const [section, setSection] = useState<Segment>("issues");
   const [menu, setMenu] = useState(false);
   const [pendingLocale, setPendingLocale] = useState<"en" | "es" | null>(null);
-  const [held, setHeld] = useState("");
 
   const locale: "en" | "es" = pendingLocale ?? (me?.user.locale === "es" || (!me && data?.locale === "es") ? "es" : "en");
   const labels = data?.labels;
@@ -192,22 +192,6 @@ export default function Records() {
     } finally {
       setPendingLocale(null);
     }
-  }
-
-  function onStep(step: StepItem) {
-    if (step.action === "wait") {
-      setHeld(data?.steps.held || "Nothing was sent.");
-      return;
-    }
-    if (step.action === "followup" || step.action === "send" || step.href === "/landlord") {
-      router.push((step.href || "/landlord") as "/landlord");
-      return;
-    }
-    if (step.action === "export") {
-      void download();
-      return;
-    }
-    if (step.action === "small_claims" && step.href) void Linking.openURL(step.href);
   }
 
   async function download() {
@@ -417,16 +401,6 @@ export default function Records() {
         refreshControl={<RefreshControl refreshing={false} onRefresh={reload} tintColor={colors.pine} />}
       >
         {loading && !data && !error ? <TabLoading label={es ? "Cargando" : "Loading"} /> : null}
-        {data?.steps?.items?.length ? (
-          <NextSteps
-            title={data.steps.title}
-            steps={data.steps.items}
-            note={held}
-            moreLabel={labels?.seeAll || (es ? "Ver todos los pasos" : "See all steps")}
-            hideLabel={labels?.hide || (es ? "Ocultar" : "Hide")}
-            onAction={onStep}
-          />
-        ) : null}
         {section === "issues" ? (
           <View>
             {removedNote ? <Text style={styles.note}>{removedNote}</Text> : null}

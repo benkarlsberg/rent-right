@@ -7,7 +7,7 @@ import { runChatTurn } from "@/lib/chat-turn";
 import { landlordSaysFixed, resolveRepair, reopenRepair } from "@/lib/issues";
 import { handlePhone } from "@/lib/phone-api";
 import { packetLines } from "@/lib/packet";
-import { recordLog } from "@/lib/workflow";
+import { emailLandlord, recordLog } from "@/lib/workflow";
 
 const auth = vi.hoisted(() => ({ authorization: "" }));
 
@@ -73,6 +73,14 @@ describe("resolving a request", () => {
       entryAt: null,
       noticeAt: null,
       createdAt: "2026-10-01T18:00:00.000Z",
+    });
+    expect((await listDeadlines(user.id, unit.id)).some((item) => item.sourceId === entry.id)).toBe(false);
+    await emailLandlord({
+      user,
+      unit,
+      logEntryId: entry.id,
+      subject: "Repair request",
+      tenantText: "The kitchen sink is leaking.",
     });
     const open = await listDeadlines(user.id, unit.id);
     const reminder = open.find((item) => item.sourceId === entry.id);

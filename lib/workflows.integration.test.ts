@@ -50,6 +50,13 @@ function repairSaveAction(payload: Record<string, unknown> | null): string {
   return "";
 }
 
+async function sendOpenDraft(token: string) {
+  const chat = await api("GET", "chat", undefined, token);
+  const draft = (chat.json?.items as { id: string; draft?: boolean }[] | undefined)?.find((item) => item.draft);
+  if (!draft?.id) return chat;
+  return api("POST", "chat/draft/send", { id: draft.id }, token);
+}
+
 async function saveRepair(token: string, text: string, tier?: "routine" | "urgent") {
   const opened = await api("POST", "thread", { text }, token);
   const action = repairSaveAction(opened.json);
@@ -107,15 +114,20 @@ describe("renter workflows", () => {
 
     const repair = await saveRepair(token, "The kitchen sink is leaking under the cabinet");
     expect(repair.saved.status).toBe(200);
-    const items = repair.saved.json?.items as { status?: string; action?: { id: string } | null; headline?: string }[];
-    const waiting = items.find((item) => item.action?.id.startsWith("send:"));
+    const items = repair.saved.json?.items as { status?: string; action?: { id: string } | null; actions?: { id: string }[]; headline?: string }[];
+    const waiting = items.find((item) => item.headline === "Repair logged");
     expect(waiting?.status).toBe("Not sent");
-    const draftId = waiting!.action!.id.slice("send:".length);
+    expect(waiting?.action?.id.startsWith("review-send:") || waiting?.actions?.some((action) => action.id.startsWith("review-send:"))).toBe(true);
+    const reviewId = waiting?.action?.id.startsWith("review-send:")
+      ? waiting.action.id.slice("review-send:".length)
+      : waiting?.actions?.find((action) => action.id.startsWith("review-send:"))?.id.slice("review-send:".length);
 
-    const confirmed = await api("POST", "thread", { action: "send", draftId }, token);
+    const confirmed = await api("POST", "chat/draft/send", { id: reviewId }, token);
     expect(confirmed.status).toBe(200);
-    const sentCard = (confirmed.json?.items as { headline?: string; status?: string }[]).find((item) => item.headline === "Landlord email");
-    expect(sentCard?.status).toBe("Saved");
+    const again = await api("GET", "thread", undefined, token);
+    const sentCard = (again.json?.items as { headline?: string; status?: string; actions?: { id: string }[] }[]).find((item) => item.headline === "Repair logged");
+    expect(sentCard?.status).toBe("Sent");
+    expect(sentCard?.actions?.some((action) => action.id === "add-landlord" || action.id.startsWith("review-send:"))).toBe(false);
 
     const mail = await api("GET", "chat", undefined, token);
     const bubble = (mail.json?.items as { text: string; status: string }[]).find((item) => item.text.includes("leaking"));
@@ -416,6 +428,9 @@ describe("renter workflows", () => {
     const threadSteps = (logged.saved.json?.steps as { items: { action: string }[] }).items.map((item) => item.action);
     expect(threadSteps).toContain("send");
     expect(threadSteps).not.toContain("followup");
+    const beforeSend = await api("GET", "records", undefined, token);
+    expect((beforeSend.json?.deadlines as { kind: string }[]).some((item) => item.kind === "repair")).toBe(false);
+    expect((await sendOpenDraft(token)).status).toBe(200);
 
     const records = await api("GET", "records", undefined, token);
     const cards = records.json?.deadlines as { id: string; kind: string; title: string; due: string | null; reminder: string | null }[];
@@ -478,6 +493,7 @@ describe("renter workflows", () => {
     }, token);
     const today = todayISO();
     await saveRepair(token, "My sink is leaking");
+    expect((await sendOpenDraft(token)).status).toBe(200);
     await api("POST", "records/reminder/new", { label: "Call about the sink", date: today }, token);
     await api("POST", "deposit", { amount: "1500", moveOutDate: addDays(today, -21) }, token);
     await api("POST", "log", {
@@ -661,10 +677,6 @@ describe("renter workflows", () => {
 
     const logged = await saveRepair(token, "My sink is leaking");
     expect(logged.saved.status).toBe(200);
-    const records = await api("GET", "records", undefined, token);
-    const repair = (records.json?.deadlines as { id: string; kind: string }[]).find((item) => item.kind === "repair");
-    expect(repair?.id).toBeTruthy();
-    const beforeDue = await getSql()<{ due: string }[]>`select due_date::text as due from deadlines where id = ${repair!.id}`;
 
     const sent = await api("POST", "chat", { text: "The sink is still leaking." }, token);
     expect(sent.status).toBe(200);
@@ -683,6 +695,11 @@ describe("renter workflows", () => {
       order by m.delivery_status
     `;
     expect(beforeStatus.map((row) => row.delivery_status)).toEqual(["draft", "local_only"]);
+    expect((await sendOpenDraft(token)).status).toBe(200);
+    const records = await api("GET", "records", undefined, token);
+    const repair = (records.json?.deadlines as { id: string; kind: string }[]).find((item) => item.kind === "repair");
+    expect(repair?.id).toBeTruthy();
+    const beforeDue = await getSql()<{ due: string }[]>`select due_date::text as due from deadlines where id = ${repair!.id}`;
 
     const opened = await api("GET", "residence", undefined, token);
     expect(opened.status).toBe(200);
@@ -1198,6 +1215,9 @@ describe("renter workflows", () => {
     const open = await api("GET", "records", undefined, token);
     const issue = (open.json?.issues as { id: string; tier?: string }[])[0];
     expect(issue?.tier).toBe("urgent");
+    const beforeFollowUp = await getSql()<{ n: number }[]>`select count(*)::int as n from deadlines where unit_id = ${unitId} and kind = 'repair' and status = 'open'`;
+    expect(beforeFollowUp[0]?.n).toBe(0);
+    expect((await sendOpenDraft(token)).status).toBe(200);
     const urgentDue = await getSql()<{ due: string }[]>`select due_date::text as due from deadlines where unit_id = ${unitId} and kind = 'repair' and status = 'open'`;
     expect(urgentDue[0]?.due).toBeTruthy();
 

@@ -34,6 +34,7 @@ describe("records view", () => {
     expect(card.closed).toBe(false);
     expect(card.title).not.toMatch(/Landlord's deadline to respond/);
     expect(card.owes).toMatch(/does not decide that the landlord must answer/);
+    expect(card.tenantNote).toBe("Reminder for you. Nothing is sent to your landlord.");
     expect(card.due).toBe("Due Oct 30, 2026 · in 7 days");
     expect(card.started).toBe("You logged this on Oct 23, 2026.");
     expect(card.learnMore).toMatch(/CA-CC-1942/);

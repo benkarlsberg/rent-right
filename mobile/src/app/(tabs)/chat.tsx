@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { FlatList, Image, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { FlatList, Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/api";
 import { Address } from "@/address";
@@ -12,10 +12,10 @@ import { Logo } from "@/logo";
 import { colors } from "@/theme";
 import { ErrorLine, clipX, wrapMarker, wrapText } from "@/ui";
 import { useLoad } from "@/use-load";
-import { NextSteps, type StepItem } from "@/next-steps";
 import { asksForName, NamePrompt } from "@/name-prompt";
 import * as ImagePicker from "expo-image-picker";
 import { PhotoThumb } from "@/photo-thumb";
+import type { StepItem } from "@/next-steps";
 
 type Action = { id: string; label: string };
 type RepairPhoto = { key?: string; fileId?: string; photoId?: string; name: string; mime?: string; base64?: string; preview?: string };
@@ -103,7 +103,6 @@ export default function AssistantChat() {
   const [pickingIssue, setPickingIssue] = useState(false);
   const [account, setAccount] = useState(false);
   const [confirm, setConfirm] = useState<"new" | "clear" | null>(null);
-  const [held, setHeld] = useState("");
   const [pending, setPending] = useState<PendingSend | null>(null);
   const [retryNote, setRetryNote] = useState("");
   const lock = useRef(false);
@@ -234,6 +233,10 @@ export default function AssistantChat() {
     }
     if (action.id === "letter") {
       await send("", { action: "letter" });
+      return;
+    }
+    if (action.id.startsWith("review-send:")) {
+      router.push({ pathname: "/landlord", params: { draft: action.id.slice("review-send:".length) } });
       return;
     }
     if (action.id.startsWith("send:")) {
@@ -378,30 +381,6 @@ export default function AssistantChat() {
                 <View style={styles.retry} accessibilityRole="text" accessibilityLiveRegion="polite">
                   <Text style={styles.support}>{retryNote}</Text>
                 </View>
-              ) : null}
-              {data?.steps?.items?.length ? (
-            <NextSteps
-              title={data.steps.title}
-              steps={data.steps.items}
-              note={held}
-              moreLabel={spanish ? "Ver todos los pasos" : "See all steps"}
-              hideLabel={spanish ? "Ocultar" : "Hide"}
-              onAction={(step) => {
-                if (step.action === "wait") {
-                  setHeld(data.steps?.held || "Nothing was sent.");
-                  return;
-                }
-                if (step.action === "followup" || step.action === "send" || step.href === "/landlord") {
-                  router.push((step.href || "/landlord") as "/landlord");
-                  return;
-                }
-                if (step.action === "export") {
-                  void onAction({ id: "download-packet", label: step.button });
-                  return;
-                }
-                if (step.action === "small_claims" && step.href) void Linking.openURL(step.href);
-              }}
-            />
               ) : null}
             </View>
           )}
@@ -658,8 +637,8 @@ const styles = StyleSheet.create({
   action: { marginTop: 12, backgroundColor: colors.pine, borderRadius: 14, minHeight: 48, alignItems: "center", justifyContent: "center", paddingHorizontal: 18 },
   actionText: { color: "white", fontSize: 17, fontWeight: "700" },
   suggest: { marginTop: 10, backgroundColor: colors.paper, borderRadius: 14, borderWidth: 1, borderColor: colors.line, minHeight: 48, justifyContent: "center", paddingHorizontal: 16 },
-  suggestText: { fontSize: 16, color: colors.ink, fontWeight: "600" },
-  cancel: { marginTop: 8, minHeight: 44, justifyContent: "center", paddingHorizontal: 4 },
+  suggestText: { fontSize: 16, color: colors.ink, fontWeight: "600", textAlign: "center" },
+  cancel: { marginTop: 8, minHeight: 48, alignItems: "center", justifyContent: "center", paddingHorizontal: 18, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.paper },
   urgent: { color: colors.bad, fontSize: 15, lineHeight: 20, fontWeight: "700", marginTop: 6 },
   flag: { ...wrapText, color: colors.ink, fontSize: 15, lineHeight: 20, fontWeight: "700", marginTop: 6 },
   note: { color: colors.pine, fontSize: 14, fontWeight: "700", marginTop: 12 },

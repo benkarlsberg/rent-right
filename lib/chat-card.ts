@@ -1,4 +1,6 @@
 import type { AddressParts } from "@/lib/address-format";
+import type { Locale } from "@/lib/disclaimer";
+import { tx } from "@/lib/text";
 
 export type ChatAction = { id: string; label: string };
 
@@ -70,6 +72,35 @@ export function chatTurnShowsSteps(rows: { role: string; content: string }[], is
 
 export function serializeCard(card: ChatCard): string {
   return JSON.stringify({ v: 1, ...card });
+}
+
+export type RepairMail = { logId: string; draftId: string | null; sent: boolean };
+
+/** The logged-repair card keeps its Undo button and follows the landlord and send state. */
+export function alignLoggedRepair(card: ChatCard, input: {
+  locale: Locale;
+  landlordReady: boolean;
+  mail: RepairMail | null;
+}): ChatCard {
+  const undo = (card.actions || []).find((action) => action.id.startsWith("repair-undo:"));
+  const sendable = (action: { id: string } | null | undefined) => Boolean(
+    action && (action.id === "add-landlord" || action.id.startsWith("send:") || action.id.startsWith("review-send:")),
+  );
+  if (!undo || (!sendable(card.action) && !(card.actions || []).some((action) => sendable(action)))) return card;
+  if (input.mail?.sent) {
+    return {
+      ...card,
+      status: tx(input.locale, "Sent", "Enviado"),
+      action: null,
+      actions: [undo],
+    };
+  }
+  const review = tx(input.locale, "Review & send", "Revisar y enviar");
+  const add = tx(input.locale, "Add landlord", "Agregar propietario");
+  const primary = input.landlordReady
+    ? { id: input.mail?.draftId ? `review-send:${input.mail.draftId}` : "open-landlord", label: review }
+    : { id: "add-landlord", label: add };
+  return { ...card, action: primary, actions: [primary, undo] };
 }
 
 /** A confirmed send replaces the waiting card. Any other stored card stays as it is. */

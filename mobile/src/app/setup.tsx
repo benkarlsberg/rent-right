@@ -8,6 +8,7 @@ import { setSkippedSetup } from "@/setup-later";
 import { refreshBootstrap } from "@/tab-cache";
 import { colors } from "@/theme";
 import { Address, LabeledAddress } from "@/address";
+import { backAction } from "@/back-nav";
 import { Button, ErrorLine, Field, H1, Muted, Page } from "@/ui";
 
 type Suggestion = { label: string; street: string; city: string; region: string; postalCode: string; unit?: string };
@@ -96,7 +97,35 @@ export default function Setup() {
     setStep(1);
   }
 
-  async function later() {
+  function leaveFlow() {
+    let canGoBack = false;
+    try { canGoBack = router.canGoBack(); } catch { canGoBack = false; }
+    const action = backAction({ path: "/setup", canGoBack, reloaded: false });
+    if (action.kind === "back") router.back();
+    else router.replace(action.href);
+  }
+
+  function back() {
+    setError("");
+    setOffer(null);
+    if (step === 0) {
+      leaveFlow();
+      return;
+    }
+    setStep(step - 1);
+  }
+
+  function later() {
+    setError("");
+    setOffer(null);
+    if (step < STEPS - 1) {
+      setStep(step + 1);
+      return;
+    }
+    void finishLater();
+  }
+
+  async function finishLater() {
     const zip = postalCode.trim();
     const addressReady = Boolean(street.trim() && city.trim() && usZip(zip));
     if (!addressReady || !token) {
@@ -228,7 +257,7 @@ export default function Setup() {
   const action = step === 3 ? (es ? "Guardar" : "Save") : (es ? "Continuar" : "Continue");
 
   return (
-    <Page>
+    <Page onBack={back}>
       <Muted>{es ? `Paso ${step + 1} de ${STEPS}` : `Step ${step + 1} of ${STEPS}`}</Muted>
       <H1>{titles[step]}</H1>
       <Muted>{hints[step]}</Muted>

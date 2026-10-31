@@ -11,6 +11,7 @@ import {
   countLeaseReviewsThisMonth,
   countOutboundSince,
   findCachedReview,
+  getLog,
   getUser,
   assertWritable,
   insertDeadline,
@@ -34,23 +35,21 @@ import {
   type User,
 } from "@/lib/db";
 import { landlordMessageBody, sendRelayEmail } from "@/lib/email";
-import { repairOpening } from "@/lib/repair-draft";
+import { ensureRepairDeadline, repairOpening } from "@/lib/repair-draft";
 import { mailHeader, outboundSubject, REPLY_LINE, requireTenantMail } from "@/lib/tenant-mail";
 import { isBrandAsset, photoFilename, rejectPhotoSet } from "@/lib/message-photos";
 import { messageParagraphs, renderMail } from "@/lib/email-template";
 import { lettersForPeople, type ReminderMailItem } from "@/lib/reminder-mail";
 import { LIBRARY_VERSION, type Locale } from "@/lib/disclaimer";
-import { isIssueTier, reminderPace, tierForSeverity } from "@/lib/triage";
+import { isIssueTier, tierForSeverity } from "@/lib/triage";
 import { LEASE_REVIEW_MONTHLY_CAP, mergeModelFindings, redactPii, reviewLease, type ModelFinding } from "@/lib/lease/review";
 import { RULES } from "@/lib/rules/library";
 import {
   depositReturnDeadline,
   entryNoticeCheck,
   pendingReminderSlots,
-  repairReminder,
   retaliationWindow,
   threeDayNoticeDeadline,
-  type RepairSeverity,
 } from "@/lib/rules/engine";
 import { isSampleAccount } from "@/lib/sample";
 import { reviewerEmail } from "@/lib/reviewer";
@@ -132,23 +131,6 @@ export async function recordLog(input: {
     eventDate: input.eventDate,
     createdAt: input.createdAt,
   });
-
-  if (covered && input.type === "repair" && input.severity) {
-    const reminder = repairReminder(input.eventDate, input.severity as RepairSeverity, reminderPace(tier, input.severity));
-    await insertDeadline({
-      unitId: input.unit.id,
-      ruleId: reminder.ruleId,
-      kind: "repair",
-      anchorDate: input.eventDate,
-      dueDate: reminder.dueDate,
-      explanation: reminder.explanation,
-      explanationEs: reminder.explanationEs,
-      computation: reminder.computation,
-      sourceId: entry.id,
-      status: "open",
-      unsure: reminder.unsure,
-    });
-  }
 
   if (covered && input.noticeKind === "pay_or_quit_3day") {
     const counted = threeDayNoticeDeadline(input.eventDate);
@@ -275,6 +257,17 @@ export async function emailLandlord(input: {
   tenantText: string;
   photos?: OutgoingPhoto[];
 }) {
+  const mailed = async (status: string) => {
+    if (status !== "failed" && input.logEntryId) {
+      try {
+        const entry = await getLog(input.user.id, input.logEntryId);
+        await ensureRepairDeadline(input.user, input.unit, entry);
+      } catch {
+        // The note is already recorded. The follow-up can be filled in on the next open.
+      }
+    }
+    return status;
+  };
   assertWritable(input.unit, input.user.locale);
   if (!input.unit.landlordEmail) {
     throw new Error("Add the landlord's email on your unit before sending.");
@@ -308,7 +301,7 @@ export async function emailLandlord(input: {
         : "This review home does not email a landlord.",
     });
     await persistPhotos(input.user, input.unit, messageId, input.logEntryId, photos);
-    return "local_only";
+    return mailed("local_only");
   }
   if (await isBlocked(input.unit.id)) {
     const messageId = await storeLandlordMail({
@@ -319,7 +312,7 @@ export async function emailLandlord(input: {
       deliveryDetail: "The landlord blocked later mail. Print a letter and mail it yourself.",
     });
     await persistPhotos(input.user, input.unit, messageId, input.logEntryId, photos);
-    return "blocked";
+    return mailed("blocked");
   }
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   if (await countOutboundSince(input.unit.id, since) >= EMAIL_DAILY_CAP) {
@@ -328,7 +321,7 @@ export async function emailLandlord(input: {
   let claimed = false;
   if (input.existingId) {
     const claim = await claimDraftSend(input.user.id, input.existingId);
-    if (claim.action === "done") return claim.status;
+    if (claim.action === "done") return mailed(claim.status);
     claimed = true;
   }
   const token = randomToken();
@@ -390,7 +383,7 @@ export async function emailLandlord(input: {
           responseToken: token,
         }).catch(() => {});
       }
-      return sent.status;
+      return mailed(sent.status);
     }
     throw error;
   }
@@ -399,7 +392,7 @@ export async function emailLandlord(input: {
   } catch {
     // The message is already marked. A photo link can be repaired on the next open.
   }
-  return sent.status;
+  return mailed(sent.status);
 }
 
 export async function saveDepositAndDeadline(user: User, unit: Unit, input: {

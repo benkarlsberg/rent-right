@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chatTurnShowsSteps, flagCard, parseCard, replyShowsNotice, serializeCard } from "@/lib/chat-card";
+import { alignLoggedRepair, chatTurnShowsSteps, flagCard, parseCard, replyShowsNotice, serializeCard } from "@/lib/chat-card";
 
 const base = {
   headline: "What's broken?",
@@ -23,6 +23,38 @@ describe("reply notice", () => {
     const cited = flagCard({ ...base, headline: "Repair logged", status: "Not sent", ruleId: "CA-CC-1941" }, "cited-issue");
     expect(replyShowsNotice(cited)).toBe(true);
     expect(cited.showSteps).toBe(true);
+  });
+});
+
+describe("logged repair card", () => {
+  const undo = { id: "repair-undo:log1", label: "Undo" };
+  const logged = {
+    headline: "Repair logged",
+    status: "Not sent",
+    action: { id: "add-landlord", label: "Add landlord" },
+    actions: [{ id: "add-landlord", label: "Add landlord" }, undo],
+    detail: "Add your landlord.",
+    ruleId: "CA-CC-1942",
+  };
+
+  it("asks to review the draft once a landlord exists, and shows Sent after the request goes out", () => {
+    const ready = alignLoggedRepair(logged, {
+      locale: "en",
+      landlordReady: true,
+      mail: { logId: "log1", draftId: "msg-1", sent: false },
+    });
+    expect(ready.action).toEqual({ id: "review-send:msg-1", label: "Review & send" });
+    expect(ready.actions?.map((action) => action.label)).toEqual(["Review & send", "Undo"]);
+    expect(ready.status).toBe("Not sent");
+
+    const sent = alignLoggedRepair(logged, {
+      locale: "en",
+      landlordReady: true,
+      mail: { logId: "log1", draftId: null, sent: true },
+    });
+    expect(sent.status).toBe("Sent");
+    expect(sent.action).toBeNull();
+    expect(sent.actions).toEqual([undo]);
   });
 });
 

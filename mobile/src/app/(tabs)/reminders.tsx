@@ -258,6 +258,7 @@ export default function Reminders() {
                 <View style={styles.rowText}>
                   <Text style={styles.cardTitle}>{card.title}</Text>
                   {line ? <Text style={styles.when}>{line}</Text> : null}
+                  {card.tenantNote ? <Text style={styles.body}>{card.tenantNote}</Text> : null}
                 </View>
                 <View style={styles.chip}>
                   <Text style={styles.chipText}>{card.status}</Text>

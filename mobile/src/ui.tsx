@@ -66,12 +66,16 @@ function stackCanGoBack(): boolean {
   }
 }
 
-export function BackBar() {
+export function BackBar({ onBack }: { onBack?: () => void }) {
   const path = usePathname();
   const spanish = useSession().me?.user.locale === "es";
   const label = spanish ? "Atrás" : "Back";
 
   function leave() {
+    if (onBack) {
+      onBack();
+      return;
+    }
     const action = backAction({ path, canGoBack: stackCanGoBack(), reloaded: pageWasReloaded() });
     if (action.kind === "back") router.back();
     else router.replace(action.href);
@@ -80,13 +84,17 @@ export function BackBar() {
   useEffect(() => {
     if (Platform.OS !== "android") return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (onBack) {
+        onBack();
+        return true;
+      }
       const action = backAction({ path, canGoBack: stackCanGoBack(), reloaded: false });
       if (action.kind === "back") return false;
       router.replace(action.href);
       return true;
     });
     return () => sub.remove();
-  }, [path]);
+  }, [onBack, path]);
 
   return (
     <Pressable
@@ -101,10 +109,10 @@ export function BackBar() {
   );
 }
 
-export function Page({ children, onRefresh, scrollRef }: { children: React.ReactNode; onRefresh?: () => void; scrollRef?: Ref<ScrollView> }) {
+export function Page({ children, onRefresh, scrollRef, onBack }: { children: React.ReactNode; onRefresh?: () => void; scrollRef?: Ref<ScrollView>; onBack?: () => void }) {
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
-      <BackBar />
+      <BackBar onBack={onBack} />
       <ScrollView ref={scrollRef} style={clipX} contentContainerStyle={styles.page} refreshControl={onRefresh ? <RefreshControl refreshing={false} onRefresh={onRefresh} tintColor={colors.pine} /> : undefined}>
         {children}
       </ScrollView>

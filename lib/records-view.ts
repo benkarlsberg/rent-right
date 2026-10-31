@@ -59,6 +59,7 @@ export type DeadlineCard = {
   closed: boolean;
   deletable: boolean;
   legalNote: string | null;
+  tenantNote: string | null;
 };
 
 export type LogCard = {
@@ -218,6 +219,9 @@ function cardFor(item: DeadlineInput, log: LogInput | null, locale: Locale, toda
             ? tx(locale, "Dismissed", "Descartado")
             : tx(locale, "Open", "Abierto");
   const deletable = item.kind === "custom_reminder" || item.kind === "repair";
+  const tenantNote = deletable
+    ? tx(locale, "Reminder for you. Nothing is sent to your landlord.", "Recordatorio para usted. No se envía nada a su propietario.")
+    : null;
   return {
     id: item.id,
     kind: item.kind,
@@ -233,6 +237,7 @@ function cardFor(item: DeadlineInput, log: LogInput | null, locale: Locale, toda
     sortOn: item.dueDate || item.tenantReminderOn || "",
     closed: item.status === "done" || item.status === "resolved" || item.status === "replaced" || item.status === "deleted" || item.status === "dismissed",
     deletable,
+    tenantNote,
     legalNote: deletable
       ? null
       : tx(

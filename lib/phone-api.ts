@@ -103,7 +103,7 @@ import { reviewerEmail, reviewerMatch } from "@/lib/reviewer";
 import { DEMO_EMAIL, startReviewerTenancy, startSampleTenancy } from "@/lib/seed";
 import { NATIVE_GOOGLE_REDIRECT, startGoogleSignIn, userFromAppleIdToken, userFromGoogleCode } from "@/lib/supabase-auth";
 import { appUrl, relayAddress, tx } from "@/lib/text";
-import { chatTurnShowsSteps, parseCard, replyShowsNotice } from "@/lib/chat-card";
+import { alignLoggedRepair, chatTurnShowsSteps, parseCard, replyShowsNotice } from "@/lib/chat-card";
 import { inboundDisplay, EMPTY_REPLY } from "@/email/plain";
 import { isResponseNote, landlordBubble, refileResponseNotes, settleQuotedInbound } from "@/lib/inbound-reply";
 import { describeTenantMail, outboundSubject, REPLY_LINE, senderForCard } from "@/lib/tenant-mail";
@@ -1410,12 +1410,32 @@ function emptyThread(user: User, rows: ListedAssistant[] = []) {
   };
 }
 
-function presentThread(user: User, unit: Unit, rows: ListedAssistant[], steps: { title: string; held: string; items: unknown[] }, issueTitles: string[] = [], issues: { id: string; title: string }[] = []) {
+function repairMailIndex(messages: { id: string; logEntryId: string | null; direction: string; deliveryStatus: string }[]) {
+  const byLog = new Map<string, { logId: string; draftId: string | null; sent: boolean }>();
+  for (const message of messages) {
+    if (message.direction !== "outbound" || !message.logEntryId) continue;
+    const row = byLog.get(message.logEntryId) || { logId: message.logEntryId, draftId: null, sent: false };
+    if (message.deliveryStatus === "draft") row.draftId = message.id;
+    if (confirmedOutbound(message.deliveryStatus)) row.sent = true;
+    byLog.set(message.logEntryId, row);
+  }
+  return [...byLog.values()];
+}
+
+function presentThread(user: User, unit: Unit, rows: ListedAssistant[], steps: { title: string; held: string; items: unknown[] }, issueTitles: string[] = [], issues: { id: string; title: string }[] = [], repairMail: { logId: string; draftId: string | null; sent: boolean }[] = []) {
   const locale = user.locale;
+  const mailByLog = new Map(repairMail.map((item) => [item.logId, item]));
   const items = threadItems(locale, rows).map((item) => {
-    if (item.role !== "card" || typeof item.sender !== "string") return item;
-    const sender = senderForCard(user, unit, item.sender);
-    return sender === item.sender ? item : { ...item, sender };
+    if (item.role !== "card") return item;
+    let next = item;
+    if (typeof next.sender === "string") {
+      const sender = senderForCard(user, unit, next.sender);
+      if (sender !== next.sender) next = { ...next, sender };
+    }
+    const undo = next.actions?.find((action) => action.id.startsWith("repair-undo:"));
+    const mail = undo ? mailByLog.get(undo.id.slice("repair-undo:".length)) || null : null;
+    const aligned = alignLoggedRepair(next, { locale, landlordReady: landlordReady(unit), mail });
+    return { ...next, status: aligned.status, action: aligned.action, actions: aligned.actions };
   });
   const visibleSteps = chatTurnShowsSteps(rows, issueTitles) ? steps : { ...steps, items: [] };
   return {
@@ -1446,7 +1466,7 @@ async function threadPayload() {
   ]);
   const issues = bundle.issues.map((issue) => ({ id: issue.id, title: issue.title }));
   return {
-    ...presentThread(user, unit, rows, bundle.steps, issues.map((issue) => issue.title), issues),
+    ...presentThread(user, unit, rows, bundle.steps, issues.map((issue) => issue.title), issues, bundle.repairMail),
     library: photos.map((photo) => ({ id: photo.id, fileId: photo.fileId, name: photo.name || photo.caption || "photo.jpg" })),
   };
 }
@@ -1664,6 +1684,7 @@ function presentRecords(user: User, unit: Unit, loaded: HomeRows, photos: Awaite
           if (item.action !== "send" && item.action !== "followup" && item.action !== "export") return item;
           return {
             ...item,
+            title: item.action === "send" ? tx(locale, "Add your landlord", "Agregue a su propietario") : item.title,
             button: addLandlordLabel(locale),
             href: "/landlord",
             detail: item.action === "export"
@@ -1680,6 +1701,7 @@ function presentRecords(user: User, unit: Unit, loaded: HomeRows, photos: Awaite
       return { ...planned, items: planned.items.filter((item) => item.action === "export" || item.action === "small_claims") };
     })(),
     reviews,
+    repairMail: repairMailIndex(messages),
     labels: recordsLabels(locale),
     reminderNote: reminderNote(mail, locale),
     reminderMail: mail,
@@ -1791,6 +1813,7 @@ async function bootstrapPayload() {
       threadBundle.steps,
       threadBundle.issues.map((issue) => issue.title),
       threadBundle.issues.map((issue) => ({ id: issue.id, title: issue.title })),
+      threadBundle.repairMail,
     ),
     chat: presentChat(
       user,

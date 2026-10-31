@@ -1099,9 +1099,11 @@ async function commitRepair(user: User, unit: Unit, summary: string, description
       ? photoPrompt(severity, user.locale)
       : tx(user.locale, "Want to add photos? Send them in your next message and I'll attach them to this issue.", "¿Quiere agregar fotos? Envíelas en su próximo mensaje y las adjuntaré a este problema.");
   const undo = { id: `repair-undo:${entry.id}`, label: tx(user.locale, "Undo", "Deshacer") };
-  const send = landlordReady(unit)
-    ? { id: `send:${draft.id}`, label: tx(user.locale, "Send to landlord", "Enviar al propietario") }
-    : { id: "add-landlord", label: addLandlordLabel(user.locale) };
+  const send = !landlordReady(unit)
+    ? { id: "add-landlord", label: addLandlordLabel(user.locale) }
+    : letter
+      ? { id: `review-send:${letter.id}`, label: tx(user.locale, "Review & send", "Revisar y enviar") }
+      : { id: `send:${draft.id}`, label: tx(user.locale, "Review & send", "Revisar y enviar") };
   const messageId = await say(user, unit, {
     headline: tx(user.locale, "Repair logged", "Reparación anotada"),
     status: tx(user.locale, "Not sent", "No enviado"),
