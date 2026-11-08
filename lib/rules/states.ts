@@ -230,8 +230,8 @@ export function stateRepair(state: AddedState, requestDate: string, severity: Re
       citation: cites[1],
       unsure: true,
       computation: `Receipt ${requestDate}. ${clock.label}. No calendar date was stored because the statute uses hours and the time of receipt was not entered.`,
-      explanation: `${cites[1]} uses ${clock.label}. The date you entered is ${requestDate}, without a time of receipt, so Rent Right did not turn that into a calendar day. A tenant follow-up reminder is separate from this statutory period. Checked ${CHECKED}. This does not decide that the condition is the landlord's duty.`,
-      explanationEs: `${cites[1]} usa ${clock.labelEs}. La fecha anotada es ${requestDate}, sin la hora en que se recibió el aviso, así que Rent Right no la convirtió en un día calendario. Un recordatorio de seguimiento es distinto de este plazo de la ley. Revisado el ${CHECKED_ES}. No decide que la condición sea deber del propietario.`,
+      explanation: `${cites[1]} uses ${clock.label}. The date you entered is ${requestDate}, without a time of receipt, so Rent Right did not turn that into a calendar day. This is the statute's response period after a written notice is received. It is not permission to withhold rent, repair and deduct, or end the tenancy. Those remedies have separate conditions in the same chapter. A personal follow-up reminder is separate from this period. Checked ${CHECKED}. This does not decide that the condition is the landlord's duty.`,
+      explanationEs: `${cites[1]} usa ${clock.labelEs}. La fecha anotada es ${requestDate}, sin la hora en que se recibió el aviso, así que Rent Right no la convirtió en un día calendario. Este es el plazo de respuesta de la ley después de que se recibe un aviso escrito. No autoriza retener la renta, reparar y descontar, ni terminar el arrendamiento. Esos remedios tienen condiciones aparte. Un recordatorio personal es distinto. Revisado el ${CHECKED_ES}.`,
     };
   }
   const due = addDays(requestDate, clock.days || 0);
@@ -241,8 +241,8 @@ export function stateRepair(state: AddedState, requestDate: string, severity: Re
     citation: cites[1],
     unsure: false,
     computation: `Receipt ${requestDate} + ${clock.days} calendar days = ${due}. The receipt day was not counted. Weekends were not skipped.`,
-    explanation: `${cites[1]}: ${clock.label}. Counted from the notice-receipt date you entered (${requestDate}), that is ${due}. If the notice was only sent that day and not yet received, this date is early. Mailed notice in Oregon can add three days under ORS 90.155, and that was not added because delivery method was not entered. This statutory period is not a personal follow-up reminder. Checked ${CHECKED}.`,
-    explanationEs: `${cites[1]}: ${clock.labelEs}. Contado desde la fecha en que anotó que se recibió el aviso (${requestDate}), es ${due}. Si ese día solo se envió y aún no se recibió, esta fecha es demasiado pronto. Un aviso por correo en Oregón puede sumar tres días según ORS 90.155, y eso no se sumó porque no se anotó la forma de entrega. Este plazo de la ley no es un recordatorio personal. Revisado el ${CHECKED_ES}.`,
+      explanation: `${cites[1]}: ${clock.label}. Counted from the notice-receipt date you entered (${requestDate}), that is ${due}. If the notice was only sent that day and not yet received, this date is early. Mailed notice in Oregon can add three days under ORS 90.155, and that was not added because delivery method was not entered. This date is not permission to withhold rent, repair and deduct, or end the tenancy. Those steps have separate conditions. A personal follow-up reminder is separate from this statutory period. Checked ${CHECKED}.`,
+      explanationEs: `${cites[1]}: ${clock.labelEs}. Contado desde la fecha en que anotó que se recibió el aviso (${requestDate}), es ${due}. Si ese día solo se envió y aún no se recibió, esta fecha es demasiado pronto. Un aviso por correo en Oregón puede sumar tres días según ORS 90.155, y eso no se sumó porque no se anotó la forma de entrega. Esta fecha no autoriza retener la renta, reparar y descontar, ni terminar el arrendamiento. Un recordatorio personal es distinto. Revisado el ${CHECKED_ES}.`,
   };
 }
 
@@ -312,6 +312,8 @@ export function stateRentAnswer(input: {
   weekToWeek: boolean;
   firstYear: boolean | null;
   claimsExemption: boolean;
+  /** Ordinary rented dwelling, a lot for a home the tenant owns, or not yet known. */
+  homeKind?: "dwelling" | "manufactured_lot" | "unknown";
 }): StateRentAnswer {
   const ppm = increasePpm(input.lowestCents, input.proposedCents);
   const percent = (ppm / 10_000).toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
@@ -322,8 +324,8 @@ export function stateRentAnswer(input: {
       headlineEs: "Aumento de renta en Arizona",
       ruleId: "AZ-ARS-33-1314",
       abovePublishedMax: false,
-      detailEn: `The increase from the amounts entered is about ${percent}%. A.R.S. § 33-1314, as opened on azleg.gov on ${CHECKED}, lets a rental agreement set the rent and does not state a statewide percentage cap or a statewide notice period for a dwelling under chapter 10. A.R.S. § 33-1329 preempts city and town rent control on most private housing and was opened the same day. The 90-day notice in § 33-1413 is in the mobile-home chapter and was not applied. No cap was checked. The lease may still require notice.`,
-      detailEs: `El aumento con los montos anotados es de alrededor del ${percent}%. La sección 33-1314, abierta en azleg.gov el ${CHECKED_ES}, permite que el contrato fije la renta y no establece un tope estatal ni un plazo estatal de aviso para una vivienda del capítulo 10. La sección 33-1329 limita el control de renta de ciudades. El aviso de 90 días de la sección 33-1413 es del capítulo de casas móviles y no se aplicó. No se revisó un tope.`,
+      detailEn: `The increase from the amounts entered is about ${percent}%. A.R.S. § 33-1314 lets the rental agreement set the rent. The sections opened on ${CHECKED} do not state a statewide percentage cap for a chapter 10 dwelling. They also do not label a rent increase as its own notice period. A.R.S. § 33-1375 is a different duty: written notice at least 10 days before the termination date for a week-to-week tenancy, or at least 30 days before the periodic rental date for a month-to-month tenancy, to end that tenancy. A.R.S. § 33-1313 says notice is given by steps reasonably calculated to inform the other person, and registered or certified mail is deemed received on actual receipt or five days after mailing, whichever is first. Rent Right did not treat § 33-1375 as a passed or failed rent-increase deadline. A fixed-term agreement can set its own change terms. A.R.S. § 33-1329 preempts city and town rent control on most private housing. The 90-day notice in § 33-1413 is the mobile-home chapter and was not applied. No cap was checked.`,
+      detailEs: `El aumento con los montos anotados es de alrededor del ${percent}%. La sección 33-1314 permite que el contrato fije la renta. Las secciones abiertas el ${CHECKED_ES} no fijan un tope estatal para una vivienda del capítulo 10 ni llaman al aumento un plazo de aviso propio. La sección 33-1375 es otra obligación: aviso escrito de al menos 10 días para terminar un arrendamiento semanal, o al menos 30 días antes de la fecha periódica de renta para terminar un arrendamiento mes a mes. Rent Right no trató esa sección como un plazo de aumento aprobado o reprobado. La sección 33-1413 es de casas móviles y no se aplicó. No se revisó un tope.`,
     };
   }
   if (input.state === "NV") {
@@ -346,11 +348,22 @@ export function stateRentAnswer(input: {
     };
   }
   if (input.state === "OR") {
+    const kind = input.homeKind ?? "unknown";
+    if (kind !== "dwelling") {
+      return {
+        headlineEn: "Oregon rent increase",
+        headlineEs: "Aumento de renta en Oregón",
+        ruleId: "OR-ORS-90.323",
+        abovePublishedMax: false,
+        detailEn: `The increase from the amounts entered is about ${percent}%. ORS 90.323's 2026 maximum of 9.5% applies to a dwelling tenancy covered by that section. ORS 90.323(7) says the section does not apply to a tenancy governed by ORS 90.505 to 90.850, including a manufactured-dwelling or floating-home space. That kind of home was not confirmed, so the 9.5% figure was not used and no notice period was judged. The 2026 figure is not reused for another year.`,
+        detailEs: `El aumento es de alrededor del ${percent}%. El 9.5% de 2026 es para un arrendamiento sujeto a ORS 90.323. Esa sección no aplica a un espacio de vivienda prefabricada o casa flotante bajo ORS 90.505 a 90.850. Como eso no se confirmó, no se usó el porcentaje ni se juzgó el aviso.`,
+      };
+    }
     const in2026 = input.effectiveDate >= "2026-01-01" && input.effectiveDate <= "2026-12-31";
     const max = in2026 ? 9.5 : null;
     const over = max != null && ppm > Math.round(max * 10_000) && !input.claimsExemption && input.firstYear !== true;
     const cap = !in2026
-      ? "The published maximum in this library is the Oregon Department of Administrative Services figure for calendar year 2026, 9.5% for tenancies subject to ORS 90.323. Another year was not loaded."
+      ? `The only published maximum loaded here is 9.5% for a rent increase that takes effect in calendar year 2026. The effective date ${input.effectiveDate} is outside that year, so the 2026 figure was not used and no cap comparison was made.`
       : input.claimsExemption
         ? "An exemption was marked, so the 9.5% figure was not applied. ORS 90.323(5) exempts a dwelling whose first certificate of occupancy was issued less than 15 years before the notice, and some regulated affordable housing."
         : input.firstYear === true
@@ -371,12 +384,34 @@ export function stateRentAnswer(input: {
       detailEs: `El tope publicado en esta biblioteca para 2026 es 9.5% según el Departamento de Servicios Administrativos, para arrendamientos sujetos a ORS 90.323. ${notice} No se aplicó ORS 90.600 ni ordenanzas locales. Revisado el ${CHECKED_ES}.`,
     };
   }
+  const kind = input.homeKind ?? "unknown";
+  if (kind === "manufactured_lot") {
+    const overLot = ppm > 50_000 && !input.claimsExemption && input.firstYear !== true;
+    return {
+      headlineEn: "Washington manufactured-home lot rent",
+      headlineEs: "Renta del lote en Washington",
+      ruleId: "WA-RCW-59.20.370",
+      abovePublishedMax: overLot,
+      detailEn: `The increase from the amounts entered is about ${percent}%. RCW 59.20.370 limits a manufactured or mobile home lot to 5% in any 12-month period after the first 12 months, unless an exemption in RCW 59.20.380 applies. RCW 59.20.090(2) requires written notice three months before the effective date. That three-month period was not converted into a day count. The dwelling cap in RCW 59.18.700 was not used. ${overLot ? "About " + percent + "% is above 5% if no exemption applies. That is not a finding that an exemption is absent." : "No amount above 5% was calculated from these inputs."} Checked ${CHECKED}.`,
+      detailEs: `El aumento es de alrededor del ${percent}%. RCW 59.20.370 limita el lote de una casa prefabricada al 5% en cualquier período de 12 meses después de los primeros 12 meses, salvo una exención de RCW 59.20.380. RCW 59.20.090(2) exige aviso escrito con tres meses de anticipación. No se usó el tope de RCW 59.18.700. Revisado el ${CHECKED_ES}.`,
+    };
+  }
+  if (kind !== "dwelling") {
+    return {
+      headlineEn: "Washington rent increase",
+      headlineEs: "Aumento de renta en Washington",
+      ruleId: "WA-RCW-59.18.700",
+      abovePublishedMax: false,
+      detailEn: `The increase from the amounts entered is about ${percent}%. A rented house or apartment can fall under RCW 59.18.700. Commerce published 9.683% for 2026 and 10% for 2027, and RCW 59.18.140 generally requires 90 days' written notice. A lot for a manufactured or mobile home the tenant owns is RCW 59.20.370, capped at 5%, with three months' notice under RCW 59.20.090. Which one this is was not entered, so no percentage was applied and no notice period was judged. RCW 59.18.040 also lists living arrangements the residential chapter does not intend to cover. Checked ${CHECKED}.`,
+      detailEs: `El aumento es de alrededor del ${percent}%. Una casa o apartamento alquilado puede caer en RCW 59.18.700. Un lote de casa prefabricada que el inquilino posee es RCW 59.20.370, con un tope del 5%. Como no se indicó cuál es, no se aplicó un porcentaje ni se juzgó el aviso. Revisado el ${CHECKED_ES}.`,
+    };
+  }
   const in2026 = input.effectiveDate >= "2026-01-01" && input.effectiveDate <= "2026-12-31";
   const in2027 = input.effectiveDate >= "2027-01-01" && input.effectiveDate <= "2027-12-31";
   const max = in2026 ? 9.683 : in2027 ? 10 : null;
   const over = max != null && ppm > Math.round(max * 10_000) && !input.claimsExemption && input.firstYear !== true;
   const cap = max == null
-    ? "Commerce's published maximum is loaded here for calendar years 2026 (9.683%) and 2027 (10%). Another year was not loaded."
+    ? `Commerce's published maximum is loaded for an increase that takes effect in 2026 (9.683%) or 2027 (10%). The effective date ${input.effectiveDate} is outside those years, so neither figure was used and no cap comparison was made.`
     : input.claimsExemption
       ? "An exemption was marked, so the published percentage was not applied. RCW 59.18.710 lists exemptions, including a certificate of occupancy 12 or fewer years before the notice and some owner-occupied housing."
       : input.firstYear === true
@@ -467,8 +502,8 @@ export const ADDED_STATE_RULES: Rule[] = [
     topics: ["rent increase", "aumento de renta"],
     titleEn: "Arizona rent amount and notice",
     titleEs: "Monto y aviso de renta en Arizona",
-    summaryEn: `A.R.S. § 33-1314, opened ${CHECKED}, does not state a statewide percentage cap or a statewide rent-increase notice period for a dwelling under the residential chapter. A.R.S. § 33-1329 preempts city and town rent control on most private housing. The mobile-home notice in § 33-1413 was not applied to dwellings.`,
-    summaryEs: `La sección 33-1314 no establece un tope estatal ni un plazo estatal de aviso de aumento para una vivienda del capítulo residencial. La sección 33-1329 limita el control de renta municipal. Revisado el ${CHECKED_ES}.`,
+    summaryEn: `A.R.S. § 33-1314 lets the agreement set the rent and does not state a statewide percentage cap. A.R.S. § 33-1375 requires written notice to terminate a week-to-week tenancy at least 10 days before the termination date, or a month-to-month tenancy at least 30 days before the periodic rental date. That section does not use the words rent increase, so it was not applied as a rent-increase deadline. A.R.S. § 33-1313 explains when notice is given and received. A.R.S. § 33-1329 preempts most city rent control. Checked ${CHECKED}.`,
+    summaryEs: `La sección 33-1314 permite que el contrato fije la renta y no establece un tope estatal. La sección 33-1375 exige aviso escrito para terminar un arrendamiento semanal con al menos 10 días, o uno mes a mes con al menos 30 días antes de la fecha periódica de renta. Esa sección no dice aumento de renta, así que no se usó como plazo de aumento. Revisado el ${CHECKED_ES}.`,
     citation: "Ariz. Rev. Stat. § 33-1314",
     sourceName: "Arizona State Legislature",
     sourceUrl: "https://www.azleg.gov/ars/33/01314.htm",
@@ -532,7 +567,7 @@ export const ADDED_STATE_RULES: Rule[] = [
     topics: ["security deposit", "deposito", "depósito"],
     titleEn: "Oregon security deposit",
     titleEs: "Depósito en Oregón",
-    summaryEn: `ORS 90.300(13) requires return of the security deposit or prepaid rent, or the part not claimed, not later than 31 days after the tenancy terminates and the tenant delivers possession. The written accounting has the same 31-day period. Checked ${CHECKED} in the Legislature's ORS chapter 90 page.`,
+    summaryEn: `ORS 90.300(13) requires return of the security deposit or prepaid rent, or the part not claimed, not later than 31 days after the tenancy terminates and the tenant delivers possession. The 2025 special-session and 2026 regular-session amendment tables do not list 90.300. Checked ${CHECKED}.`,
     summaryEs: `ORS 90.300(13) exige devolver el depósito o la renta pagada por adelantado, o la parte no reclamada, a más tardar 31 días después de que termina el arrendamiento y el inquilino entrega la posesión. Revisado el ${CHECKED_ES}.`,
     citation: "Or. Rev. Stat. § 90.300",
     sourceName: "Oregon State Legislature",
@@ -545,7 +580,7 @@ export const ADDED_STATE_RULES: Rule[] = [
     topics: ["repair", "habitability", "essential service", "reparacion", "reparación"],
     titleEn: "Oregon repair periods",
     titleEs: "Plazos de reparación en Oregón",
-    summaryEn: `ORS 90.360 gives seven days to remedy an essential service and 30 days for other noncompliance after delivery of the tenant's written notice. ORS 90.365(2) allows a written notice that the agreement will terminate in not less than 48 hours if the lack of an essential service poses an imminent and serious threat. Mailed written notice can add three days under ORS 90.155. Checked ${CHECKED}.`,
+    summaryEn: `ORS 90.360 gives seven days to remedy an essential service and 30 days for other noncompliance after delivery of the tenant's written notice. ORS 90.365(2) uses 48 hours only for an imminent and serious threat. Those periods are not permission to withhold rent or end the tenancy by themselves. The 2026 amendment table does not list 90.360 or 90.365. ORS 90.320 was amended by Oregon Laws 2026, chapter 23, effective June 5, 2026, about access devices and cooling. That amendment does not change these day counts. Checked ${CHECKED}.`,
     summaryEs: `ORS 90.360 da siete días para un servicio esencial y 30 días para otro incumplimiento después de la entrega del aviso escrito. ORS 90.365(2) permite 48 horas si la amenaza es inminente y grave. Un aviso por correo puede sumar tres días. Revisado el ${CHECKED_ES}.`,
     citation: "Or. Rev. Stat. §§ 90.360, 90.365",
     sourceName: "Oregon State Legislature",
@@ -558,7 +593,7 @@ export const ADDED_STATE_RULES: Rule[] = [
     topics: ["retaliation", "represalia"],
     titleEn: "Oregon retaliation",
     titleEs: "Represalia en Oregón",
-    summaryEn: `ORS 90.385 prohibits retaliation by a rent increase, a decrease in services, a termination notice, or a possession action after listed tenant acts. The section does not set one day count for every act. A six-month reference in subsection (1)(e) is about a prior successful defense of a possession action, not every rent increase. California's 180-day window is not used. Checked ${CHECKED}.`,
+    summaryEn: `ORS 90.385 prohibits retaliation by a rent increase, a decrease in services, a termination notice, or a possession action after listed tenant acts. The section does not set one day count for every act. The 2025 special-session and 2026 regular-session amendment tables do not list 90.385. California's 180-day window is not used. Checked ${CHECKED}.`,
     summaryEs: `ORS 90.385 prohíbe represalias después de actos enumerados. La sección no fija un solo conteo de días para todos los actos. No se usa la ventana de 180 días de California. Revisado el ${CHECKED_ES}.`,
     citation: "Or. Rev. Stat. § 90.385",
     sourceName: "Oregon State Legislature",
@@ -571,7 +606,7 @@ export const ADDED_STATE_RULES: Rule[] = [
     topics: ["rent increase", "aumento de renta", "rent cap", "percent"],
     titleEn: "Oregon maximum rent increase",
     titleEs: "Tope de aumento en Oregón",
-    summaryEn: `ORS 90.323 requires 7 days' written notice for a week-to-week tenancy and, after the first year, 90 days' written notice, no more than one increase in 12 months, and no increase above the maximum calculated under ORS 90.324 unless an exemption applies. The Department of Administrative Services published 9.5% for calendar year 2026 for tenancies subject to ORS 90.323. Exemptions include a certificate of occupancy less than 15 years before the notice and some regulated affordable housing. ORS 90.600 facility caps were not applied. Checked ${CHECKED}.`,
+    summaryEn: `ORS 90.323 requires 7 days' written notice for a week-to-week tenancy and, after the first year, 90 days' written notice, no more than one increase in 12 months, and no increase above the maximum calculated under ORS 90.324 unless an exemption applies. The Department of Administrative Services published 9.5% for an increase taking effect in calendar year 2026. That figure is not used for any other year. The 2026 regular-session amendment table does not list 90.323. ORS 90.323(7) excludes tenancies under ORS 90.505 to 90.850. Checked ${CHECKED}.`,
     summaryEs: `ORS 90.323 exige 7 días de aviso en un arrendamiento semanal y, después del primer año, 90 días, no más de un aumento en 12 meses, y no más del máximo de ORS 90.324 salvo una exención. El Departamento de Servicios Administrativos publicó 9.5% para 2026. Revisado el ${CHECKED_ES}.`,
     citation: "Or. Rev. Stat. § 90.323",
     sourceName: "Oregon Department of Administrative Services",
@@ -642,7 +677,7 @@ export function stateRepairLetter(state: AddedState, locale: "en" | "es", severi
     WA: "Revised Code of Washington 59.18.070",
   }[state];
   if (locale === "es") {
-    return `Le pido que atienda esta reparación. ${citation} describe un plazo de ${periodEs} para el tipo de condición que describo arriba. Esta nota no decide si ese plazo aplica a estos hechos. No envío este mensaje hasta que yo lo confirme.`;
+    return `Le pido que atienda esta reparación. ${citation} describe un plazo de respuesta de ${periodEs} después de que se recibe un aviso escrito, para el tipo de condición de arriba. Esta carta no es un aviso de que termino el arrendamiento ni de que retengo la renta. Confirmo este mensaje antes de enviarlo.`;
   }
-  return `I am asking you to address this repair. ${citation} describes a period of ${period} for the kind of condition described above. This note does not decide that the period applies to these facts. I confirm this message before it is sent.`;
+  return `I am asking you to address this repair. ${citation} describes a response period of ${period} after written notice is received, for the kind of condition described above. This letter is not a notice that I am ending the tenancy or withholding rent. I confirm this message before it is sent.`;
 }

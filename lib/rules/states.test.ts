@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { answerQuestion, selectRules } from "@/lib/rules/assistant";
 import { detectPlace } from "@/lib/rules/detect";
 import { depositReturnDeadline, repairReminder, retaliationWindow } from "@/lib/rules/engine";
-import { stateRentAnswer } from "@/lib/rules/states";
+import { lawStateOf, stateRentAnswer } from "@/lib/rules/states";
 
 describe("added state coverage", () => {
   it("classifies the four states and leaves Texas unsupported", () => {
@@ -44,7 +44,9 @@ describe("added state coverage", () => {
 
   it("uses Arizona's five-day health period and ten-day other period from receipt", () => {
     expect(repairReminder("2026-10-01", "no_heat", undefined, "AZ").dueDate).toBe("2026-10-06");
-    expect(repairReminder("2026-10-01", "leak", undefined, "AZ").dueDate).toBe("2026-10-11");
+    const leak = repairReminder("2026-10-01", "leak", undefined, "AZ");
+    expect(leak.dueDate).toBe("2026-10-11");
+    expect(leak.explanation).toContain("not permission to withhold rent");
     expect(repairReminder("2026-10-01", "leak", undefined, "NV").dueDate).toBe("2026-10-15");
     expect(repairReminder("2026-10-01", "no_heat", undefined, "OR").dueDate).toBe("2026-10-08");
     expect(repairReminder("2026-10-01", "leak", undefined, "OR").dueDate).toBe("2026-10-31");
@@ -72,6 +74,36 @@ describe("added state coverage", () => {
     expect(answer.ruleIds).toContain("WA-RCW-59.18.700");
   });
 
+  it("keeps an old Los Angeles jurisdiction on California law", () => {
+    expect(lawStateOf({ jurisdiction: "city_la", supported: true })).toBe("CA");
+    expect(depositReturnDeadline("2026-01-10").ruleId).toBe("CA-CC-1950.5");
+    expect(detectPlace({ city: "Los Angeles", region: "CA", postalCode: "90026" }).jurisdiction).toBe("city_la");
+  });
+
+  it("does not invent an Arizona deposit date outside the loaded holiday years", () => {
+    expect(depositReturnDeadline("2025-07-02", "AZ").dueDate).toBeNull();
+    expect(depositReturnDeadline("2025-07-02", "AZ").unsure).toBe(true);
+    expect(depositReturnDeadline("2028-03-01", "AZ").dueDate).toBeNull();
+  });
+
+  it("states Arizona's termination notice without grading a rent increase against it", () => {
+    const note = stateRentAnswer({
+      state: "AZ",
+      lowestCents: 200_000,
+      proposedCents: 220_000,
+      noticeDate: "2026-10-01",
+      effectiveDate: "2026-11-15",
+      weekToWeek: false,
+      firstYear: null,
+      claimsExemption: false,
+    });
+    expect(note.abovePublishedMax).toBe(false);
+    expect(note.detailEn).toContain("33-1375");
+    expect(note.detailEn).toContain("30 days");
+    expect(note.detailEn).toContain("did not treat");
+    expect(note.detailEn).not.toContain("meets");
+  });
+
   it("does not call a 2026 Oregon increase above 9.5 percent lawful when exemptions are unknown", () => {
     const note = stateRentAnswer({
       state: "OR",
@@ -82,6 +114,7 @@ describe("added state coverage", () => {
       weekToWeek: false,
       firstYear: null,
       claimsExemption: false,
+      homeKind: "dwelling",
     });
     expect(note.abovePublishedMax).toBe(true);
     expect(note.detailEn).toContain("9.5%");
@@ -96,13 +129,69 @@ describe("added state coverage", () => {
       weekToWeek: false,
       firstYear: null,
       claimsExemption: true,
+      homeKind: "dwelling" as const,
     } });
     expect(exempt.abovePublishedMax).toBe(false);
+    expect(exempt.detailEn).toContain("exemption was marked");
+    const nextYear = stateRentAnswer({
+      state: "OR",
+      lowestCents: 200_000,
+      proposedCents: 230_000,
+      noticeDate: "2026-11-01",
+      effectiveDate: "2027-03-01",
+      weekToWeek: false,
+      firstYear: false,
+      claimsExemption: false,
+      homeKind: "dwelling",
+    });
+    expect(nextYear.abovePublishedMax).toBe(false);
+    expect(nextYear.detailEn).toContain("was not used");
+    expect(nextYear.detailEn).not.toContain("not above the 9.5%");
+    const unknownHome = stateRentAnswer({
+      state: "OR",
+      lowestCents: 200_000,
+      proposedCents: 230_000,
+      noticeDate: "2026-09-01",
+      effectiveDate: "2026-12-15",
+      weekToWeek: false,
+      firstYear: null,
+      claimsExemption: false,
+    });
+    expect(unknownHome.abovePublishedMax).toBe(false);
+    expect(unknownHome.detailEn).toContain("90.505");
   });
 
   it("keeps a boundary deposit date on the statute's own count", () => {
     expect(depositReturnDeadline("2026-01-10", "WA").dueDate).toBe("2026-02-09");
     expect(depositReturnDeadline("2026-01-31", "OR").dueDate).toBe("2026-03-03");
     expect(depositReturnDeadline("2024-02-10", "NV").dueDate).toBe("2024-03-11");
+  });
+
+  it("does not use the Washington dwelling cap for a manufactured-home lot or an unknown home", () => {
+    const shared = {
+      lowestCents: 200_000,
+      proposedCents: 220_000,
+      noticeDate: "2026-08-01",
+      effectiveDate: "2026-11-15",
+      weekToWeek: false,
+      firstYear: false as boolean | null,
+      claimsExemption: false,
+    };
+    const lot = stateRentAnswer({ state: "WA", ...shared, homeKind: "manufactured_lot" });
+    expect(lot.ruleId).toBe("WA-RCW-59.20.370");
+    expect(lot.abovePublishedMax).toBe(true);
+    expect(lot.detailEn).toContain("5%");
+    expect(lot.detailEn).not.toContain("9.683%");
+    const unknown = stateRentAnswer({ state: "WA", ...shared });
+    expect(unknown.abovePublishedMax).toBe(false);
+    expect(unknown.detailEn).toContain("was not entered");
+    const later = stateRentAnswer({
+      state: "WA",
+      ...shared,
+      effectiveDate: "2028-02-01",
+      homeKind: "dwelling",
+    });
+    expect(later.abovePublishedMax).toBe(false);
+    expect(later.detailEn).toContain("no cap comparison was made");
   });
 });
