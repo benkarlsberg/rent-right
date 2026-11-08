@@ -14,6 +14,7 @@ export type DemandInput = {
   disputeNotes: string;
   letterDate: string;
   citeStatute?: boolean;
+  statuteSentence?: string;
 };
 
 function addressLines(value: string): string[] {
@@ -38,9 +39,11 @@ export function demandLetter(input: DemandInput): string {
     "",
     `I moved out on ${input.moveOutDate}. I paid a security deposit of ${amount}. My forwarding address is ${input.forwardingAddress}.`,
     "",
-    input.citeStatute === false
-      ? "Please send an itemized list of any deductions and any remaining deposit."
-      : `Civil Code section 1950.5 requires an itemized statement of lawful deductions and return of the remaining deposit within 21 calendar days after move-out. That date, counted from the move-out date above, is ${input.dueDate}.`,
+    input.statuteSentence
+      ? input.statuteSentence
+      : input.citeStatute === false
+        ? "Please send an itemized list of any deductions and any remaining deposit."
+        : `Civil Code section 1950.5 requires an itemized statement of lawful deductions and return of the remaining deposit within 21 calendar days after move-out. That date, counted from the move-out date above, is ${input.dueDate}.`,
     "",
     input.deductionNotes.trim()
       ? `What I received about deductions: ${input.deductionNotes.trim()}`

@@ -6,6 +6,7 @@ import { coverageNotice, coversLaw } from "@/lib/coverage";
 import { lookupJurisdiction, tidyAddress } from "@/lib/geo";
 import { storedHome } from "@/lib/home-place";
 import { detectPlace } from "@/lib/rules/detect";
+import { lawStateOf } from "@/lib/rules/states";
 import {
   acknowledgeCondition,
   addFeedback,
@@ -359,6 +360,9 @@ export async function checkIncrease(form: FormData) {
     const proposed = centsField(form, "proposed");
     if (!lowest || !proposed) throw new Error("Enter the current rent and the proposed rent.");
     if (!coversLaw(unit)) throw new Error(coverageNotice(user.locale));
+    if (lawStateOf(unit) !== "CA") {
+      throw new Error("This form checks California rent caps. Ask in Chat for this state's note. No California cap was applied.");
+    }
     const jurisdiction = (field(form, "jurisdiction") || unit.jurisdiction) as Jurisdiction;
     const place = detectPlace({ address: unit.street, city: unit.city, postalCode: unit.postalCode, region: unit.region });
     const statewide = jurisdiction === "ca" || jurisdiction === "other_ca";

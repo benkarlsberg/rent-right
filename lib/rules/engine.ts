@@ -4,6 +4,7 @@ import { evaluateLocalCap, type LocalFacts } from "@/lib/rules/cities/verify";
 import { addDays, addMonths, daysBetween, isWeekend } from "@/lib/rules/dates";
 import { HOLIDAY_CALENDAR_NOTE, HOLIDAY_SPAN, JUDICIAL_HOLIDAYS } from "@/lib/rules/holidays";
 import { getRule } from "@/lib/rules/library";
+import { stateDeposit, stateRepair, stateRetaliation, type AddedState, type LawState } from "@/lib/rules/states";
 
 export const CLINIC_REVIEW = "pending_clinic_review" as const;
 
@@ -139,7 +140,11 @@ function inRange(iso: string, start: string, end: string): boolean {
   return iso >= start && iso <= end;
 }
 
-export function depositReturnDeadline(moveOutDate: string): DatedResult {
+export function depositReturnDeadline(moveOutDate: string, state: LawState = "CA"): DatedResult {
+  if (state !== "CA") {
+    const stamp = stateDeposit(state as AddedState, moveOutDate);
+    return base(stamp);
+  }
   const due = addDays(moveOutDate, 21);
   return base({
     dueDate: due,
@@ -167,7 +172,8 @@ const URGENT = new Set<RepairSeverity>([
   "wiring",
 ]);
 
-export function repairReminder(requestDate: string, severity: RepairSeverity, pace?: "routine" | "urgent"): DatedResult {
+export function repairReminder(requestDate: string, severity: RepairSeverity, pace?: "routine" | "urgent", state: LawState = "CA"): DatedResult {
+  if (state !== "CA") return base(stateRepair(state as AddedState, requestDate, severity));
   const rule = getRule("CA-CC-1942");
   let days = 30;
   let preset = "The 30-day figure is the presumption in Civil Code §1942.";
@@ -590,13 +596,14 @@ export function checkRentIncrease(input: RentIncreaseInput): RentIncreaseResult 
   };
 }
 
-export function retaliationWindow(activityDate: string, noticeDate: string): {
+export function retaliationWindow(activityDate: string, noticeDate: string, state: LawState = "CA"): {
   flagged: boolean;
   daysSince: number;
-  ruleId: "CA-CC-1942.5";
+  ruleId: string;
   explanation: string;
   explanationEs: string;
 } {
+  if (state !== "CA") return stateRetaliation(state as AddedState, activityDate, noticeDate);
   const daysSince = daysBetween(activityDate, noticeDate);
   const flagged = daysSince >= 0 && daysSince <= 180;
   return {

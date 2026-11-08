@@ -40,9 +40,9 @@ ${body}
 
 export const privacyDocument = document(
   "Privacy policy",
-  "What Rent Right stores for California renters, and what it sends.",
+  "What Rent Right stores, and what it sends.",
   `
-<p>Rent Right is a free record-keeping tool for California renters. It is not a law firm. This page says what the app stores and what it sends.</p>
+<p>Rent Right is a free record-keeping tool. It is not a law firm. Statewide legal notes are loaded for California, Arizona, Nevada, Oregon, and Washington. Other states can still keep records. This page says what the app stores and what it sends.</p>
 <p>We store the email address you use to sign in, whether that is a sign-in link or Google. If you add a home, we store the address, unit, city, ZIP, landlord name, landlord email, and any lease start date or rent amount you choose to enter. We also store notes, photos, and files you add, chat messages, deadlines, and the messages you send to your landlord. Replies that arrive at your unit's mailbox are stored too.</p>
 <p>Sign-in mail is sent to you. A message to your landlord is sent only after you confirm it on the screen. Those messages come from notices@rentrightportal.com. We do not text landlords, and we do not sell personal information.</p>
 <p>If an AI service is configured, a question, a short recent excerpt of the chat, or a lease excerpt may be sent to it so the app can help sort what you asked. Email addresses, phone numbers, and Social Security-like numbers are removed from that text first. Deadlines and rent-cap math come from the rules library, not from the model. We do not promise that a model provider will never retain a prompt.</p>
@@ -53,11 +53,11 @@ export const privacyDocument = document(
 
 export const termsDocument = document(
   "Terms of use",
-  "How Rent Right keeps records and drafts landlord messages for California renters.",
+  "How Rent Right keeps records and drafts landlord messages.",
   `
-<p>Rent Right is free for California renters. ${DISCLAIMER_EN}</p>
+<p>Rent Right is free. ${DISCLAIMER_EN} If the home is not in California, contact a lawyer licensed in that state or legal aid.</p>
 <p>The app keeps your notes, files, and dates, and it can draft a message to your landlord. Nothing is emailed to a landlord unless you confirm that send. Rent Right does not file cases, serve notices, or act as your lawyer.</p>
-<p>Answers about rent, repairs, deposits, and leases quote a library entry or say they are unsure. The library is general information. It can be incomplete, and it is not a decision about your home. City rules, including Los Angeles rent control, still depend on the unit.</p>
+<p>Answers about rent, repairs, deposits, and retaliation quote a loaded statewide library entry or say they are unsure. California, Arizona, Nevada, Oregon, and Washington have loaded statewide notes. City ordinances outside California were not researched. The library is general information. It can be incomplete, and it is not a decision about your home. Los Angeles rent control still depends on the unit.</p>
 <p>There are no landlord ratings, no text messages, and no paid referrals.</p>
 <p>Questions about these terms: <a href="mailto:${CONTACT}">${CONTACT}</a>.</p>
 `,

@@ -2,11 +2,12 @@ import { LIBRARY_VERSION } from "@/lib/disclaimer";
 import { CITY_PACKS } from "@/lib/rules/cities";
 import { rules as statewideRules } from "@/lib/rules/cities/statewide";
 import { rule, type FindingLabel, type Rule, type RuleJurisdiction } from "@/lib/rules/define";
+import { ADDED_STATE_RULES } from "@/lib/rules/states";
 
 export { rule };
 export type { FindingLabel, Rule, RuleJurisdiction };
 
-export const RULES: Rule[] = [...statewideRules, ...CITY_PACKS.flatMap((pack) => pack.rules)];
+export const RULES: Rule[] = [...statewideRules, ...CITY_PACKS.flatMap((pack) => pack.rules), ...ADDED_STATE_RULES];
 
 const byId = new Map(RULES.map((item) => [item.id, item]));
 

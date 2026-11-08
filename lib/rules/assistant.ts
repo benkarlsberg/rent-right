@@ -1,5 +1,7 @@
-import { DISCLAIMER_EN, DISCLAIMER_ES, LIBRARY_VERSION, type Locale } from "@/lib/disclaimer";
+import { DISCLAIMER_EN, DISCLAIMER_ES, LIBRARY_CHECKED_EN, LIBRARY_CHECKED_ES, LIBRARY_VERSION, type Locale } from "@/lib/disclaimer";
 import { RULES, type Rule } from "@/lib/rules/library";
+import type { LawState } from "@/lib/rules/states";
+import { stateName } from "@/lib/us-address";
 
 export type AssistantAnswer = {
   locale: Locale;
@@ -54,17 +56,40 @@ function score(rule: Rule, queryTokens: string[], raw: string): number {
   return total;
 }
 
-export function selectRules(question: string): { rules: Rule[]; handoff: boolean } {
+const CA_RULES = new Set(["CA", "CITY_LA", "LA_COUNTY", "CITY_SD", "LOCAL"]);
+
+function rulesFor(state: LawState): Rule[] {
+  if (state === "CA") return RULES.filter((item) => CA_RULES.has(item.jurisdiction));
+  return RULES.filter((item) => item.jurisdiction === state);
+}
+
+export function selectRules(question: string, state: LawState = "CA"): { rules: Rule[]; handoff: boolean } {
   const handoff = HANDOFF.test(question);
   const queryTokens = tokens(question);
-  const ranked = RULES.map((rule) => ({ rule, score: score(rule, queryTokens, question) }))
+  const ranked = rulesFor(state).map((item) => ({ rule: item, score: score(item, queryTokens, question) }))
     .filter((item) => item.score >= 4)
     .sort((a, b) => b.score - a.score);
   return { rules: ranked.slice(0, 3).map((item) => item.rule), handoff };
 }
 
-export function renderAnswer(question: string, locale: Locale, rules: Rule[], handoff: boolean): AssistantAnswer {
-  const disclaimer = locale === "es" ? DISCLAIMER_ES : DISCLAIMER_EN;
+function checkedLine(locale: Locale, state: LawState): string {
+  if (state === "CA") {
+    return locale === "es"
+      ? `Información general basada en la ley de California, revisada el ${LIBRARY_CHECKED_ES}. No es asesoramiento legal.`
+      : `General information based on California law, checked ${LIBRARY_CHECKED_EN}. Not legal advice.`;
+  }
+  const name = stateName(state);
+  return locale === "es"
+    ? `Información general basada en la ley de ${name}, revisada el 8 de noviembre de 2026. No es asesoramiento legal. Las ordenanzas de la ciudad no se investigaron.`
+    : `General information based on ${name} law, checked Nov 8, 2026. Not legal advice. City ordinances were not researched.`;
+}
+
+export function renderAnswer(question: string, locale: Locale, rules: Rule[], handoff: boolean, state: LawState = "CA"): AssistantAnswer {
+  const disclaimer = state === "CA"
+    ? (locale === "es" ? DISCLAIMER_ES : DISCLAIMER_EN)
+    : (locale === "es"
+      ? "Esta es información legal general, no es asesoramiento legal, y no se crea una relación abogado-cliente. Las leyes cambian y dependen de los hechos. Para asesoramiento, contacte a un abogado con licencia en su estado o a asistencia legal gratuita."
+      : "This is general legal information, not legal advice, and no attorney-client relationship is created. Laws change and depend on your facts. For advice, contact a licensed attorney in your state or legal aid.");
   const reviewNote =
     locale === "es"
       ? "El texto en español es información general, no una traducción revisada por un abogado."
@@ -102,10 +127,7 @@ export function renderAnswer(question: string, locale: Locale, rules: Rule[], ha
       ? "Rent Right no puede decirle qué hacer en un caso, ni cómo responder a un aviso de desalojo. Contacte a asistencia legal o a un abogado con licencia. Lo que sigue es solo el texto de la biblioteca.\n\n"
       : "Rent Right cannot tell you what to do in a case, or how to respond to an eviction notice. Contact legal aid or a licensed attorney. What follows is only the library text.\n\n"
     : "";
-  const tail =
-    locale === "es"
-      ? `\n\nInformación general basada en la ley de California, revisada el 12 de octubre de 2026. No es asesoramiento legal. ${reviewNote}`
-      : `\n\nGeneral information based on California law, checked Oct 12, 2026. Not legal advice. ${reviewNote}`;
+  const tail = `\n\n${checkedLine(locale, state)} ${reviewNote}`;
   return {
     locale,
     unsure: false,
@@ -119,9 +141,9 @@ export function renderAnswer(question: string, locale: Locale, rules: Rule[], ha
   };
 }
 
-export function answerQuestion(question: string, locale: Locale): AssistantAnswer {
-  const selected = selectRules(question);
-  return renderAnswer(question, locale, selected.rules, selected.handoff);
+export function answerQuestion(question: string, locale: Locale, state: LawState = "CA"): AssistantAnswer {
+  const selected = selectRules(question, state);
+  return renderAnswer(question, locale, selected.rules, selected.handoff, state);
 }
 
 /** Model output may only name rule ids that were retrieved. The words shown to the tenant still come from the library. */
@@ -129,6 +151,13 @@ export function answerFromModelIds(question: string, locale: Locale, retrieved: 
   const allowed = new Set(retrieved.map((rule) => rule.id));
   const picked = modelIds.filter((id) => allowed.has(id)).map((id) => retrieved.find((rule) => rule.id === id)!);
   const handoff = HANDOFF.test(question);
-  if (picked.length === 0) return renderAnswer(question, locale, [], handoff);
-  return renderAnswer(question, locale, picked.slice(0, 3), handoff);
+  const state = stateFromRules(retrieved);
+  if (picked.length === 0) return renderAnswer(question, locale, [], handoff, state);
+  return renderAnswer(question, locale, picked.slice(0, 3), handoff, state);
+}
+
+function stateFromRules(rules: Rule[]): LawState {
+  const code = rules[0]?.jurisdiction;
+  if (code === "AZ" || code === "NV" || code === "OR" || code === "WA") return code;
+  return "CA";
 }

@@ -212,7 +212,9 @@ export async function suggestPlace(input: string | AddressFields): Promise<Addre
         postalCode: kept.postalCode || String(parts.zip || ""),
         region: censusState,
       });
-      if (outside.jurisdiction === "unsupported") return { place: outside, suggestion: null, differs: false, kept };
+      if (outside.jurisdiction === "unsupported" || outside.jurisdiction === "az" || outside.jurisdiction === "nv" || outside.jurisdiction === "or" || outside.jurisdiction === "wa") {
+        return { place: outside, suggestion: null, differs: false, kept };
+      }
       return { place: rejectPlace(localPlace(kept)), suggestion: null, differs: false, kept };
     }
     const city = censusCity(match) || kept.city;

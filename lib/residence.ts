@@ -20,6 +20,7 @@ import {
   type User,
 } from "@/lib/db";
 import { coversLaw } from "@/lib/coverage";
+import { isAddedState, lawStateOf, type LawState } from "@/lib/rules/states";
 import { emailValue } from "@/lib/forms";
 import { suggestPlace, tidyAddress } from "@/lib/geo";
 import { parseISODate } from "@/lib/rules/dates";
@@ -267,12 +268,12 @@ export async function previewResidence(user: User, body: Record<string, unknown>
     region: fields.region,
     postalCode: fields.postalCode,
   });
-  if (!found.place.inCalifornia && found.place.jurisdiction !== "unsupported") throw new Error(placeSummary(found.place, locale));
+  if (!found.place.inCalifornia && found.place.jurisdiction !== "unsupported" && !isAddedState(found.place.state)) throw new Error(placeSummary(found.place, locale));
   const changed = !sameAddress(unit, fields);
   const lawsChange = changed && found.place.jurisdiction !== unit.jurisdiction;
   return {
     inCalifornia: found.place.inCalifornia,
-    covered: found.place.inCalifornia && found.place.jurisdiction !== "unsupported",
+    covered: Boolean(lawStateOf({ jurisdiction: found.place.jurisdiction, supported: found.place.jurisdiction !== "unsupported" })),
     state: found.place.state || null,
     summary: placeSummary(found.place, locale),
     suggestion: found.suggestion,
@@ -309,7 +310,7 @@ function inputFor(unit: Unit, fields: ReturnType<typeof readFields>, place: Plac
   };
 }
 
-async function refreshOpenDeadlines(userId: string, unitId: string) {
+async function refreshOpenDeadlines(userId: string, unitId: string, law: LawState) {
   const deadlines = await listDeadlines(userId, unitId);
   const logs = await listLogs(userId, unitId);
   for (const item of deadlines) {
@@ -323,11 +324,11 @@ async function refreshOpenDeadlines(userId: string, unitId: string) {
       const anchor = (log?.eventDate ? String(log.eventDate).slice(0, 10) : null) || item.anchorDate;
       if (severity && anchor && SEVERITIES.has(severity as RepairSeverity)) {
         const pace = log?.flags?.tierManual === true ? reminderPace(log.tier, severity) : undefined;
-        next = repairReminder(anchor, severity as RepairSeverity, pace);
+        next = repairReminder(anchor, severity as RepairSeverity, pace, law);
       }
     } else if (item.kind === "deposit" && item.anchorDate) {
-      next = depositReturnDeadline(item.anchorDate);
-    } else if (item.kind === "notice_3day" && item.anchorDate) {
+      next = depositReturnDeadline(item.anchorDate, law);
+    } else if (item.kind === "notice_3day" && item.anchorDate && law === "CA") {
       next = threeDayNoticeDeadline(item.anchorDate);
     }
     if (!next) continue;
@@ -351,6 +352,7 @@ function numberish(value: unknown): number | null {
 }
 
 async function refreshRentCheck(user: User, unit: Unit) {
+  if (lawStateOf(unit) !== "CA") return;
   const saved = await latestRentCheck(user.id, unit.id);
   if (!saved || !saved.input || typeof saved.input !== "object") return;
   const raw = saved.input as Record<string, unknown>;
@@ -406,7 +408,7 @@ export async function saveResidence(user: User, body: Record<string, unknown>) {
       region: fields.region,
       postalCode: fields.postalCode,
     });
-    if (!found.place.inCalifornia && found.place.jurisdiction !== "unsupported") throw new Error(placeSummary(found.place, locale));
+    if (!found.place.inCalifornia && found.place.jurisdiction !== "unsupported" && !isAddedState(found.place.state)) throw new Error(placeSummary(found.place, locale));
     place = found.place;
   }
   const lawsChange = changed && place.jurisdiction !== unit.jurisdiction;
@@ -421,7 +423,8 @@ export async function saveResidence(user: User, body: Record<string, unknown>) {
   }
   const saved = await updateUnit(user.id, unit.id, inputFor(unit, fields, place, mode === "typo" ? "typo" : "details", changed));
   if (mode === "typo" && changed && coversLaw(saved)) {
-    await refreshOpenDeadlines(user.id, saved.id);
+    const law = lawStateOf(saved);
+    if (law) await refreshOpenDeadlines(user.id, saved.id, law);
     await refreshRentCheck(user, saved);
   }
   return { note: labels.nothingSent, unit: await requireUnit(user.id, saved.id) };

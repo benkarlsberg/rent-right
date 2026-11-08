@@ -3,6 +3,7 @@ import { aiConfigured, completeJson } from "@/lib/ai";
 import { detectIntent, fold } from "@/lib/chat-intent";
 import { rulesPrompt } from "@/lib/chat-text";
 import { answerFromModelIds, answerQuestion, selectRules, type AssistantAnswer } from "@/lib/rules/assistant";
+import type { LawState } from "@/lib/rules/states";
 
 const FOLLOW_UP = /\b(?:what about|how about|and (?:the|that)|the (?:first|second|other|same|last) (?:one|item)|y (?:el|la|lo) (?:primero|segundo|otro)|que hay con|que pasa con)\b/;
 
@@ -15,10 +16,10 @@ export function inheritsPriorRules(question: string): boolean {
 }
 
 /** Library text only. A short follow-up can cite rules matched in the recent conversation. Model ids are kept only when they are in that set. */
-export function citeFromConversation(question: string, locale: Locale, retrieval: string, modelIds: string[] | null): AssistantAnswer {
-  const alone = selectRules(question);
+export function citeFromConversation(question: string, locale: Locale, retrieval: string, modelIds: string[] | null, state: LawState = "CA"): AssistantAnswer {
+  const alone = selectRules(question, state);
   const followUp = inheritsPriorRules(question);
-  const retrieved = selectRules(followUp ? (retrieval || question) : question);
+  const retrieved = selectRules(followUp ? (retrieval || question) : question, state);
   const pool = followUp ? retrieved.rules : alone.rules;
   const allowed = new Set(pool.map((rule) => rule.id));
   const picked = (modelIds ?? []).filter((id) => allowed.has(id));
@@ -26,18 +27,18 @@ export function citeFromConversation(question: string, locale: Locale, retrieval
   if (followUp && alone.rules.length === 0 && retrieved.rules.length > 0) {
     return answerFromModelIds(question, locale, retrieved.rules, retrieved.rules.map((rule) => rule.id));
   }
-  return answerQuestion(question, locale);
+  return answerQuestion(question, locale, state);
 }
 
-export async function answerFromConversation(question: string, locale: Locale, history: string, retrieval: string): Promise<AssistantAnswer> {
+export async function answerFromConversation(question: string, locale: Locale, history: string, retrieval: string, state: LawState = "CA"): Promise<AssistantAnswer> {
   const followUp = inheritsPriorRules(question);
   const source = followUp && retrieval ? retrieval : question;
-  const retrieved = selectRules(source);
+  const retrieved = selectRules(source, state);
   let modelIds: string[] | null = null;
   if (retrieved.rules.length > 0 && aiConfigured()) {
     const completed = await completeJson("lite", rulesPrompt(followUp ? history : "", question, retrieved.rules));
     const ids = (completed?.json as { ruleIds?: string[] } | undefined)?.ruleIds;
     if (completed && Array.isArray(ids)) modelIds = ids;
   }
-  return citeFromConversation(question, locale, followUp ? retrieval : "", modelIds);
+  return citeFromConversation(question, locale, followUp ? retrieval : "", modelIds, state);
 }

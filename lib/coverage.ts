@@ -1,11 +1,12 @@
 import type { Locale } from "@/lib/disclaimer";
+import { lawStateOf, type LawState } from "@/lib/rules/states";
 import { stateName } from "@/lib/us-address";
 
 export const COVERAGE_NOTICE_EN =
-  "Rent Right only covers California law right now. You can still log issues, keep photos, and email your landlord, but rules, legal deadlines, and law citations won't apply to your home.";
+  "Rent Right has statewide rules for California, Arizona, Nevada, Oregon, and Washington. It does not cover this state's law. You can still log issues, keep photos, and email your landlord, but rules, legal deadlines, and law citations won't apply to your home.";
 
 export const COVERAGE_NOTICE_ES =
-  "Rent Right solo cubre la ley de California por ahora. Aún puede anotar problemas, guardar fotos y escribirle a su propietario, pero las reglas, los plazos legales y las citas de leyes no aplican a su vivienda.";
+  "Rent Right tiene reglas estatales para California, Arizona, Nevada, Oregón y Washington. No cubre la ley de este estado. Aún puede anotar problemas, guardar fotos y escribirle a su propietario, pero las reglas, los plazos legales y las citas de leyes no aplican a su vivienda.";
 
 export function coverageNotice(locale: Locale | "en" | "es" = "en"): string {
   return locale === "es" ? COVERAGE_NOTICE_ES : COVERAGE_NOTICE_EN;
@@ -16,6 +17,15 @@ export function coversLaw(unit: { supported?: boolean; jurisdiction?: string } |
   if (unit.supported === false) return false;
   if (unit.jurisdiction === "unsupported") return false;
   return true;
+}
+
+export function coverageBounds(unit: { jurisdiction?: string; supported?: boolean } | null | undefined, locale: Locale | "en" | "es" = "en"): string | null {
+  const state = lawStateOf(unit);
+  if (!state || state === "CA") return null;
+  const name = stateName(state) || state;
+  return locale === "es"
+    ? `Hay reglas estatales de ${name} para reparaciones, depósitos, avisos de renta y represalias. No se investigaron las ordenanzas de la ciudad. Si faltan hechos o una exención, Rent Right no decide si algo es legal. Revisado el 8 de noviembre de 2026.`
+    : `Statewide ${name} rules are loaded for repairs, deposits, rent notices, and retaliation. City ordinances were not researched. If facts or an exemption are missing, Rent Right does not decide that something is legal. Checked Nov 8, 2026.`;
 }
 
 export function rulesUnavailable(locale: Locale | "en" | "es", region: string): string {

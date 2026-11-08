@@ -36,6 +36,7 @@ import {
 import { confirmedOutbound } from "@/lib/repair-draft";
 import { todayISO } from "@/lib/rules/dates";
 import { repairReminder } from "@/lib/rules/engine";
+import { lawStateOf } from "@/lib/rules/states";
 import { landlordWords } from "@/lib/inbound-reply";
 import { asRepairSeverity, escalationNote, isHabitability, isIssueTier, reminderPace, shouldEscalate, tierForSeverity, tierShort, violationFlag, type IssueTier } from "@/lib/triage";
 import { tx } from "@/lib/text";
@@ -322,7 +323,7 @@ async function noteTier(user: User, unit: Unit, issueId: string, description: st
 }
 
 export async function refreshIssueTiers(user: User, unit: Unit, logs: LogEntry[], messages: Message[], deadlines: Deadline[]): Promise<boolean> {
-  if (unit.archivedAt || !coversLaw(unit)) return false;
+  if (unit.archivedAt || lawStateOf(unit) !== "CA") return false;
   const today = todayISO();
   let responses: Awaited<ReturnType<typeof listLandlordResponses>> | null = null;
   const landlordResponses = async () => {
@@ -407,7 +408,9 @@ export async function setIssueTier(user: User, unit: Unit, id: string, tier: Iss
     `El nivel cambió de ${tierShort(current, "es")} a ${tierShort(tier, "es")} por el inquilino`,
   ), tierShort(current, user.locale), tierShort(tier, user.locale));
   const anchor = (log.eventDate || todayISO()).slice(0, 10);
-  const reminder = repairReminder(anchor, asRepairSeverity(log.severity), reminderPace(tier, log.severity));
+  const law = lawStateOf(unit);
+  if (!law) return;
+  const reminder = repairReminder(anchor, asRepairSeverity(log.severity), reminderPace(tier, log.severity), law);
   const open = (await listDeadlines(user.id, unit.id)).find((item) => item.kind === "repair" && item.sourceId === id && item.status === "open");
   if (!open) return;
   await updateDeadlineFacts(open.id, {

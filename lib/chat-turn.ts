@@ -40,6 +40,7 @@ import { ORDINANCES } from "@/lib/rules/cities/catalog";
 import { detectPlace } from "@/lib/rules/detect";
 import { todayISO } from "@/lib/rules/dates";
 import { checkRentIncrease, depositReturnDeadline, repairReminder, type AreaKey, type RepairSeverity } from "@/lib/rules/engine";
+import { lawStateOf, stateRentAnswer } from "@/lib/rules/states";
 import { describeTenantMail, mailHeader } from "@/lib/tenant-mail";
 import { aidLinks, aidText, photoPrompt, reminderPace, safetySteps, tierForSeverity, timelinePointer, violationDetail, violationFlag } from "@/lib/triage";
 import { renderAnswer, selectRules } from "@/lib/rules/assistant";
@@ -703,7 +704,7 @@ async function answerRights(user: User, unit: Unit, question: string, history: s
     await say(user, unit, uncoveredCard(user, unit));
     return;
   }
-  const answer = await answerFromConversation(question, user.locale, history, retrieval);
+  const answer = await answerFromConversation(question, user.locale, history, retrieval, lawStateOf(unit) ?? "CA");
   const rule = answer.ruleIds[0] ? getRule(answer.ruleIds[0]) : undefined;
   if (!answer.handoff && (answer.unsure || !rule)) {
     await say(user, unit, suggestionCard(user));
@@ -1083,7 +1084,8 @@ async function commitRepair(user: User, unit: Unit, summary: string, description
     });
   }
   const covered = coversLaw(unit);
-  const reminder = covered ? repairReminder(todayISO(), severity, reminderPace(tier, severity)) : null;
+  const law = lawStateOf(unit);
+  const reminder = law ? repairReminder(todayISO(), severity, reminderPace(tier, severity), law) : null;
   const pending = await ensureRepairDrafts(user, unit, [entry], []);
   const letter = pending[0];
   const draft = await createChatDraft(user.id, unit.id, "repair", {
@@ -1164,8 +1166,39 @@ async function linkChatPhoto(user: User, unit: Unit, issueId: string, attachment
 }
 
 async function runRent(user: User, unit: Unit, lowest: number | null, proposed: number | null, effectiveDate: string, noticeDate: string | null = null) {
-  if (!coversLaw(unit)) {
+  const law = lawStateOf(unit);
+  if (!law) {
     await say(user, unit, uncoveredCard(user, unit));
+    return;
+  }
+  if (law !== "CA") {
+    if (lowest == null || proposed == null) {
+      await say(user, unit, {
+        headline: tx(user.locale, "Need both rents", "Faltan las dos rentas"),
+        status: "",
+        action: null,
+        detail: tx(user.locale, "Say the current rent and the new rent. No cap was checked, and no California rule was used.", "Diga la renta actual y la renta nueva. No se revisó un tope y no se usó una regla de California."),
+        ruleId: null,
+      });
+      return;
+    }
+    const note = stateRentAnswer({
+      state: law,
+      lowestCents: lowest,
+      proposedCents: proposed,
+      noticeDate,
+      effectiveDate,
+      weekToWeek: false,
+      firstYear: null,
+      claimsExemption: false,
+    });
+    await say(user, unit, {
+      headline: user.locale === "es" ? note.headlineEs : note.headlineEn,
+      status: "",
+      action: null,
+      detail: user.locale === "es" ? note.detailEs : note.detailEn,
+      ruleId: note.ruleId,
+    }, "cited-quiet");
     return;
   }
   if (lowest == null || proposed == null) {
@@ -1277,7 +1310,7 @@ async function runDeposit(user: User, unit: Unit, moveOutDate: string) {
     landlordDeductions: existing?.landlord_deductions || "",
     tenantNotes: existing?.tenant_notes || "",
   });
-  const due = depositReturnDeadline(moveOutDate);
+  const due = depositReturnDeadline(moveOutDate, lawStateOf(unit) || "CA");
   await sayDeposit(user, unit, due.dueDate, due.explanation, due.explanationEs, due.ruleId);
 }
 
@@ -1303,7 +1336,7 @@ async function askForLetter(user: User, unit: Unit) {
     status: "",
     action: null,
     detail: tx(user.locale, "Write at least a short explanation in your own words. If a forwarding address is not saved, include “My forwarding address is …”. Nothing is emailed.", "Escriba al menos una explicación breve con sus palabras. Si no hay una dirección de reenvío guardada, incluya “My forwarding address is …”. No se envía ningún correo."),
-    ruleId: "CA-CC-1950.5",
+    ruleId: lawStateOf(unit) === "CA" ? "CA-CC-1950.5" : null,
   });
 }
 
@@ -1358,7 +1391,7 @@ async function writeLetter(user: User, unit: Unit, text: string) {
       status: tx(user.locale, "Need a move-out date", "Falta la salida"),
       action: null,
       detail: tx(user.locale, "A move-out date and a deposit amount have to be saved first. Nothing was written.", "Primero hay que guardar una fecha de salida y un monto de depósito. No se escribió nada."),
-      ruleId: "CA-CC-1950.5",
+      ruleId: lawStateOf(unit) === "CA" ? "CA-CC-1950.5" : null,
     });
     return;
   }
@@ -1368,7 +1401,7 @@ async function writeLetter(user: User, unit: Unit, text: string) {
       status: tx(user.locale, "Need your words", "Faltan sus palabras"),
       action: null,
       detail: tx(user.locale, "Add a forwarding address and at least a short explanation in your own words. Nothing was written or emailed.", "Agregue una dirección de reenvío y al menos una explicación breve con sus palabras. No se escribió ni se envió nada."),
-      ruleId: "CA-CC-1950.5",
+      ruleId: lawStateOf(unit) === "CA" ? "CA-CC-1950.5" : null,
     });
     return;
   }
@@ -1384,26 +1417,29 @@ async function writeLetter(user: User, unit: Unit, text: string) {
     deductionNotes: deposit.landlord_deductions || "",
     disputeNotes: notes,
     letterDate: todayISO(),
+    statuteSentence: lawStateOf(unit) === "CA" ? undefined : deadline.explanation,
   });
   await say(user, unit, {
     headline: tx(user.locale, "Letter ready", "Carta lista"),
     status: tx(user.locale, "Not sent", "No enviado"),
     action: null,
-    detail: `${letter}\n\n${tx(user.locale, "Rent Right did not mail this letter.", "Rent Right no envió esta carta.")}`,
+    detail: `${letter}\n\n${tx(user.locale, "Rent Right did not mail this letter. Send it only if you confirm the words.", "Rent Right no envió esta carta. Envíela solo si confirma las palabras.")}`,
     address: cardAddress(unit),
-    ruleId: "CA-CC-1950.5",
+    ruleId: deadline.ruleId,
   }, "cited-quiet");
 }
 
 async function reviewAttachment(user: User, unit: Unit, file: { name: string; mime: string; base64: string }) {
-  if (!coversLaw(unit)) {
+  if (lawStateOf(unit) !== "CA") {
     const bytes = Buffer.from(file.base64, "base64");
     await saveFile(user.id, unit.id, file.name || "lease", file.mime || "application/octet-stream", bytes);
     await say(user, unit, {
       headline: tx(user.locale, "Lease saved", "Contrato guardado"),
       status: "",
       action: null,
-      detail: `${rulesUnavailable(user.locale, unit.region)}\n\n${tx(user.locale, "The file is saved with your records.", "El archivo quedó guardado con sus registros.")}`,
+      detail: lawStateOf(unit)
+        ? tx(user.locale, "Lease clause review is loaded for California only. The file is saved with your records. No California clause was applied.", "La revisión de cláusulas está cargada solo para California. El archivo quedó guardado. No se aplicó ninguna cláusula de California.")
+        : `${rulesUnavailable(user.locale, unit.region)}\n\n${tx(user.locale, "The file is saved with your records.", "El archivo quedó guardado con sus registros.")}`,
       ruleId: null,
     });
     return;

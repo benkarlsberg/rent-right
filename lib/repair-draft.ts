@@ -14,6 +14,7 @@ import {
 import { formatDate } from "@/lib/format";
 import { repairSubject } from "@/lib/phrase";
 import { repairReminder } from "@/lib/rules/engine";
+import { lawStateOf, stateRepairLetter, type LawState } from "@/lib/rules/states";
 import { relayAddress, tx } from "@/lib/text";
 import { asRepairSeverity, reminderPace, tierForSeverity, violationFlag } from "@/lib/triage";
 
@@ -34,6 +35,7 @@ export function repairDraftLetter(input: {
   severity: string | null;
   tier?: string | null;
   covered?: boolean;
+  state?: LawState | null;
 }): { subject: string; body: string; ruleId: string; dueDate: string | null } {
   const locale = input.locale;
   const day = input.eventDate.slice(0, 10);
@@ -50,7 +52,8 @@ export function repairDraftLetter(input: {
   }
   const severity = severityOf(input.severity);
   const pace = input.tier ? reminderPace(input.tier, input.severity) : undefined;
-  const reminder = repairReminder(day, severity, pace);
+  const state = input.state || "CA";
+  const reminder = repairReminder(day, severity, pace, state);
   const urgent = input.tier ? input.tier === "urgent" : tierForSeverity(severity) === "urgent";
   const tier = input.tier ?? (urgent ? "urgent" : "routine");
   const body = [
@@ -59,7 +62,7 @@ export function repairDraftLetter(input: {
     tx(locale, `Issue: ${issue}`, `Problema: ${issue}`),
     tx(locale, `Date: ${date}`, `Fecha: ${date}`),
     "",
-    repairLegalNote(locale, tier),
+    state === "CA" ? repairLegalNote(locale, tier) : stateRepairLetter(state, locale, severity),
   ].join("\n");
   return { subject, body, ruleId: reminder.ruleId, dueDate: reminder.dueDate };
 }
@@ -150,6 +153,7 @@ export async function ensureRepairDrafts(user: User, unit: Unit, logs: LogEntry[
       severity: log.severity,
       tier: log.tier,
       covered: coversLaw(unit),
+      state: lawStateOf(unit),
     });
     try {
       const row = await insertMessage({
@@ -185,7 +189,9 @@ export async function ensureRepairDeadline(user: User, unit: Unit, log: LogEntry
   if (existing) return;
   const day = log.eventDate.slice(0, 10);
   const pace = log.flags?.tierManual === true ? reminderPace(log.tier, log.severity) : undefined;
-  const reminder = repairReminder(day, severityOf(log.severity), pace);
+  const state = lawStateOf(unit);
+  if (!state) return;
+  const reminder = repairReminder(day, severityOf(log.severity), pace, state);
   await insertDeadline({
     unitId: unit.id,
     ruleId: reminder.ruleId,

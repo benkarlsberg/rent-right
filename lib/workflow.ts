@@ -44,6 +44,7 @@ import { LIBRARY_VERSION, type Locale } from "@/lib/disclaimer";
 import { isIssueTier, tierForSeverity } from "@/lib/triage";
 import { LEASE_REVIEW_MONTHLY_CAP, mergeModelFindings, redactPii, reviewLease, type ModelFinding } from "@/lib/lease/review";
 import { RULES } from "@/lib/rules/library";
+import { lawStateOf } from "@/lib/rules/states";
 import {
   depositReturnDeadline,
   entryNoticeCheck,
@@ -91,13 +92,14 @@ export async function recordLog(input: {
   assertWritable(input.unit, input.user.locale);
   const covered = coversLaw(input.unit);
   const flags: Record<string, unknown> = {};
-  if (covered && input.entryAt && input.noticeAt) {
+  const law = lawStateOf(input.unit);
+  if (law === "CA" && input.entryAt && input.noticeAt) {
     flags.entry = entryNoticeCheck(input.noticeAt, input.entryAt);
   }
-  if (covered && (input.noticeKind === "rent_increase" || input.noticeKind === "eviction") && input.eventDate) {
+  if (law && (input.noticeKind === "rent_increase" || input.noticeKind === "eviction") && input.eventDate) {
     const repairs = (await listLogs(input.user.id, input.unit.id)).filter((entry) => entry.type === "repair");
     const hits = repairs
-      .map((entry) => ({ entry, window: retaliationWindow(entry.eventDate, input.eventDate) }))
+      .map((entry) => ({ entry, window: retaliationWindow(entry.eventDate, input.eventDate, law) }))
       .filter((item) => item.window.flagged)
       .sort((a, b) => a.window.daysSince - b.window.daysSince);
     if (hits[0]) {
@@ -132,7 +134,7 @@ export async function recordLog(input: {
     createdAt: input.createdAt,
   });
 
-  if (covered && input.noticeKind === "pay_or_quit_3day") {
+  if (law === "CA" && input.noticeKind === "pay_or_quit_3day") {
     const counted = threeDayNoticeDeadline(input.eventDate);
     await insertDeadline({
       unitId: input.unit.id,
@@ -405,8 +407,9 @@ export async function saveDepositAndDeadline(user: User, unit: Unit, input: {
 }) {
   assertWritable(unit, user.locale);
   await saveDeposit(user.id, unit.id, input);
-  if (input.moveOutDate && coversLaw(unit)) {
-    const due = depositReturnDeadline(input.moveOutDate);
+  const law = lawStateOf(unit);
+  if (input.moveOutDate && law) {
+    const due = depositReturnDeadline(input.moveOutDate, law);
     await replaceOpenDeadline(unit.id, "deposit");
     await insertDeadline({
       unitId: unit.id,
@@ -426,7 +429,11 @@ export async function saveDepositAndDeadline(user: User, unit: Unit, input: {
 
 export async function runLeaseReview(user: User, unit: Unit, text: string, filename: string) {
   assertWritable(unit, user.locale);
-  if (!coversLaw(unit)) throw new Error(coverageNotice(user.locale));
+  if (lawStateOf(unit) !== "CA") {
+    throw new Error(user.locale === "es"
+      ? "La revisión de cláusulas del contrato está cargada solo para California. El archivo puede guardarse con sus registros. No se aplicó ninguna cláusula de California."
+      : "Lease clause review is loaded for California only. The file can still be kept with your records. No California clause was applied.");
+  }
   const cleaned = redactPii(text).trim();
   if (cleaned.length < 40) throw new Error("No lease text was found. Paste the text or upload a PDF with selectable text.");
   const textHash = leaseTextHash(cleaned, LIBRARY_VERSION, unit.rentCents, unit.jurisdiction);
@@ -524,7 +531,8 @@ export async function askAssistant(user: User, unit: Unit | null, question: stri
     return { text, ruleIds: [], disclaimer: "", handoff: false, unsure: true };
   }
   const context = aiConfigured() ? chatContext(await recentConversationTurns(user.id)) : { history: "", retrieval: "" };
-  const answer = await answerFromConversation(trimmed, locale, context.history, context.retrieval);
+  const law = lawStateOf(unit) ?? "CA";
+  const answer = await answerFromConversation(trimmed, locale, context.history, context.retrieval, law);
   await addAssistantMessage(user.id, unit?.id || null, "assistant", {
     locale,
     content: `${answer.text}\n\n${answer.disclaimer}`,

@@ -66,7 +66,8 @@ import { emailValue } from "@/lib/forms";
 import { addLandlordLabel, landlordPrompt, landlordReady } from "@/lib/landlord";
 import { formatDate, formatMoney, formatTimestamp, percentLabel } from "@/lib/format";
 import { getRule } from "@/lib/rules/library";
-import { coverageNotice, coversLaw } from "@/lib/coverage";
+import { coverageBounds, coverageNotice, coversLaw } from "@/lib/coverage";
+import { lawStateOf } from "@/lib/rules/states";
 import { suggestPlace, tidyAddress } from "@/lib/geo";
 import { storedHome } from "@/lib/home-place";
 import { detectPlace, localProtectionNote, placeSummary } from "@/lib/rules/detect";
@@ -216,7 +217,7 @@ function publicUnit(unit: Unit, locale: Locale) {
     rstpoTier: unit.rstpoTier,
     archived: Boolean(unit.archivedAt),
     supported: unit.supported,
-    coverageNotice: coversLaw(unit) ? null : coverageNotice(locale),
+    coverageNotice: coversLaw(unit) ? coverageBounds(unit, locale) : coverageNotice(locale),
   };
 }
 
@@ -711,7 +712,7 @@ async function homePayload() {
     local: unitLocal(unit, locale),
     cards,
     notice: notice(locale),
-    coverageNotice: covered ? null : coverageNotice(locale),
+    coverageNotice: covered ? coverageBounds(unit, locale) : coverageNotice(locale),
   };
 }
 
@@ -741,7 +742,7 @@ async function leasePayload() {
 
 async function reviewPosted(input: Record<string, unknown>) {
   const { user, unit } = await withUnit();
-  if (!coversLaw(unit)) {
+  if (lawStateOf(unit) !== "CA") {
     if (typeof input.fileBase64 === "string" && input.fileBase64) {
       const bytes = Buffer.from(input.fileBase64, "base64");
       await saveFile(user.id, unit.id, text(input.filename) || "lease.txt", text(input.mime) || "application/octet-stream", bytes);
@@ -762,7 +763,7 @@ async function reviewPosted(input: Record<string, unknown>) {
 
 async function reviewSample() {
   const { user, unit } = await withUnit();
-  if (!coversLaw(unit)) return leasePayload();
+  if (lawStateOf(unit) !== "CA") return leasePayload();
   await runLeaseReview(user, unit, sampleLeaseText(), "sample-lease.txt");
   return leasePayload();
 }
@@ -1282,6 +1283,9 @@ async function increasePayload() {
 async function runIncrease(input: Record<string, unknown>) {
   const { user, unit } = await withUnit();
   if (!coversLaw(unit)) throw new Error(coverageNotice(user.locale));
+  if (lawStateOf(unit) !== "CA") throw new Error(user.locale === "es"
+    ? "Este formulario revisa topes de California. Pregunte en el chat por la nota de este estado. No se aplicó un tope de California."
+    : "This form checks California rent caps. Ask in Chat for this state's note. No California cap was applied.");
   const lowest = dollars(input.lowest);
   const proposed = dollars(input.proposed);
   if (!lowest || !proposed) throw new Error("Enter the current rent and the proposed rent.");
@@ -1451,7 +1455,7 @@ function presentThread(user: User, unit: Unit, rows: ListedAssistant[], steps: {
     packetFile: evidenceFilename(todayISO()),
     archived: Boolean(unit.archivedAt),
     archivedNote: archivedNote(unit, locale),
-    coverageNotice: coversLaw(unit) ? null : coverageNotice(locale),
+    coverageNotice: coversLaw(unit) ? coverageBounds(unit, locale) : coverageNotice(locale),
   };
 }
 
@@ -1785,7 +1789,7 @@ function presentRecordsPayload(user: User, unit: Unit, bundle: ReturnType<typeof
     archived: Boolean(unit.archivedAt),
     archivedNote: archivedNote(unit, locale),
     needsLandlord: !landlordReady(unit),
-    coverageNotice: coversLaw(unit) ? null : coverageNotice(locale),
+    coverageNotice: coversLaw(unit) ? coverageBounds(unit, locale) : coverageNotice(locale),
     supported: unit.supported,
   };
 }

@@ -3,7 +3,8 @@ import { CITY_PACKS } from "@/lib/rules/cities";
 import { LOCAL_ORDINANCES, type LocalOrdinance } from "@/lib/rules/cities/local-directory";
 import type { CityPack } from "@/lib/rules/cities/types";
 import type { AreaKey, Jurisdiction } from "@/lib/rules/engine";
-import { stateCode, stateFromText, stateFromZip } from "@/lib/us-address";
+import { isAddedState } from "@/lib/rules/states";
+import { stateCode, stateFromText, stateFromZip, stateName } from "@/lib/us-address";
 
 export type PlaceQuery = {
   address?: string;
@@ -147,7 +148,7 @@ export function detectPlace(input: PlaceQuery): PlaceDetection {
   }
 
   const zipState = zips.map((zip) => stateFromZip(zip)).find((code): code is string => Boolean(code)) || null;
-  if (zipState && zipState !== "CA") return unsupportedPlace(zipState);
+  if (zipState && zipState !== "CA") return isAddedState(zipState) ? coveredStatePlace(zipState) : unsupportedPlace(zipState);
 
   const stateNamed = /\b(california|calif)\b/.test(`${text} ${city}`) || /\bca\b/.test(region) || /\bca\b/.test(address);
   const zipIsCa = zips.some(isCaliforniaZip);
@@ -168,7 +169,7 @@ export function detectPlace(input: PlaceQuery): PlaceDetection {
 
   if (!inCalifornia) {
     const named = [stateCode(input.region || ""), stateFromText(`${address} ${city}`)].find((code) => code && code !== "CA");
-    if (named) return unsupportedPlace(named);
+    if (named) return isAddedState(named) ? coveredStatePlace(named) : unsupportedPlace(named);
     return {
       jurisdiction: "unsure",
       area: null,
@@ -197,6 +198,20 @@ export function detectPlace(input: PlaceQuery): PlaceDetection {
   };
 }
 
+function coveredStatePlace(state: string): PlaceDetection {
+  const name = stateName(state) || state;
+  return {
+    jurisdiction: state.toLowerCase(),
+    area: null,
+    inCalifornia: false,
+    pack: null,
+    localOrdinance: null,
+    confidence: "low",
+    notes: [`Statewide ${name} rules are loaded for repairs, deposits, rent notices, and retaliation. City ordinances were not researched.`],
+    state,
+  };
+}
+
 function unsupportedPlace(state: string): PlaceDetection {
   return {
     jurisdiction: "unsupported",
@@ -221,6 +236,12 @@ export function inferJurisdiction(address: string): {
 
 export function placeSummary(place: PlaceDetection, locale: "en" | "es" = "en"): string {
   if (place.jurisdiction === "unsupported") return coverageNotice(locale);
+  if (isAddedState(place.state)) {
+    const name = stateName(place.state || "") || place.state;
+    return locale === "es"
+      ? `Aplican reglas estatales de ${name}. No se investigaron las ordenanzas de la ciudad.`
+      : `Statewide ${name} rules apply. City ordinances were not researched.`;
+  }
   if (!place.inCalifornia) {
     const empty = place.notes.some((note) => note === "No address entered.");
     if (locale === "es") return empty ? "No hay dirección." : "Esa dirección no parece de California.";

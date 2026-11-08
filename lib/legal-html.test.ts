@@ -63,10 +63,10 @@ describe("public legal pages", () => {
     const termsBody = await (await terms()).text();
     expect(privacyBody).toContain("<h1>Privacy policy</h1>");
     expect(privacyBody).toContain("<title>Privacy policy · Rent Right</title>");
-    expect(privacyBody).toContain('name="description" content="What Rent Right stores for California renters, and what it sends."');
+    expect(privacyBody).toContain('name="description" content="What Rent Right stores, and what it sends."');
     expect(termsBody).toContain("<h1>Terms of use</h1>");
     expect(termsBody).toContain("<title>Terms of use · Rent Right</title>");
-    expect(termsBody).toContain('name="description" content="How Rent Right keeps records and drafts landlord messages for California renters."');
+    expect(termsBody).toContain('name="description" content="How Rent Right keeps records and drafts landlord messages."');
     expect(privacyBody).not.toContain("id=\"root\"");
     expect(deleteAccountDocument).toContain("Export your evidence packet first");
     expect(deleteAccountDocument).toContain("landlord communications");
