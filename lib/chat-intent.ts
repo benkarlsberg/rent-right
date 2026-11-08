@@ -27,7 +27,7 @@ export type TurnPlan =
 const INTENTS = ["repair", "lease", "rent", "deposit", "packet", "deadlines", "rights", "unclear"] as const;
 
 const REPAIR = /\b(leak|leaking|drip|dripping|sink|mold|mould|pests?|roaches?|rats?|mice|bed bugs?|heater|heat|heating|furnace|hot water|shower|repair|broken|faucet|toilet|water|electricity|power|gas|locks?|clogged|smoke detector|sewage|sewer|flood|flooding|window|wiring|monoxide|monoxido|fire|hazard|incendio|chispas|ventana|inundacion|alcantarill|gotera|fregadero|filtra|filtrando|moho|plaga|cucarachas?|calefaccion|calentador|agua caliente|regadera|ducha|cerradura|fuga|agua|luz|puerta|inodoro|request a fix|request a repair|like to request a fix|like to ask for a fix|arreglar|arreglo|reparar|reparacion)\b/;
-const RENT = /\b(rent increase|raised rent|raise rent|raising rent|new rent|aumento|subio el alquiler|subio la renta|aumento de renta)\b/;
+const RENT = /\b(?:rent increase|raised rent|raise rent|raising rent|new rent|increase(?:s|d|ing)? (?:my |the |our |your )?rent|aumento(?: de renta)?|aumentar (?:mi |la |el )?(?:renta|alquiler)|subio (?:el alquiler|la renta)|subir (?:el |la |mi )?(?:renta|alquiler))\b/;
 const DEPOSIT = /\b(deposit|security deposit|deposito|moved out|move out|moving out|me mude)\b/;
 const LEASE = /\b(lease|contrato|rental agreement)\b/;
 const PACKET = /\b(evidence packet|packet|expediente|export my records|download my records)\b/;

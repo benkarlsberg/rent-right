@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { describe, expect, it, vi } from "vitest";
-import { citeFromConversation } from "@/lib/chat-answer";
+import { citeFromConversation, inheritsPriorRules } from "@/lib/chat-answer";
 import { privacyDocument } from "@/lib/legal-html";
 import { auditChat, backfillChat } from "@/lib/chat-backfill";
 import { CHAT_HISTORY_CHARS, formatChatHistory, isCiphertext, readChatText } from "@/lib/chat-text";
@@ -102,7 +102,8 @@ describe("chat text at rest", () => {
     await getSql()`update chat_drafts set status = 'cancelled' where id = ${draft.id}`;
     expect((await openChatDraft(user.id))?.payload.text).toBe("Leaky pipe under the sink");
 
-    expect(await countAssistantThisMonth(user.id, "2026-10-01")).toBe(2);
+    const thisMonth = `${new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit" }).format(new Date())}-01`;
+    expect(await countAssistantThisMonth(user.id, thisMonth)).toBe(2);
   });
 
   it("encrypts existing plaintext rows once and links them inside each cleared chat", async () => {
@@ -183,6 +184,16 @@ describe("short chat context", () => {
     expect(missed.ruleIds).toContain("CA-CC-1950.5");
     const narrowed = citeFromConversation(followUp, "en", `${retrieval}\n${followUp}`, ["CA-CC-1950.5", "NOT-A-RULE"]);
     expect(narrowed.ruleIds).toEqual(["CA-CC-1950.5"]);
+  });
+
+  it("does not reuse a prior retaliation card for a 20 percent rent question", () => {
+    const question = "They want to increase my rent by 20%. Is that legal";
+    const prior = "I made a complaint and this looks like retaliation. Retaliation after a complaint. A rent increase was logged within 180 days after a repair request or complaint.";
+    expect(inheritsPriorRules(question)).toBe(false);
+    expect(inheritsPriorRules("what about the second one?")).toBe(true);
+    const cited = citeFromConversation(question, "en", `${prior}\n${question}`, ["CA-CC-1942.5"]);
+    expect(cited.ruleIds).not.toContain("CA-CC-1942.5");
+    expect(cited.text).not.toContain("Retaliation after a complaint");
   });
 
   it("keeps the last turns under the cap and removes contact numbers", () => {
@@ -272,5 +283,42 @@ describe("short chat context", () => {
     expect(mine).toHaveLength(1);
     expect(mine[0]?.id).toBe(clientId);
     expect(rows.filter((row) => row.role === "assistant" && row.reply_to_id === clientId)).toHaveLength(1);
+  });
+
+  it("answers a 20 percent rent question instead of the previous retaliation card", async () => {
+    const user = await createNamedUser(`chat-rent-${Date.now()}@example.com`, "Maya Chen");
+    const other = await createNamedUser(`chat-rent-other-${Date.now()}@example.com`, "Owen Chen");
+    const unit = await createUnit(user.id, unitInput(`${Date.now()} Echo Park Ave`));
+    const otherUnit = await createUnit(other.id, unitInput(`${Date.now()} Sunset Blvd`));
+    const answer = { locale: "en" as const, ruleIds: ["CA-CC-1942.5"], unsure: false };
+    await addAssistantMessage(user.id, unit.id, "user", {
+      ...answer,
+      ruleIds: [],
+      content: "I made a complaint and this looks like retaliation.",
+    });
+    await addAssistantMessage(user.id, unit.id, "assistant", {
+      ...answer,
+      content: "Retaliation after a complaint. Civil Code §1942.5. A rent increase was logged within 180 days after a repair request or complaint.",
+    });
+    await runChatTurn(other, otherUnit, { text: "The bathroom fan stopped." });
+    await runChatTurn(user, unit, { text: "They want to increase my rent by 20%. Is that legal" });
+    const rows = await listAssistant(user.id, "visible");
+    const asked = rows.filter((row) => row.role === "user").at(-1);
+    const reply = rows.filter((row) => row.role === "assistant" && row.reply_to_id === asked?.id);
+    expect(asked?.content).toBe("They want to increase my rent by 20%. Is that legal");
+    expect(reply).toHaveLength(1);
+    expect(reply[0]?.content).toContain("Need the rent amounts");
+    expect(reply[0]?.content).not.toContain("1942.5");
+    expect(reply[0]?.content).not.toContain("Retaliation after a complaint");
+    const otherRows = await listAssistant(other.id, "visible");
+    expect(otherRows.some((row) => row.content.includes("20%"))).toBe(false);
+    expect(rows.some((row) => row.content.includes("bathroom fan"))).toBe(false);
+
+    await runChatTurn(user, unit, { action: "clear" });
+    const visible = await listAssistant(user.id, "visible");
+    expect(visible.some((row) => row.content.includes("20%"))).toBe(false);
+    expect(visible.some((row) => row.content.includes("Retaliation after a complaint"))).toBe(false);
+    const kept = await listAssistant(user.id, "all");
+    expect(kept.some((row) => row.content.includes("They want to increase my rent by 20%"))).toBe(true);
   });
 });

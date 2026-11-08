@@ -113,6 +113,8 @@ describe("chat intent", () => {
     expect(planTurn("I need to request a repair", null)).toEqual({ type: "repair_prompt" });
     expect(planTurn("Review my lease agreement", null).type).toBe("lease");
     expect(planTurn("Is my rent increase legal?", null)).toMatchObject({ type: "rent", proposedCents: null, noticeDate: null });
+    expect(planTurn("They want to increase my rent by 20%. Is that legal", null)).toMatchObject({ type: "rent", proposedCents: null, noticeDate: null });
+    expect(planTurn("Quieren aumentar mi renta un 20%. Es legal?", null)).toMatchObject({ type: "rent", proposedCents: null });
     expect(planTurn("How do I get my deposit back?", null).type).toBe("deposit");
     expect(planTurn("$2,000 to $2,100, notice on 2026-10-01, starting 2026-11-01", null)).toMatchObject({
       type: "rent",

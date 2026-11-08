@@ -46,6 +46,34 @@ describe("tab store", () => {
     expect(readSlice(alice, "thread")).toBeNull();
   });
 
+  it("keeps a newer rent answer when an older bootstrap still has the retaliation card", () => {
+    const started = tabGeneration();
+    applyBootstrap(alice, {
+      thread: { items: [{ role: "card", headline: "Retaliation after a complaint", ruleId: "CA-CC-1942.5" }] },
+      chat: {},
+      records: {},
+    }, started, 1_000);
+    const beforeSend = tabGeneration();
+    publishSlice(alice, "thread", {
+      items: [
+        { role: "user", text: "They want to increase my rent by 20%. Is that legal" },
+        { role: "card", headline: "Need the rent amounts" },
+      ],
+    }, 2_000);
+    expect(applyBootstrap(alice, {
+      thread: { items: [{ role: "card", headline: "Retaliation after a complaint", ruleId: "CA-CC-1942.5" }] },
+      chat: {},
+      records: {},
+    }, beforeSend, 3_000)).toBe(false);
+    expect(readSlice(alice, "thread")).toEqual({
+      items: [
+        { role: "user", text: "They want to increase my rent by 20%. Is that legal" },
+        { role: "card", headline: "Need the rent amounts" },
+      ],
+    });
+    expect(readSlice(bob, "thread")).toBeNull();
+  });
+
   it("drops a bootstrap that started before a newer slice", () => {
     const started = tabGeneration();
     rememberSlice(alice, "records", { tier: "routine" }, 6_000);
