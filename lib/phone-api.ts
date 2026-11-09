@@ -67,7 +67,7 @@ import { addLandlordLabel, landlordPrompt, landlordReady } from "@/lib/landlord"
 import { formatDate, formatMoney, formatTimestamp, percentLabel } from "@/lib/format";
 import { getRule } from "@/lib/rules/library";
 import { coverageBounds, coverageNotice, coversLaw } from "@/lib/coverage";
-import { lawStateOf } from "@/lib/rules/states";
+import { isAddedState, lawStateOf } from "@/lib/rules/states";
 import { suggestPlace, tidyAddress } from "@/lib/geo";
 import { storedHome } from "@/lib/home-place";
 import { detectPlace, localProtectionNote, placeSummary } from "@/lib/rules/detect";
@@ -488,7 +488,7 @@ async function route(request: Request, path: string[]): Promise<Response> {
     return json({
       summary: placeSummary(found.place, user.locale),
       inCalifornia: found.place.inCalifornia,
-      covered: found.place.inCalifornia && found.place.jurisdiction !== "unsupported",
+      covered: found.place.jurisdiction !== "unsupported" && found.place.jurisdiction !== "unsure" && (found.place.inCalifornia || isAddedState(found.place.state)),
       state: found.place.state || null,
       suggestion: found.suggestion,
       differs: found.differs,

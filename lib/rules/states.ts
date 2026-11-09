@@ -1,4 +1,17 @@
 import { addDays, addMonths, daysBetween, isWeekend, parseISODate } from "@/lib/rules/dates";
+import {
+  FL_RULES,
+  TX_RULES,
+  batchRepairLetter,
+  flDeposit,
+  flRent,
+  flRepair,
+  flRetaliation,
+  txDeposit,
+  txRent,
+  txRepair,
+  txRetaliation,
+} from "@/lib/rules/states/batch1";
 import { rule, type Rule } from "@/lib/rules/define";
 
 type RepairSeverity =
@@ -11,10 +24,9 @@ function increasePpm(lowestCents: number, proposedCents: number): number {
 }
 
 /** Statewide law loaded for a home. California local packs stay on the California path. */
-export type LawState = "CA" | "AZ" | "NV" | "OR" | "WA";
-
-export const COVERED_LAW_STATES = ["AZ", "NV", "OR", "WA"] as const;
+export const COVERED_LAW_STATES = ["AZ", "NV", "OR", "WA", "TX", "FL"] as const;
 export type AddedState = (typeof COVERED_LAW_STATES)[number];
+export type LawState = "CA" | AddedState;
 
 const CHECKED = "Nov 8, 2026";
 const CHECKED_ES = "8 de noviembre de 2026";
@@ -25,13 +37,13 @@ export function lawStateOf(unit: { jurisdiction?: string; supported?: boolean } 
   if (!unit) return "CA";
   if (unit.supported === false || unit.jurisdiction === "unsupported" || unit.jurisdiction === "unsure") return null;
   const code = (unit.jurisdiction || "").toLowerCase();
-  if (code === "az" || code === "nv" || code === "or" || code === "wa") return code.toUpperCase() as AddedState;
+  if ((COVERED_LAW_STATES as readonly string[]).includes(code.toUpperCase())) return code.toUpperCase() as AddedState;
   if (!unit.jurisdiction || CA_JURISDICTIONS.has(unit.jurisdiction)) return "CA";
   return null;
 }
 
 export function isAddedState(value: string | null | undefined): value is AddedState {
-  return value === "AZ" || value === "NV" || value === "OR" || value === "WA";
+  return !!value && (COVERED_LAW_STATES as readonly string[]).includes(value.toUpperCase());
 }
 
 function nthWeekday(year: number, monthIndex: number, weekday: number, nth: number): string {
@@ -122,6 +134,8 @@ type Stamp = {
 };
 
 export function stateDeposit(state: AddedState, triggerDate: string): Stamp {
+  if (state === "TX") return txDeposit(triggerDate);
+  if (state === "FL") return flDeposit(triggerDate);
   if (state === "AZ") {
     const counted = countedDays(triggerDate, 14, (day) => {
       if (isWeekend(day)) return true;
@@ -216,6 +230,8 @@ function repairClock(state: AddedState, severity: RepairSeverity): RepairClock {
 }
 
 export function stateRepair(state: AddedState, requestDate: string, severity: RepairSeverity): Stamp {
+  if (state === "TX") return txRepair(requestDate);
+  if (state === "FL") return flRepair();
   const clock = repairClock(state, severity);
   const cites = {
     AZ: ["AZ-ARS-33-1361", "Ariz. Rev. Stat. § 33-1361"],
@@ -254,6 +270,8 @@ export function stateRetaliation(state: AddedState, activityDate: string, notice
   explanationEs: string;
 } {
   const daysSince = daysBetween(activityDate, noticeDate);
+  if (state === "TX") return txRetaliation(activityDate, noticeDate, daysSince);
+  if (state === "FL") return flRetaliation(daysSince);
   if (state === "AZ") {
     const end = addMonths(activityDate, 6);
     const flagged = daysSince >= 0 && noticeDate <= end;
@@ -315,6 +333,8 @@ export function stateRentAnswer(input: {
   /** Ordinary rented dwelling, a lot for a home the tenant owns, or not yet known. */
   homeKind?: "dwelling" | "manufactured_lot" | "unknown";
 }): StateRentAnswer {
+  if (input.state === "TX") return txRent(input.lowestCents, input.proposedCents);
+  if (input.state === "FL") return flRent(input.lowestCents, input.proposedCents);
   const ppm = increasePpm(input.lowestCents, input.proposedCents);
   const percent = (ppm / 10_000).toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
   const given = input.noticeDate ? daysBetween(input.noticeDate, input.effectiveDate) : null;
@@ -456,6 +476,8 @@ function stateRule(input: {
 }
 
 export const ADDED_STATE_RULES: Rule[] = [
+  ...TX_RULES,
+  ...FL_RULES,
   stateRule({
     id: "AZ-ARS-33-1321",
     jurisdiction: "AZ",
@@ -667,6 +689,7 @@ export const ADDED_STATE_RULES: Rule[] = [
 ];
 
 export function stateRepairLetter(state: AddedState, locale: "en" | "es", severity: RepairSeverity): string {
+  if (state === "TX" || state === "FL") return batchRepairLetter(state, locale);
   const clock = repairClock(state, severity);
   const period = clock.hours != null ? `${clock.hours} hours after you receive this notice` : `${clock.days} calendar days after you receive this notice`;
   const periodEs = clock.hours != null ? `${clock.hours} horas después de recibir este aviso` : `${clock.days} días calendario después de recibir este aviso`;

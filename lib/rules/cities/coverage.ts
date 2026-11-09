@@ -62,7 +62,7 @@ export function renderCoverageMarkdown(packs: CityPack[] = [...HAND, ...CATALOG_
 
   return `# Coverage
 
-Statewide notes are loaded for California, Arizona, Nevada, Oregon, and Washington. The California section below is the local-ordinance catalog. Arizona, Nevada, Oregon, and Washington do not have city packs in this file. Checked Nov 8, 2026 from the statute and agency pages named in the state rules. A topic that is not in those rules is not covered. Manufactured-home park rent and local city ordinances outside California were not researched.
+Statewide notes are loaded for California, Arizona, Nevada, Oregon, Washington, Texas, and Florida. The California section below is the local-ordinance catalog. The other covered states do not have city packs in this file. Arizona, Nevada, Oregon, and Washington were checked Nov 8, 2026. Texas and Florida were checked Nov 9, 2026. A topic that is not in those rules is not covered. New York, Illinois, New Jersey, Massachusetts, Georgia, North Carolina, Pennsylvania, Ohio, and the District of Columbia stay on the not-covered notice. Manufactured-home park rent and local city ordinances outside California were not researched. Rent stabilization in New York City, municipal rent control in New Jersey, the Chicago RLTO, and District of Columbia rent stabilization are not covered.
 
 # California coverage
 

@@ -5,13 +5,15 @@ import { depositReturnDeadline, repairReminder, retaliationWindow } from "@/lib/
 import { lawStateOf, stateRentAnswer } from "@/lib/rules/states";
 
 describe("added state coverage", () => {
-  it("classifies the four states and leaves Texas unsupported", () => {
+  it("classifies covered states and leaves New York unsupported", () => {
     expect(detectPlace({ city: "Phoenix", region: "AZ", postalCode: "85004" }).jurisdiction).toBe("az");
     expect(detectPlace({ city: "Las Vegas", region: "NV", postalCode: "89101" }).jurisdiction).toBe("nv");
     expect(detectPlace({ city: "Portland", region: "OR", postalCode: "97201" }).jurisdiction).toBe("or");
     expect(detectPlace({ city: "Seattle", region: "WA", postalCode: "98101" }).jurisdiction).toBe("wa");
+    expect(detectPlace({ city: "Houston", region: "TX", postalCode: "77002" }).jurisdiction).toBe("tx");
+    expect(detectPlace({ city: "Miami", region: "FL", postalCode: "33101" }).jurisdiction).toBe("fl");
     expect(detectPlace({ city: "Los Angeles", region: "CA", postalCode: "90026" }).jurisdiction).toBe("city_la");
-    expect(detectPlace({ address: "1 Main, Austin, TX 78701" }).jurisdiction).toBe("unsupported");
+    expect(detectPlace({ address: "350 5th Ave, New York, NY 10001" }).jurisdiction).toBe("unsupported");
   });
 
   it("counts Arizona deposit days without weekends or the observed July 4 holiday", () => {
@@ -27,6 +29,10 @@ describe("added state coverage", () => {
     expect(depositReturnDeadline("2026-09-01", "NV")).toMatchObject({ dueDate: "2026-10-01", ruleId: "NV-NRS-118A.242" });
     expect(depositReturnDeadline("2026-09-01", "OR")).toMatchObject({ dueDate: "2026-10-02", ruleId: "OR-ORS-90.300" });
     expect(depositReturnDeadline("2026-09-01", "WA")).toMatchObject({ dueDate: "2026-10-01", ruleId: "WA-RCW-59.18.280" });
+    expect(depositReturnDeadline("2026-09-01", "TX")).toMatchObject({ dueDate: "2026-10-01", ruleId: "TX-PROP-92.103" });
+    expect(depositReturnDeadline("2026-09-01", "TX").explanation).toContain("92.107");
+    expect(depositReturnDeadline("2026-09-01", "FL").dueDate).toBeNull();
+    expect(depositReturnDeadline("2026-09-01", "FL").unsure).toBe(true);
     expect(depositReturnDeadline("2026-09-01").ruleId).toBe("CA-CC-1950.5");
     expect(depositReturnDeadline("2026-09-01", "WA").explanation).not.toContain("§1950.5");
   });
@@ -50,6 +56,11 @@ describe("added state coverage", () => {
     expect(repairReminder("2026-10-01", "leak", undefined, "NV").dueDate).toBe("2026-10-15");
     expect(repairReminder("2026-10-01", "no_heat", undefined, "OR").dueDate).toBe("2026-10-08");
     expect(repairReminder("2026-10-01", "leak", undefined, "OR").dueDate).toBe("2026-10-31");
+    const texas = repairReminder("2026-10-01", "leak", undefined, "TX");
+    expect(texas.dueDate).toBe("2026-10-08");
+    expect(texas.unsure).toBe(true);
+    expect(texas.explanation).toContain("not permission");
+    expect(repairReminder("2026-10-01", "leak", undefined, "FL").dueDate).toBeNull();
   });
 
   it("does not apply California's 180-day retaliation window outside California", () => {
@@ -62,6 +73,9 @@ describe("added state coverage", () => {
     expect(retaliationWindow(activity, "2026-04-02", "WA").flagged).toBe(false);
     expect(retaliationWindow(activity, "2026-07-01", "AZ").flagged).toBe(true);
     expect(retaliationWindow(activity, "2026-07-02", "AZ").flagged).toBe(false);
+    expect(retaliationWindow(activity, "2026-07-01", "TX").flagged).toBe(true);
+    expect(retaliationWindow(activity, "2026-07-02", "TX").flagged).toBe(false);
+    expect(retaliationWindow(activity, later, "FL").flagged).toBe(false);
     expect(retaliationWindow(activity, later).ruleId).toBe("CA-CC-1942.5");
   });
 
@@ -193,5 +207,28 @@ describe("added state coverage", () => {
     });
     expect(later.abovePublishedMax).toBe(false);
     expect(later.detailEn).toContain("no cap comparison was made");
+  });
+
+  it("keeps Texas and Florida rent answers off California and off a graded notice period", () => {
+    const shared = {
+      lowestCents: 200_000,
+      proposedCents: 240_000,
+      noticeDate: "2026-09-01",
+      effectiveDate: "2026-09-20",
+      weekToWeek: false,
+      firstYear: null,
+      claimsExemption: false,
+    };
+    const texas = stateRentAnswer({ state: "TX", ...shared });
+    expect(texas.abovePublishedMax).toBe(false);
+    expect(texas.detailEn).toContain("does not cap");
+    expect(texas.detailEn).not.toContain("1950.5");
+    expect(selectRules("Can the landlord raise my rent?", "TX").rules.every((item) => item.jurisdiction === "TX")).toBe(true);
+    const florida = stateRentAnswer({ state: "FL", ...shared });
+    expect(florida.abovePublishedMax).toBe(false);
+    expect(florida.detailEn).toContain("83.57");
+    expect(florida.detailEn).toContain("were not graded");
+    expect(selectRules("Is a rent increase allowed?", "FL").rules.some((item) => item.id.startsWith("CA-"))).toBe(false);
+    expect(selectRules("security deposit return", "CA").rules.some((item) => item.id.startsWith("TX-") || item.id.startsWith("FL-"))).toBe(false);
   });
 });

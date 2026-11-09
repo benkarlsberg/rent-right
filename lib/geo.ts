@@ -1,5 +1,6 @@
 import { titleCase } from "@/lib/address-format";
 import { detectPlace, type PlaceDetection } from "@/lib/rules/detect";
+import { isAddedState } from "@/lib/rules/states";
 import type { Jurisdiction } from "@/lib/rules/engine";
 
 export { titleCase };
@@ -148,7 +149,7 @@ function localPlace(kept: KeptAddress): PlaceDetection {
 
 function localCheck(kept: KeptAddress): AddressCheck {
   const place = localPlace(kept);
-  if (place.inCalifornia || place.jurisdiction === "unsupported") {
+  if (place.inCalifornia || place.jurisdiction === "unsupported" || isAddedState(place.state)) {
     return { place, suggestion: null, differs: false, kept };
   }
   return { place: rejectPlace(place), suggestion: null, differs: false, kept };
@@ -212,7 +213,7 @@ export async function suggestPlace(input: string | AddressFields): Promise<Addre
         postalCode: kept.postalCode || String(parts.zip || ""),
         region: censusState,
       });
-      if (outside.jurisdiction === "unsupported" || outside.jurisdiction === "az" || outside.jurisdiction === "nv" || outside.jurisdiction === "or" || outside.jurisdiction === "wa") {
+      if (outside.jurisdiction === "unsupported" || isAddedState(outside.state)) {
         return { place: outside, suggestion: null, differs: false, kept };
       }
       return { place: rejectPlace(localPlace(kept)), suggestion: null, differs: false, kept };

@@ -5,6 +5,7 @@ import { stateName } from "@/lib/us-address";
 import { formatDate, formatMoney, formatTimestamp } from "@/lib/format";
 import type { Unit, User } from "@/lib/db";
 import { packByJurisdiction } from "@/lib/rules/cities";
+import { isAddedState, lawStateOf } from "@/lib/rules/states";
 import { relayDomain } from "@/lib/text";
 
 const SMALL_CLAIMS_URL = "https://selfhelp.courts.ca.gov/small-claims";
@@ -104,6 +105,7 @@ function when(iso: string): string {
 }
 
 export function jurisdictionLabel(code: string): string {
+  if (isAddedState(code.toUpperCase())) return stateName(code) || code.toUpperCase();
   if (!code || code === "ca" || code === "other_ca") return "California";
   if (code === "unsure") return "California, city not confirmed";
   const pack = packByJurisdiction(code);
@@ -160,6 +162,8 @@ export function buildPacket(input: {
   preparedAt?: string;
 }): PacketModel {
   const covered = coversLaw(input.unit);
+  const law = lawStateOf(input.unit);
+  const california = law === "CA";
   const images = new Map((input.images || []).map((image) => [image.id, image]));
   const imagesFor = (messageId?: string | null) => {
     if (!messageId) return [] as PacketImage[];
@@ -297,7 +301,7 @@ export function buildPacket(input: {
     ? `Amount ${input.deposit.amountCents != null ? formatMoney(input.deposit.amountCents, "en") : "not entered"}. Move-out ${input.deposit.moveOutDate ? when(input.deposit.moveOutDate) : "not entered"}. Forwarding address ${input.deposit.forwardingAddress || "not entered"}.`
     : null;
 
-  const leaseNotes = (covered ? input.leaseNotes || [] : []).filter((note) => note.quote).map((note) => (
+  const leaseNotes = (california ? input.leaseNotes || [] : []).filter((note) => note.quote).map((note) => (
     `${note.filename ? `${note.filename}: ` : ""}${note.quote}`
   ));
 
@@ -316,9 +320,11 @@ export function buildPacket(input: {
     landlord: input.unit.landlordName || "Not entered",
     rent: input.unit.rentCents != null ? formatMoney(input.unit.rentCents, "en") : "Not entered",
     summary,
-    reminderNote: covered
+    reminderNote: california
       ? (issues.some((issue) => issue.reminder) || keyDates.length ? REMINDER_NOTE : null)
-      : COVERAGE_NOTICE_EN,
+      : covered
+        ? null
+        : COVERAGE_NOTICE_EN,
     issues: issues.map(({ title, status, reported, reminder, description, updates, messages, images: issueImages }) => ({
       title, status, reported, reminder, description, updates, messages, images: issueImages,
     })),
@@ -341,10 +347,12 @@ export function buildPacket(input: {
     leaseNotes,
     otherNotes,
     verification,
-    closing: covered
+    closing: california
       ? `Small claims is a self-help option. Rent Right does not file a case and does not give legal advice. ${SMALL_CLAIMS_URL}`
       : "Rent Right does not file a case and does not give legal advice.",
-    disclaimer: covered ? DISCLAIMER_EN : COVERAGE_NOTICE_EN,
+    disclaimer: california ? DISCLAIMER_EN : covered
+      ? "This is general legal information, not legal advice. For advice, contact a licensed attorney in your state or legal aid."
+      : COVERAGE_NOTICE_EN,
   };
 }
 

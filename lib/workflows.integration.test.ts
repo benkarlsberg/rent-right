@@ -273,10 +273,19 @@ describe("renter workflows", () => {
       region: "TX",
     }, token);
     expect(elsewhere.json?.inCalifornia).toBe(false);
-    expect(elsewhere.json?.jurisdiction).toBe("unsupported");
+    expect(elsewhere.json?.jurisdiction).toBe("tx");
     expect(elsewhere.json?.state).toBe("TX");
-    expect(elsewhere.json?.covered).toBe(false);
-    expect(elsewhere.json?.summary).toBe(COVERAGE_NOTICE_EN);
+    expect(elsewhere.json?.covered).toBe(true);
+    expect(String(elsewhere.json?.summary)).toContain("Texas");
+    const kansas = await api("POST", "place", {
+      street: "1 Main",
+      city: "Wichita",
+      postalCode: "67202",
+      region: "KS",
+    }, token);
+    expect(kansas.json?.jurisdiction).toBe("unsupported");
+    expect(kansas.json?.covered).toBe(false);
+    expect(kansas.json?.summary).toBe(COVERAGE_NOTICE_EN);
     const saved = await api("POST", "unit", {
       street: "1604 dover ave",
       unitNumber: "apt 4",
@@ -312,10 +321,11 @@ describe("renter workflows", () => {
     }, token);
     expect(saved.status).toBe(200);
     const unit = saved.json?.unit as { jurisdiction?: string; supported?: boolean; region?: string; coverageNotice?: string };
-    expect(unit.jurisdiction).toBe("unsupported");
-    expect(unit.supported).toBe(false);
+    expect(unit.jurisdiction).toBe("tx");
+    expect(unit.supported).toBe(true);
     expect(unit.region).toBe("TX");
-    expect(unit.coverageNotice).toBe(COVERAGE_NOTICE_EN);
+    expect(unit.coverageNotice).toContain("Texas");
+    expect(unit.coverageNotice).toContain("City ordinances were not researched");
 
     const repair = await saveRepair(token, "The kitchen sink is leaking under the cabinet");
     expect(repair.saved.status).toBe(200);
@@ -330,22 +340,21 @@ describe("renter workflows", () => {
     const rights = await api("POST", "thread", { text: "Can my landlord enter without 24 hours notice?" }, token);
     expect(rights.status).toBe(200);
     const rightsText = JSON.stringify(rights.json);
-    expect(rightsText).toContain(COVERAGE_NOTICE_EN);
-    expect(rightsText).toContain("can't give rules for Texas yet");
+    expect(rightsText).not.toContain("can't give rules for Texas yet");
     expect(rightsText).not.toMatch(/CA-CC-1954|Civil Code §1954/);
 
     const reminder = await api("POST", "records/reminder/new", { label: "Call the plumber", date: "2026-12-01" }, token);
     expect(reminder.status).toBe(200);
     const kinds = (reminder.json?.deadlines as { kind: string }[]) || [];
     expect(kinds.some((item) => item.kind === "custom_reminder")).toBe(true);
-    expect(kinds.some((item) => item.kind === "repair" || item.kind === "deposit" || item.kind === "notice_3day")).toBe(false);
+    expect(kinds.some((item) => item.kind === "deposit" || item.kind === "notice_3day")).toBe(false);
     expect(JSON.stringify(reminder.json)).not.toMatch(/CA-CC|Civil Code/);
 
     const owner = await getUserByEmail(email);
     expect(owner?.id).toBeTruthy();
     await withActor(owner!.id, async () => {
       const home = await primaryUnit(owner!.id);
-      expect(home?.supported).toBe(false);
+      expect(home?.supported).toBe(true);
       const lines = packetLines({
         user: owner!,
         unit: home!,
@@ -357,7 +366,7 @@ describe("renter workflows", () => {
         conditions: [],
       });
       const text = lines.join("\n");
-      expect(text).toContain(COVERAGE_NOTICE_EN);
+      expect(text).not.toContain(COVERAGE_NOTICE_EN);
       expect(text).toContain("Texas");
       expect(text).not.toMatch(/Civil Code|CA-CC|§1942|selfhelp\.courts\.ca\.gov/);
       expect(lines.some((line) => line === "California")).toBe(false);

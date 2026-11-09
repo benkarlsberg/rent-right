@@ -1,6 +1,7 @@
 import type { Jurisdiction } from "@/lib/rules/engine";
 import { isAllowedJurisdiction } from "@/lib/rules/cities";
 import { detectPlace } from "@/lib/rules/detect";
+import { isAddedState } from "@/lib/rules/states";
 
 export function storedHome(input: {
   street: string;
@@ -17,6 +18,9 @@ export function storedHome(input: {
     postalCode: postal,
     region: input.region,
   });
+  if (isAddedState(detected.state)) {
+    return { jurisdiction: detected.jurisdiction, region: detected.state || input.region, supported: true };
+  }
   if (detected.jurisdiction === "unsupported") {
     return { jurisdiction: "unsupported", region: detected.state || input.region, supported: false };
   }
