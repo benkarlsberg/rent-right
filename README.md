@@ -167,7 +167,7 @@ Without Resend and without Supabase, a local sign-in completes in the app. The l
 | Web push | Later (VAPID names are reserved) |
 | Landlord ratings, SMS, referrals, paid features | Later — out of scope |
 
-Every library entry keeps the internal flags `placeholder: true`, `clinicReview: "pending_clinic_review"`, and `spanishReview: "pending_volunteer_review"`, version `2026-10-12-draft1`. Those flags are not shown. A California result says “General information based on California law, checked Oct 12, 2026. Not legal advice.” Arizona, Nevada, Oregon, and Washington use statewide notes checked Nov 8, 2026. Texas and Florida use statewide notes checked Nov 9, 2026. City ordinances outside California are not loaded. Do not treat the percentages or clause labels as a lawyer's advice. Coverage is listed in [docs/COVERAGE.md](docs/COVERAGE.md).
+Every library entry keeps the internal flags `placeholder: true`, `clinicReview: "pending_clinic_review"`, and `spanishReview: "pending_volunteer_review"`, version `2026-10-12-draft1`. Those flags are not shown. A California result says “General information based on California law, checked Oct 12, 2026. Not legal advice.” Arizona, Nevada, Oregon, and Washington use statewide notes checked Nov 8, 2026. Texas and Florida use statewide notes checked Nov 9, 2026. New York, Illinois, Massachusetts, North Carolina, Pennsylvania, Ohio, and the District of Columbia use statewide notes checked Nov 10, 2026. New Jersey and Georgia remain outside the covered list. City ordinances outside California are not loaded. Do not treat the percentages or clause labels as a lawyer's advice. Coverage is listed in [docs/COVERAGE.md](docs/COVERAGE.md).
 
 ## Local setup
 

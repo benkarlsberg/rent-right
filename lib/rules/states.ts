@@ -1,4 +1,5 @@
 import { addDays, addMonths, daysBetween, isWeekend, parseISODate } from "@/lib/rules/dates";
+import { BATCH1B_RULES, batch1bDeposit, batch1bRent, batch1bRepair, batch1bRepairLetter, batch1bRetaliation } from "@/lib/rules/states/batch1b";
 import {
   FL_RULES,
   TX_RULES,
@@ -24,7 +25,7 @@ function increasePpm(lowestCents: number, proposedCents: number): number {
 }
 
 /** Statewide law loaded for a home. California local packs stay on the California path. */
-export const COVERED_LAW_STATES = ["AZ", "NV", "OR", "WA", "TX", "FL"] as const;
+export const COVERED_LAW_STATES = ["AZ", "NV", "OR", "WA", "TX", "FL", "NY", "IL", "MA", "NC", "PA", "OH", "DC"] as const;
 export type AddedState = (typeof COVERED_LAW_STATES)[number];
 export type LawState = "CA" | AddedState;
 
@@ -134,6 +135,8 @@ type Stamp = {
 };
 
 export function stateDeposit(state: AddedState, triggerDate: string): Stamp {
+  const added = batch1bDeposit(state, triggerDate);
+  if (added) return added;
   if (state === "TX") return txDeposit(triggerDate);
   if (state === "FL") return flDeposit(triggerDate);
   if (state === "AZ") {
@@ -230,8 +233,13 @@ function repairClock(state: AddedState, severity: RepairSeverity): RepairClock {
 }
 
 export function stateRepair(state: AddedState, requestDate: string, severity: RepairSeverity): Stamp {
+  const added = batch1bRepair(state, requestDate, severity);
+  if (added) return added;
   if (state === "TX") return txRepair(requestDate);
   if (state === "FL") return flRepair();
+  if (state !== "AZ" && state !== "NV" && state !== "OR" && state !== "WA") {
+    throw new Error("repair state was not routed");
+  }
   const clock = repairClock(state, severity);
   const cites = {
     AZ: ["AZ-ARS-33-1361", "Ariz. Rev. Stat. § 33-1361"],
@@ -270,6 +278,8 @@ export function stateRetaliation(state: AddedState, activityDate: string, notice
   explanationEs: string;
 } {
   const daysSince = daysBetween(activityDate, noticeDate);
+  const added = batch1bRetaliation(state, activityDate, noticeDate, daysSince);
+  if (added) return added;
   if (state === "TX") return txRetaliation(activityDate, noticeDate, daysSince);
   if (state === "FL") return flRetaliation(daysSince);
   if (state === "AZ") {
@@ -333,6 +343,8 @@ export function stateRentAnswer(input: {
   /** Ordinary rented dwelling, a lot for a home the tenant owns, or not yet known. */
   homeKind?: "dwelling" | "manufactured_lot" | "unknown";
 }): StateRentAnswer {
+  const added = batch1bRent(input.state, input.lowestCents, input.proposedCents);
+  if (added) return added;
   if (input.state === "TX") return txRent(input.lowestCents, input.proposedCents);
   if (input.state === "FL") return flRent(input.lowestCents, input.proposedCents);
   const ppm = increasePpm(input.lowestCents, input.proposedCents);
@@ -478,6 +490,7 @@ function stateRule(input: {
 export const ADDED_STATE_RULES: Rule[] = [
   ...TX_RULES,
   ...FL_RULES,
+  ...BATCH1B_RULES,
   stateRule({
     id: "AZ-ARS-33-1321",
     jurisdiction: "AZ",
@@ -689,7 +702,12 @@ export const ADDED_STATE_RULES: Rule[] = [
 ];
 
 export function stateRepairLetter(state: AddedState, locale: "en" | "es", severity: RepairSeverity): string {
+  const added = batch1bRepairLetter(state, locale);
+  if (added) return added;
   if (state === "TX" || state === "FL") return batchRepairLetter(state, locale);
+  if (state !== "AZ" && state !== "NV" && state !== "OR" && state !== "WA") {
+    throw new Error("repair letter was not routed");
+  }
   const clock = repairClock(state, severity);
   const period = clock.hours != null ? `${clock.hours} hours after you receive this notice` : `${clock.days} calendar days after you receive this notice`;
   const periodEs = clock.hours != null ? `${clock.hours} horas después de recibir este aviso` : `${clock.days} días calendario después de recibir este aviso`;

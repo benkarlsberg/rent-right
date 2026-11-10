@@ -12,8 +12,15 @@ describe("added state coverage", () => {
     expect(detectPlace({ city: "Seattle", region: "WA", postalCode: "98101" }).jurisdiction).toBe("wa");
     expect(detectPlace({ city: "Houston", region: "TX", postalCode: "77002" }).jurisdiction).toBe("tx");
     expect(detectPlace({ city: "Miami", region: "FL", postalCode: "33101" }).jurisdiction).toBe("fl");
+    expect(detectPlace({ city: "New York", region: "NY", postalCode: "10001" }).jurisdiction).toBe("ny");
+    expect(detectPlace({ city: "Chicago", region: "IL", postalCode: "60601" }).jurisdiction).toBe("il");
+    expect(detectPlace({ city: "Boston", region: "MA", postalCode: "02108" }).jurisdiction).toBe("ma");
+    expect(detectPlace({ city: "Charlotte", region: "NC", postalCode: "28202" }).jurisdiction).toBe("nc");
+    expect(detectPlace({ city: "Philadelphia", region: "PA", postalCode: "19103" }).jurisdiction).toBe("pa");
+    expect(detectPlace({ city: "Columbus", region: "OH", postalCode: "43215" }).jurisdiction).toBe("oh");
+    expect(detectPlace({ city: "Washington", region: "DC", postalCode: "20001" }).jurisdiction).toBe("dc");
     expect(detectPlace({ city: "Los Angeles", region: "CA", postalCode: "90026" }).jurisdiction).toBe("city_la");
-    expect(detectPlace({ address: "350 5th Ave, New York, NY 10001" }).jurisdiction).toBe("unsupported");
+    expect(detectPlace({ address: "1 Peachtree St, Atlanta, GA 30303" }).jurisdiction).toBe("unsupported");
   });
 
   it("counts Arizona deposit days without weekends or the observed July 4 holiday", () => {
@@ -230,5 +237,54 @@ describe("added state coverage", () => {
     expect(florida.detailEn).toContain("were not graded");
     expect(selectRules("Is a rent increase allowed?", "FL").rules.some((item) => item.id.startsWith("CA-"))).toBe(false);
     expect(selectRules("security deposit return", "CA").rules.some((item) => item.id.startsWith("TX-") || item.id.startsWith("FL-"))).toBe(false);
+  });
+
+  it("uses the opened clocks for the second batch and leaves Georgia uncovered", () => {
+    expect(depositReturnDeadline("2026-09-01", "NY")).toMatchObject({ dueDate: "2026-09-15", ruleId: "NY-GOL-7-108", unsure: true });
+    expect(depositReturnDeadline("2026-09-01", "NY").explanation).toContain("7-107");
+    expect(depositReturnDeadline("2026-09-01", "IL").dueDate).toBeNull();
+    expect(depositReturnDeadline("2026-09-01", "MA").dueDate).toBe("2026-10-01");
+    expect(depositReturnDeadline("2026-09-01", "OH").dueDate).toBe("2026-10-01");
+    expect(depositReturnDeadline("2026-09-01", "DC").dueDate).toBeNull();
+    const ohioRepair = repairReminder("2026-10-01", "leak", undefined, "OH");
+    expect(ohioRepair.dueDate).toBe("2026-10-31");
+    expect(ohioRepair.unsure).toBe(true);
+    expect(ohioRepair.explanation).toContain("not permission to withhold rent");
+    expect(repairReminder("2026-10-01", "leak", undefined, "NY").dueDate).toBeNull();
+    expect(repairReminder("2026-10-01", "co_alarm", undefined, "NC").dueDate).toBe("2026-10-16");
+    expect(repairReminder("2026-10-01", "leak", undefined, "DC").explanation).toContain("not funded");
+    expect(retaliationWindow("2026-01-01", "2026-12-01", "NY").flagged).toBe(true);
+    expect(retaliationWindow("2026-01-01", "2027-01-02", "NY").flagged).toBe(false);
+    expect(retaliationWindow("2026-01-01", "2026-06-01", "MA").flagged).toBe(true);
+    expect(retaliationWindow("2026-01-01", "2026-07-02", "MA").flagged).toBe(false);
+    expect(retaliationWindow("2026-01-01", "2026-06-01", "OH").flagged).toBe(false);
+    const nyRent = stateRentAnswer({
+      state: "NY",
+      lowestCents: 200_000,
+      proposedCents: 220_000,
+      noticeDate: "2026-09-01",
+      effectiveDate: "2026-09-20",
+      weekToWeek: false,
+      firstYear: null,
+      claimsExemption: false,
+    });
+    expect(nyRent.abovePublishedMax).toBe(false);
+    expect(nyRent.detailEn).toContain("no notice period was graded");
+    expect(nyRent.detailEn).toContain("rent stabilization");
+    const dcRent = stateRentAnswer({
+      state: "DC",
+      lowestCents: 200_000,
+      proposedCents: 230_000,
+      noticeDate: null,
+      effectiveDate: "2026-12-01",
+      weekToWeek: false,
+      firstYear: null,
+      claimsExemption: false,
+    });
+    expect(dcRent.abovePublishedMax).toBe(false);
+    expect(dcRent.detailEn).toContain("did not apply");
+    expect(selectRules("Can the landlord raise my rent?", "NY").rules.some((item) => item.id.startsWith("CA-"))).toBe(false);
+    expect(selectRules("security deposit return", "CA").rules.some((item) => item.jurisdiction === "NY" || item.jurisdiction === "DC")).toBe(false);
+    expect(lawStateOf({ jurisdiction: "city_la", supported: true })).toBe("CA");
   });
 });

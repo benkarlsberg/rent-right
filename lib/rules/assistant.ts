@@ -79,8 +79,9 @@ function checkedLine(locale: Locale, state: LawState): string {
       : `General information based on California law, checked ${LIBRARY_CHECKED_EN}. Not legal advice.`;
   }
   const name = stateName(state);
-  const checked = state === "TX" || state === "FL" ? "Nov 9, 2026" : "Nov 8, 2026";
-  const checkedEs = state === "TX" || state === "FL" ? "9 de noviembre de 2026" : "8 de noviembre de 2026";
+  const later = state === "NY" || state === "IL" || state === "MA" || state === "NC" || state === "PA" || state === "OH" || state === "DC";
+  const checked = later ? "Nov 10, 2026" : state === "TX" || state === "FL" ? "Nov 9, 2026" : "Nov 8, 2026";
+  const checkedEs = later ? "10 de noviembre de 2026" : state === "TX" || state === "FL" ? "9 de noviembre de 2026" : "8 de noviembre de 2026";
   return locale === "es"
     ? `Información general basada en la ley de ${name}, revisada el ${checkedEs}. No es asesoramiento legal. Las ordenanzas de la ciudad no se investigaron.`
     : `General information based on ${name} law, checked ${checked}. Not legal advice. City ordinances were not researched.`;

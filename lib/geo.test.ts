@@ -153,22 +153,22 @@ describe("address suggestions", () => {
 
   it("rejects an address outside California", async () => {
     census({
-      matchedAddress: "350 5TH AVE, NEW YORK, NY, 10001",
+      matchedAddress: "1 PEACHTREE ST, ATLANTA, GA, 30303",
       addressComponents: {
-        fromAddress: "350",
-        streetName: "5TH",
-        suffixType: "AVE",
-        city: "NEW YORK",
-        state: "NY",
-        zip: "10001",
+        fromAddress: "1",
+        streetName: "PEACHTREE",
+        suffixType: "ST",
+        city: "ATLANTA",
+        state: "GA",
+        zip: "30303",
       },
     });
-    const found = await suggestPlace({ street: "350 5th Ave", city: "New York", region: "CA", postalCode: "10001" });
+    const found = await suggestPlace({ street: "1 Peachtree St", city: "Atlanta", region: "CA", postalCode: "30303" });
     expect(found.place.inCalifornia).toBe(false);
     expect(found.place.jurisdiction).toBe("unsupported");
-    expect(found.place.state).toBe("NY");
+    expect(found.place.state).toBe("GA");
     expect(found.suggestion).toBeNull();
-    expect(found.kept.street).toBe("350 5th Ave");
+    expect(found.kept.street).toBe("1 Peachtree St");
     expect(placeSummary(found.place)).toBe(COVERAGE_NOTICE_EN);
   });
 
