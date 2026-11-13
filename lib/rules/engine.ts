@@ -22,7 +22,8 @@ export type AreaKey =
   | "riverside_san_bernardino"
   | "san_diego"
   | "san_francisco_bay"
-  | "other_ca";
+  | "other_ca"
+  | "new_york_city";
 
 export type RepairSeverity =
   | "no_heat"
@@ -87,7 +88,7 @@ type CapPeriod = { start: string; end: string; ppm: number };
 export const AB1482_PERIODS: {
   start: string;
   end: string;
-  areas: Record<AreaKey, number>;
+  areas: Record<Exclude<AreaKey, "new_york_city">, number>;
 }[] = [
   {
     start: "2025-08-01",
@@ -298,6 +299,16 @@ export function ab1482Quote(effectiveDate: string, area: AreaKey, lowestCents: n
       unsure: true,
       note: `Unsure. The library has AB 1482 chart rows for ${AB1482_PERIODS.map((item) => `${item.start} to ${item.end}`).join("; ")}. ${effectiveDate} is outside those rows. Read oag.ca.gov/rentcaps.`,
       noteEs: `No se puede precisar. La biblioteca tiene filas de la tabla de AB 1482 para ${AB1482_PERIODS.map((item) => `${item.start} a ${item.end}`).join("; ")}. ${effectiveDate} queda fuera. Lea oag.ca.gov/rentcaps.`,
+    };
+  }
+  if (area === "new_york_city") {
+    return {
+      ruleId: "CA-CC-1947.12",
+      ppm: null,
+      maxRentCents: null,
+      unsure: true,
+      note: "Unsure. AB 1482 is a California chart and was not applied to a New York City home.",
+      noteEs: "No se puede precisar. La tabla de AB 1482 es de California y no se aplicó a una vivienda de la ciudad de Nueva York.",
     };
   }
   const ppm = period.areas[area];

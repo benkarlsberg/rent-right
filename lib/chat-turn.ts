@@ -704,7 +704,7 @@ async function answerRights(user: User, unit: Unit, question: string, history: s
     await say(user, unit, uncoveredCard(user, unit));
     return;
   }
-  const answer = await answerFromConversation(question, user.locale, history, retrieval, lawStateOf(unit) ?? "CA");
+  const answer = await answerFromConversation(question, user.locale, history, retrieval, lawStateOf(unit) ?? "CA", unit.jurisdiction);
   const rule = answer.ruleIds[0] ? getRule(answer.ruleIds[0]) : undefined;
   if (!answer.handoff && (answer.unsure || !rule)) {
     await say(user, unit, suggestionCard(user));
@@ -1191,6 +1191,7 @@ async function runRent(user: User, unit: Unit, lowest: number | null, proposed: 
       weekToWeek: false,
       firstYear: null,
       claimsExemption: false,
+      inNewYorkCity: unit.jurisdiction === "city_nyc",
     });
     await say(user, unit, {
       headline: user.locale === "es" ? note.headlineEs : note.headlineEn,

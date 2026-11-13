@@ -1,4 +1,5 @@
 import { addDays, addMonths, daysBetween, isWeekend, parseISODate } from "@/lib/rules/dates";
+import { nycRentAnswer } from "@/lib/rules/cities/new-york-city";
 import { BATCH1B_RULES, batch1bDeposit, batch1bRent, batch1bRepair, batch1bRepairLetter, batch1bRetaliation } from "@/lib/rules/states/batch1b";
 import {
   FL_RULES,
@@ -38,6 +39,7 @@ export function lawStateOf(unit: { jurisdiction?: string; supported?: boolean } 
   if (!unit) return "CA";
   if (unit.supported === false || unit.jurisdiction === "unsupported" || unit.jurisdiction === "unsure") return null;
   const code = (unit.jurisdiction || "").toLowerCase();
+  if (code === "city_nyc") return "NY";
   if ((COVERED_LAW_STATES as readonly string[]).includes(code.toUpperCase())) return code.toUpperCase() as AddedState;
   if (!unit.jurisdiction || CA_JURISDICTIONS.has(unit.jurisdiction)) return "CA";
   return null;
@@ -342,7 +344,15 @@ export function stateRentAnswer(input: {
   claimsExemption: boolean;
   /** Ordinary rented dwelling, a lot for a home the tenant owns, or not yet known. */
   homeKind?: "dwelling" | "manufactured_lot" | "unknown";
+  /** Set only for a home in the five boroughs. Stabilization stays unconfirmed unless the tenant says yes. */
+  inNewYorkCity?: boolean;
+  stabilized?: "yes" | "no" | "unsure";
+  leaseYears?: 1 | 2 | null;
 }): StateRentAnswer {
+  if (input.state === "NY" && input.inNewYorkCity) {
+    const statewide = batch1bRent("NY", input.lowestCents, input.proposedCents);
+    if (statewide) return nycRentAnswer({ ...input, statewide });
+  }
   const added = batch1bRent(input.state, input.lowestCents, input.proposedCents);
   if (added) return added;
   if (input.state === "TX") return txRent(input.lowestCents, input.proposedCents);

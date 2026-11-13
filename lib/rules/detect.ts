@@ -148,6 +148,8 @@ export function detectPlace(input: PlaceQuery): PlaceDetection {
   }
 
   const zipState = zips.map((zip) => stateFromZip(zip)).find((code): code is string => Boolean(code)) || null;
+  if (zipState === "NY" && isNewYorkCity(city, zips)) return newYorkCityPlace();
+  if (pack?.jurisdiction === "city_nyc" && zipState !== "CA") return newYorkCityPlace();
   if (zipState && zipState !== "CA") return isAddedState(zipState) ? coveredStatePlace(zipState) : unsupportedPlace(zipState);
 
   const stateNamed = /\b(california|calif)\b/.test(`${text} ${city}`) || /\bca\b/.test(region) || /\bca\b/.test(address);
@@ -198,6 +200,27 @@ export function detectPlace(input: PlaceQuery): PlaceDetection {
   };
 }
 
+const NYC_ZIP_PREFIXES = new Set(["100", "101", "102", "103", "104", "111", "112", "113", "114", "116"]);
+
+function isNewYorkCity(city: string, zips: string[]): boolean {
+  const prefix = zips[0]?.slice(0, 3) || "";
+  if (prefix) return NYC_ZIP_PREFIXES.has(prefix);
+  return city === "new york" || city === "new york city" || city === "nyc" || city === "manhattan" || city === "brooklyn" || city === "queens" || city === "bronx" || city === "the bronx" || city === "staten island";
+}
+
+function newYorkCityPlace(): PlaceDetection {
+  return {
+    jurisdiction: "city_nyc",
+    area: "new_york_city",
+    inCalifornia: false,
+    pack: null,
+    localOrdinance: null,
+    confidence: "low",
+    notes: ["New York statewide rules apply. New York City rules are loaded. Rent stabilization is not assumed."],
+    state: "NY",
+  };
+}
+
 function coveredStatePlace(state: string): PlaceDetection {
   const name = stateName(state) || state;
   return {
@@ -236,6 +259,11 @@ export function inferJurisdiction(address: string): {
 
 export function placeSummary(place: PlaceDetection, locale: "en" | "es" = "en"): string {
   if (place.jurisdiction === "unsupported") return coverageNotice(locale);
+  if (place.jurisdiction === "city_nyc") {
+    return locale === "es"
+      ? "Aplican las reglas de Nueva York y de la ciudad de Nueva York. La estabilización de renta no se supone."
+      : "New York statewide rules apply, and New York City rules are loaded. Rent stabilization is not assumed.";
+  }
   if (isAddedState(place.state)) {
     const name = stateName(place.state || "") || place.state;
     return locale === "es"

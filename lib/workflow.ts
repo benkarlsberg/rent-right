@@ -532,7 +532,7 @@ export async function askAssistant(user: User, unit: Unit | null, question: stri
   }
   const context = aiConfigured() ? chatContext(await recentConversationTurns(user.id)) : { history: "", retrieval: "" };
   const law = lawStateOf(unit) ?? "CA";
-  const answer = await answerFromConversation(trimmed, locale, context.history, context.retrieval, law);
+  const answer = await answerFromConversation(trimmed, locale, context.history, context.retrieval, law, unit?.jurisdiction);
   await addAssistantMessage(user.id, unit?.id || null, "assistant", {
     locale,
     content: `${answer.text}\n\n${answer.disclaimer}`,

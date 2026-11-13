@@ -20,6 +20,11 @@ export function coversLaw(unit: { supported?: boolean; jurisdiction?: string } |
 }
 
 export function coverageBounds(unit: { jurisdiction?: string; supported?: boolean } | null | undefined, locale: Locale | "en" | "es" = "en"): string | null {
+  if (unit?.jurisdiction === "city_nyc") {
+    return locale === "es"
+      ? "Hay reglas del estado de Nueva York y de la ciudad de Nueva York para reparaciones, depósitos, calefacción, avisos de renta y buena causa. La estabilización de renta no se supone. Si faltan hechos o una exención, Rent Right no decide si algo es legal. Revisado el 13 de noviembre de 2026."
+      : "New York statewide rules and New York City rules are loaded for repairs, deposits, heat, rent notices, and good cause. Rent stabilization is not assumed. If facts or an exemption are missing, Rent Right does not decide that something is legal. Checked Nov 13, 2026.";
+  }
   const state = lawStateOf(unit);
   if (!state || state === "CA") return null;
   const name = stateName(state) || state;

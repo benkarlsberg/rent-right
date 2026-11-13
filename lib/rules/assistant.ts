@@ -44,6 +44,7 @@ function score(rule: Rule, queryTokens: string[], raw: string): number {
   if (/san diego/.test(lower) && rule.jurisdiction === "CITY_SD") total += 3;
   if ((/los angeles|rso/.test(lower)) && rule.jurisdiction === "CITY_LA") total += 3;
   if (/unincorporated|rstpo|no incorpor/.test(lower) && rule.jurisdiction === "LA_COUNTY") total += 3;
+  if (/new york city|nyc|brooklyn|manhattan|queens|bronx|staten island|rent stabilization|rgb/.test(lower) && rule.jurisdiction === "CITY_NYC") total += 3;
   if (/\b(deposit|deposito|depósito)\b/i.test(raw) && rule.topic === "deposit") total += 3;
   if (/\b21\b/.test(raw) && rule.id === "CA-CC-1950.5") total += 2;
   if (/1482|rent cap|tope/.test(lower) && rule.id === "CA-CC-1947.12") total += 3;
@@ -58,21 +59,23 @@ function score(rule: Rule, queryTokens: string[], raw: string): number {
 
 const CA_RULES = new Set(["CA", "CITY_LA", "LA_COUNTY", "CITY_SD", "LOCAL"]);
 
-function rulesFor(state: LawState): Rule[] {
+function rulesFor(state: LawState, local?: string | null): Rule[] {
   if (state === "CA") return RULES.filter((item) => CA_RULES.has(item.jurisdiction));
-  return RULES.filter((item) => item.jurisdiction === state);
+  const rows = RULES.filter((item) => item.jurisdiction === state);
+  if (state === "NY" && local === "city_nyc") rows.push(...RULES.filter((item) => item.jurisdiction === "CITY_NYC"));
+  return rows;
 }
 
-export function selectRules(question: string, state: LawState = "CA"): { rules: Rule[]; handoff: boolean } {
+export function selectRules(question: string, state: LawState = "CA", local?: string | null): { rules: Rule[]; handoff: boolean } {
   const handoff = HANDOFF.test(question);
   const queryTokens = tokens(question);
-  const ranked = rulesFor(state).map((item) => ({ rule: item, score: score(item, queryTokens, question) }))
+  const ranked = rulesFor(state, local).map((item) => ({ rule: item, score: score(item, queryTokens, question) }))
     .filter((item) => item.score >= 4)
     .sort((a, b) => b.score - a.score);
   return { rules: ranked.slice(0, 3).map((item) => item.rule), handoff };
 }
 
-function checkedLine(locale: Locale, state: LawState): string {
+function checkedLine(locale: Locale, state: LawState, cityRules: boolean): string {
   if (state === "CA") {
     return locale === "es"
       ? `Información general basada en la ley de California, revisada el ${LIBRARY_CHECKED_ES}. No es asesoramiento legal.`
@@ -80,8 +83,8 @@ function checkedLine(locale: Locale, state: LawState): string {
   }
   const name = stateName(state);
   const later = state === "NY" || state === "IL" || state === "MA" || state === "NC" || state === "PA" || state === "OH" || state === "DC";
-  const checked = later ? "Nov 10, 2026" : state === "TX" || state === "FL" ? "Nov 9, 2026" : "Nov 8, 2026";
-  const checkedEs = later ? "10 de noviembre de 2026" : state === "TX" || state === "FL" ? "9 de noviembre de 2026" : "8 de noviembre de 2026";
+  const checked = cityRules ? "Nov 13, 2026" : later ? "Nov 10, 2026" : state === "TX" || state === "FL" ? "Nov 9, 2026" : "Nov 8, 2026";
+  const checkedEs = cityRules ? "13 de noviembre de 2026" : later ? "10 de noviembre de 2026" : state === "TX" || state === "FL" ? "9 de noviembre de 2026" : "8 de noviembre de 2026";
   return locale === "es"
     ? `Información general basada en la ley de ${name}, revisada el ${checkedEs}. No es asesoramiento legal. Las ordenanzas de la ciudad no se investigaron.`
     : `General information based on ${name} law, checked ${checked}. Not legal advice. City ordinances were not researched.`;
@@ -130,7 +133,7 @@ export function renderAnswer(question: string, locale: Locale, rules: Rule[], ha
       ? "Rent Right no puede decirle qué hacer en un caso, ni cómo responder a un aviso de desalojo. Contacte a asistencia legal o a un abogado con licencia. Lo que sigue es solo el texto de la biblioteca.\n\n"
       : "Rent Right cannot tell you what to do in a case, or how to respond to an eviction notice. Contact legal aid or a licensed attorney. What follows is only the library text.\n\n"
     : "";
-  const tail = `\n\n${checkedLine(locale, state)} ${reviewNote}`;
+  const tail = `\n\n${checkedLine(locale, state, rules.some((item) => item.jurisdiction === "CITY_NYC"))} ${reviewNote}`;
   return {
     locale,
     unsure: false,
@@ -144,8 +147,8 @@ export function renderAnswer(question: string, locale: Locale, rules: Rule[], ha
   };
 }
 
-export function answerQuestion(question: string, locale: Locale, state: LawState = "CA"): AssistantAnswer {
-  const selected = selectRules(question, state);
+export function answerQuestion(question: string, locale: Locale, state: LawState = "CA", local?: string | null): AssistantAnswer {
+  const selected = selectRules(question, state, local);
   return renderAnswer(question, locale, selected.rules, selected.handoff, state);
 }
 
@@ -160,7 +163,8 @@ export function answerFromModelIds(question: string, locale: Locale, retrieved: 
 }
 
 function stateFromRules(rules: Rule[]): LawState {
-  const code = rules[0]?.jurisdiction;
-  if (code === "AZ" || code === "NV" || code === "OR" || code === "WA") return code;
+  const code = rules.find((item) => item.jurisdiction !== "CITY_NYC")?.jurisdiction || rules[0]?.jurisdiction;
+  if (code === "CITY_NYC" || code === "NY") return "NY";
+  if (code === "AZ" || code === "NV" || code === "OR" || code === "WA" || code === "TX" || code === "FL" || code === "IL" || code === "MA" || code === "NC" || code === "PA" || code === "OH" || code === "DC") return code;
   return "CA";
 }

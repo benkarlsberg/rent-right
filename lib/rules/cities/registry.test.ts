@@ -12,7 +12,7 @@ describe("city pack files", () => {
     const files = readdirSync("lib/rules/cities")
       .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts") && !DATA.has(file))
       .sort();
-    expect(files).toEqual(["la-county.ts", "los-angeles.ts", "san-diego.ts"]);
+    expect(files).toEqual(["la-county.ts", "los-angeles.ts", "new-york-city.ts", "san-diego.ts"]);
     for (const pack of [laCounty, losAngeles, sanDiego]) {
       expect(CITY_PACKS.some((item) => item.id === pack.id)).toBe(true);
     }

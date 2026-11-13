@@ -12,7 +12,7 @@ describe("added state coverage", () => {
     expect(detectPlace({ city: "Seattle", region: "WA", postalCode: "98101" }).jurisdiction).toBe("wa");
     expect(detectPlace({ city: "Houston", region: "TX", postalCode: "77002" }).jurisdiction).toBe("tx");
     expect(detectPlace({ city: "Miami", region: "FL", postalCode: "33101" }).jurisdiction).toBe("fl");
-    expect(detectPlace({ city: "New York", region: "NY", postalCode: "10001" }).jurisdiction).toBe("ny");
+    expect(detectPlace({ city: "New York", region: "NY", postalCode: "10001" }).jurisdiction).toBe("city_nyc");
     expect(detectPlace({ city: "Chicago", region: "IL", postalCode: "60601" }).jurisdiction).toBe("il");
     expect(detectPlace({ city: "Boston", region: "MA", postalCode: "02108" }).jurisdiction).toBe("ma");
     expect(detectPlace({ city: "Charlotte", region: "NC", postalCode: "28202" }).jurisdiction).toBe("nc");
@@ -286,5 +286,38 @@ describe("added state coverage", () => {
     expect(selectRules("Can the landlord raise my rent?", "NY").rules.some((item) => item.id.startsWith("CA-"))).toBe(false);
     expect(selectRules("security deposit return", "CA").rules.some((item) => item.jurisdiction === "NY" || item.jurisdiction === "DC")).toBe(false);
     expect(lawStateOf({ jurisdiction: "city_la", supported: true })).toBe("CA");
+  });
+
+  it("loads New York City rules without assuming rent stabilization", () => {
+    expect(detectPlace({ city: "Brooklyn", region: "NY", postalCode: "11201" }).jurisdiction).toBe("city_nyc");
+    expect(detectPlace({ city: "Buffalo", region: "NY", postalCode: "14201" }).jurisdiction).toBe("ny");
+    expect(lawStateOf({ jurisdiction: "city_nyc", supported: true })).toBe("NY");
+    const shared = {
+      state: "NY" as const,
+      lowestCents: 200_000,
+      proposedCents: 220_000,
+      noticeDate: "2026-09-01",
+      effectiveDate: "2026-11-01",
+      weekToWeek: false,
+      firstYear: null,
+      claimsExemption: false,
+      inNewYorkCity: true,
+    };
+    const unknown = stateRentAnswer(shared);
+    expect(unknown.abovePublishedMax).toBe(false);
+    expect(unknown.detailEn).toContain("not confirmed");
+    expect(unknown.detailEn).toContain("0%");
+    const confirmed = stateRentAnswer({ ...shared, stabilized: "yes" });
+    expect(confirmed.abovePublishedMax).toBe(true);
+    expect(confirmed.detailEn).not.toContain("illegal");
+    const older = stateRentAnswer({ ...shared, effectiveDate: "2026-01-15", stabilized: "yes" });
+    expect(older.abovePublishedMax).toBe(false);
+    expect(older.detailEn).toContain("lease length was not entered");
+    const outside = stateRentAnswer({ ...shared, effectiveDate: "2028-02-01", stabilized: "yes" });
+    expect(outside.abovePublishedMax).toBe(false);
+    expect(outside.detailEn).toContain("was not used");
+    expect(selectRules("rent stabilization increase", "NY").rules.some((item) => item.jurisdiction === "CITY_NYC")).toBe(false);
+    expect(selectRules("rent stabilization increase", "NY", "city_nyc").rules.some((item) => item.id === "NYC-RGB-ORDER")).toBe(true);
+    expect(selectRules("rent stabilization increase", "CA").rules.some((item) => item.jurisdiction === "CITY_NYC")).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 import { LIBRARY_VERSION } from "@/lib/disclaimer";
 
-export type RuleJurisdiction = "CA" | "CITY_LA" | "LA_COUNTY" | "CITY_SD" | "LOCAL" | "AZ" | "NV" | "OR" | "WA" | "TX" | "FL" | "NY" | "IL" | "MA" | "NC" | "PA" | "OH" | "DC";
+export type RuleJurisdiction = "CA" | "CITY_LA" | "LA_COUNTY" | "CITY_SD" | "LOCAL" | "CITY_NYC" | "AZ" | "NV" | "OR" | "WA" | "TX" | "FL" | "NY" | "IL" | "MA" | "NC" | "PA" | "OH" | "DC";
 export type FindingLabel = "likely_unenforceable" | "check_this" | "looks_standard" | "informational";
 
 export type Rule = {

@@ -14,6 +14,7 @@ import {
 import { formatDate } from "@/lib/format";
 import { repairSubject } from "@/lib/phrase";
 import { repairReminder } from "@/lib/rules/engine";
+import { NYC_REPAIR_NOTE_EN, NYC_REPAIR_NOTE_ES } from "@/lib/rules/cities/new-york-city";
 import { lawStateOf, stateRepairLetter, type LawState } from "@/lib/rules/states";
 import { relayAddress, tx } from "@/lib/text";
 import { asRepairSeverity, reminderPace, tierForSeverity, violationFlag } from "@/lib/triage";
@@ -36,6 +37,7 @@ export function repairDraftLetter(input: {
   tier?: string | null;
   covered?: boolean;
   state?: LawState | null;
+  inNewYorkCity?: boolean;
 }): { subject: string; body: string; ruleId: string; dueDate: string | null } {
   const locale = input.locale;
   const day = input.eventDate.slice(0, 10);
@@ -56,14 +58,16 @@ export function repairDraftLetter(input: {
   const reminder = repairReminder(day, severity, pace, state);
   const urgent = input.tier ? input.tier === "urgent" : tierForSeverity(severity) === "urgent";
   const tier = input.tier ?? (urgent ? "urgent" : "routine");
-  const body = [
+  const lines = [
     repairOpening(locale),
     "",
     tx(locale, `Issue: ${issue}`, `Problema: ${issue}`),
     tx(locale, `Date: ${date}`, `Fecha: ${date}`),
     "",
     state === "CA" ? repairLegalNote(locale, tier) : stateRepairLetter(state, locale, severity),
-  ].join("\n");
+  ];
+  if (input.inNewYorkCity) lines.push("", locale === "es" ? NYC_REPAIR_NOTE_ES : NYC_REPAIR_NOTE_EN);
+  const body = lines.join("\n");
   return { subject, body, ruleId: reminder.ruleId, dueDate: reminder.dueDate };
 }
 
@@ -154,6 +158,7 @@ export async function ensureRepairDrafts(user: User, unit: Unit, logs: LogEntry[
       tier: log.tier,
       covered: coversLaw(unit),
       state: lawStateOf(unit),
+      inNewYorkCity: unit.jurisdiction === "city_nyc",
     });
     try {
       const row = await insertMessage({
@@ -192,6 +197,10 @@ export async function ensureRepairDeadline(user: User, unit: Unit, log: LogEntry
   const state = lawStateOf(unit);
   if (!state) return;
   const reminder = repairReminder(day, severityOf(log.severity), pace, state);
+  if (unit.jurisdiction === "city_nyc") {
+    reminder.explanation = `${reminder.explanation} ${NYC_REPAIR_NOTE_EN}`;
+    reminder.explanationEs = `${reminder.explanationEs} ${NYC_REPAIR_NOTE_ES}`;
+  }
   await insertDeadline({
     unitId: unit.id,
     ruleId: reminder.ruleId,
