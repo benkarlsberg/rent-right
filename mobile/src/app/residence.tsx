@@ -11,6 +11,7 @@ import { colors } from "@/theme";
 import { Button, Card, ErrorLine, Field, H1, Muted, Page, wrapText } from "@/ui";
 import { refreshBootstrap } from "@/tab-cache";
 import { useLoad } from "@/use-load";
+import { ChoiceButtons, specialCopy, specialKind, type LawChoice } from "@/special-question";
 
 type Suggestion = { label: string; street: string; city: string; region: string; postalCode: string; unit?: string };
 type Kept = { street: string; unit: string; city: string; region: string; postalCode: string };
@@ -65,6 +66,7 @@ type Home = {
   leaseEndDate: string;
   relay: string;
   jurisdiction?: string;
+  lawChoice?: LawChoice;
   summary: string;
   archived: boolean;
   canEdit: boolean;
@@ -105,6 +107,7 @@ export default function ResidenceScreen() {
   const [unitNumber, setUnit] = useState("");
   const [city, setCity] = useState("");
   const [postalCode, setPostal] = useState("");
+  const [lawChoice, setLawChoice] = useState<LawChoice>("unsure");
   const [landlordName, setLandlord] = useState("");
   const [landlordEmail, setEmail] = useState("");
   const [rent, setRent] = useState("");
@@ -123,6 +126,7 @@ export default function ResidenceScreen() {
     setUnit(home.unitNumber);
     setCity(home.city);
     setPostal(home.postalCode);
+    setLawChoice(home.lawChoice || "unsure");
     setLandlord(home.landlordName);
     setEmail(home.landlordEmail);
     setRent(home.rent);
@@ -164,6 +168,7 @@ export default function ResidenceScreen() {
       rent: rent.trim(),
       moveInDate,
       leaseEndDate,
+      lawChoice,
     };
   }
 
@@ -325,6 +330,18 @@ export default function ResidenceScreen() {
           <Field label={labels.unit} value={unitNumber} onChange={touchAddress(setUnit)} />
           <Field label={labels.city} value={city} onChange={touchAddress(setCity)} autoComplete="postal-address-locality" textContentType="addressCity" />
           <Field label={labels.zip} value={postalCode} onChange={touchAddress(setPostal)} keyboardType="number-pad" autoComplete="postal-code" textContentType="postalCode" />
+          {(() => {
+            const kind = specialKind(preview?.jurisdiction || home.jurisdiction);
+            if (!kind) return null;
+            const copy = specialCopy(kind, labels.zip !== "ZIP");
+            return (
+              <View>
+                <Text style={styles.section}>{copy.title}</Text>
+                <Muted>{copy.body}</Muted>
+                <ChoiceButtons value={lawChoice} onChange={setLawChoice} es={labels.zip !== "ZIP"} />
+              </View>
+            );
+          })()}
           {offer ? (
             <View>
               <LabeledAddress label={labels.checked} street={preview?.kept?.street || street} unit={preview?.kept?.unit || unitNumber} city={preview?.kept?.city || city} region={preview?.kept?.region || home.region} postalCode={preview?.kept?.postalCode || postalCode} />

@@ -99,7 +99,7 @@ export async function recordLog(input: {
   if (law && (input.noticeKind === "rent_increase" || input.noticeKind === "eviction") && input.eventDate) {
     const repairs = (await listLogs(input.user.id, input.unit.id)).filter((entry) => entry.type === "repair");
     const hits = repairs
-      .map((entry) => ({ entry, window: retaliationWindow(entry.eventDate, input.eventDate, law) }))
+      .map((entry) => ({ entry, window: retaliationWindow(entry.eventDate, input.eventDate, law, input.unit.lawChoice) }))
       .filter((item) => item.window.flagged)
       .sort((a, b) => a.window.daysSince - b.window.daysSince);
     if (hits[0]) {
@@ -409,7 +409,7 @@ export async function saveDepositAndDeadline(user: User, unit: Unit, input: {
   await saveDeposit(user.id, unit.id, input);
   const law = lawStateOf(unit);
   if (input.moveOutDate && law) {
-    const due = depositReturnDeadline(input.moveOutDate, law);
+    const due = depositReturnDeadline(input.moveOutDate, law, unit.lawChoice);
     await replaceOpenDeadline(unit.id, "deposit");
     await insertDeadline({
       unitId: unit.id,

@@ -153,22 +153,22 @@ describe("address suggestions", () => {
 
   it("rejects an address outside California", async () => {
     census({
-      matchedAddress: "1 BROADWAY, NASHVILLE, TN, 37203",
+      matchedAddress: "1 MARINE CORPS DR, HAGATNA, GU, 96910",
       addressComponents: {
         fromAddress: "1",
-        streetName: "BROADWAY",
-        suffixType: "ST",
-        city: "NASHVILLE",
-        state: "TN",
-        zip: "37203",
+        streetName: "MARINE CORPS",
+        suffixType: "DR",
+        city: "HAGATNA",
+        state: "GU",
+        zip: "96910",
       },
     });
-    const found = await suggestPlace({ street: "1 Broadway", city: "Nashville", region: "CA", postalCode: "37203" });
+    const found = await suggestPlace({ street: "1 Marine Corps Dr", city: "Hagatna", region: "CA", postalCode: "96910" });
     expect(found.place.inCalifornia).toBe(false);
     expect(found.place.jurisdiction).toBe("unsupported");
-    expect(found.place.state).toBe("TN");
+    expect(found.place.state).toBe("GU");
     expect(found.suggestion).toBeNull();
-    expect(found.kept.street).toBe("1 Broadway");
+    expect(found.kept.street).toBe("1 Marine Corps Dr");
     expect(placeSummary(found.place)).toBe(COVERAGE_NOTICE_EN);
   });
 

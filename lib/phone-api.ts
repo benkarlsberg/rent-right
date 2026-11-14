@@ -1,6 +1,7 @@
 import "server-only";
 
 import { legalNotice, LIBRARY_VERSION, type Locale } from "@/lib/disclaimer";
+import { lawChoiceOf, specialKind } from "@/lib/rules/special";
 import { signSession } from "@/lib/crypto";
 import {
   addFeedback,
@@ -213,6 +214,7 @@ function publicUnit(unit: Unit, locale: Locale) {
     relay: relayAddress(unit.relayLocal),
     rent: unit.rentCents != null ? formatMoney(unit.rentCents, "en") : "",
     jurisdiction: unit.jurisdiction,
+    lawChoice: unit.lawChoice,
     rsoStatus: unit.rsoStatus,
     rstpoTier: unit.rstpoTier,
     archived: Boolean(unit.archivedAt),
@@ -263,6 +265,7 @@ function unitInput(input: Record<string, unknown>): UnitInput {
     supported: home.supported,
     jurisdictionConfirmed: home.supported ? input.jurisdictionConfirmed === true : true,
     rsoStatus: (home.supported ? text(input.rsoStatus) || "unsure" : "unsure") as RsoStatus,
+    lawChoice: specialKind(home.jurisdiction) ? lawChoiceOf(text(input.lawChoice)) : "unsure",
     rstpoTier: (home.supported ? text(input.rstpoTier) || "unsure" : "unsure") as RstpoTier,
     landlordName,
     landlordEmail,

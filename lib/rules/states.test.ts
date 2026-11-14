@@ -389,7 +389,7 @@ describe("added state coverage", () => {
     }
     expect(stateRentAnswer({ state: "AL", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).abovePublishedMax).toBe(false);
     expect(stateRentAnswer({ state: "UT", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).detailEn).toContain("57-22-7");
-    expect(detectPlace({ city: "Newark", region: "NJ", postalCode: "07102" }).jurisdiction).toBe("unsupported");
+    expect(detectPlace({ city: "Newark", region: "NJ", postalCode: "07102" }).jurisdiction).toBe("nj");
     expect(detectPlace({ city: "Denver", region: "CO", postalCode: "80202" }).jurisdiction).toBe("co");
     expect(detectPlace({ city: "Santa Fe", region: "NM", postalCode: "87501" }).jurisdiction).toBe("nm");
     expect(detectPlace({ city: "Jackson", region: "MS", postalCode: "39201" }).jurisdiction).toBe("ms");
@@ -406,7 +406,17 @@ describe("added state coverage", () => {
     expect(retaliationWindow("2026-01-01", "2026-06-01", "CO").flagged).toBe(false);
     expect(stateRentAnswer({ state: "NM", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).detailEn).toContain("30 days");
     expect(stateRentAnswer({ state: "CO", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).abovePublishedMax).toBe(false);
-    expect(detectPlace({ city: "Nashville", region: "TN", postalCode: "37203" }).jurisdiction).toBe("unsupported");
+    expect(detectPlace({ city: "Nashville", region: "TN", postalCode: "37203" }).jurisdiction).toBe("tn");
+    expect(depositReturnDeadline("2026-09-01", "LA").dueDate).toBe("2026-10-01");
+    expect(depositReturnDeadline("2026-09-01", "AR")).toMatchObject({ dueDate: "2026-10-31", unsure: true });
+    expect(depositReturnDeadline("2026-09-01", "NJ")).toMatchObject({ dueDate: "2026-10-01", unsure: false });
+    expect(depositReturnDeadline("2026-09-01", "TN").explanation).toContain("not applied");
+    expect(depositReturnDeadline("2026-09-01", "TN", "yes").explanation).toContain("66-28-301");
+    expect(depositReturnDeadline("2026-09-01", "KY").explanation).toContain("may apply");
+    expect(retaliationWindow("2026-01-01", "2026-06-01", "LA").flagged).toBe(false);
+    expect(retaliationWindow("2026-01-01", "2027-01-01", "KY", "yes").flagged).toBe(true);
+    expect(stateRentAnswer({ state: "NJ", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).detailEn).toContain("Municipal rent control");
+    expect(detectPlace({ city: "Hagatna", region: "GU", postalCode: "96910" }).jurisdiction).toBe("unsupported");
   });
 
   it("uses the opened clocks for Kansas, Nebraska, Hawaii, New Hampshire, Idaho, and West Virginia", () => {
@@ -429,7 +439,7 @@ describe("added state coverage", () => {
     expect(stateRentAnswer({ state: "HI", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).detailEn).toContain("45");
     expect(stateRentAnswer({ state: "ID", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).detailEn).toContain("30 days");
     expect(stateRentAnswer({ state: "WV", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).abovePublishedMax).toBe(false);
-    expect(detectPlace({ city: "Little Rock", region: "AR", postalCode: "72201" }).jurisdiction).toBe("unsupported");
+    expect(detectPlace({ city: "Little Rock", region: "AR", postalCode: "72201" }).jurisdiction).toBe("ar");
   });
 
   it("uses the opened clocks for the remaining smaller states", () => {

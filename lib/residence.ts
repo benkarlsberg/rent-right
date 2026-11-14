@@ -21,6 +21,7 @@ import {
 } from "@/lib/db";
 import { coversLaw } from "@/lib/coverage";
 import { isAddedState, lawStateOf, type LawState } from "@/lib/rules/states";
+import { lawChoiceOf, specialKind } from "@/lib/rules/special";
 import { emailValue } from "@/lib/forms";
 import { suggestPlace, tidyAddress } from "@/lib/geo";
 import { parseISODate } from "@/lib/rules/dates";
@@ -198,6 +199,7 @@ function readFields(unit: Unit, body: Record<string, unknown>, locale: User["loc
     rentCents: dollars(body.rent, locale),
     moveInDate: dateOrNull(body.moveInDate, locale),
     leaseEndDate: dateOrNull(body.leaseEndDate, locale),
+    lawChoice: text(body.lawChoice),
   };
 }
 
@@ -234,6 +236,7 @@ export async function residencePayload(user: User) {
       leaseEndDate: selected.leaseEndDate || "",
       relay: relayAddress(selected.relayLocal),
       jurisdiction: selected.jurisdiction,
+      lawChoice: selected.lawChoice,
       summary: placeSummary(place, locale),
       archived: Boolean(selected.archivedAt),
       canEdit: selected.role === "owner" && !selected.archivedAt,
@@ -300,6 +303,7 @@ function inputFor(unit: Unit, fields: ReturnType<typeof readFields>, place: Plac
     jurisdictionConfirmed: true,
     rsoStatus: (moving ? "unsure" : unit.rsoStatus) as RsoStatus,
     rstpoTier: (moving ? "unsure" : unit.rstpoTier) as RstpoTier,
+    lawChoice: specialKind(redetect ? place.jurisdiction : unit.jurisdiction) ? lawChoiceOf(fields.lawChoice || unit.lawChoice) : "unsure",
     landlordName: fields.landlordName,
     landlordEmail: fields.landlordEmail,
     landlordPhone: moving ? "" : unit.landlordPhone,
@@ -310,7 +314,7 @@ function inputFor(unit: Unit, fields: ReturnType<typeof readFields>, place: Plac
   };
 }
 
-async function refreshOpenDeadlines(userId: string, unitId: string, law: LawState) {
+async function refreshOpenDeadlines(userId: string, unitId: string, law: LawState, choice: Unit["lawChoice"]) {
   const deadlines = await listDeadlines(userId, unitId);
   const logs = await listLogs(userId, unitId);
   for (const item of deadlines) {
@@ -324,10 +328,10 @@ async function refreshOpenDeadlines(userId: string, unitId: string, law: LawStat
       const anchor = (log?.eventDate ? String(log.eventDate).slice(0, 10) : null) || item.anchorDate;
       if (severity && anchor && SEVERITIES.has(severity as RepairSeverity)) {
         const pace = log?.flags?.tierManual === true ? reminderPace(log.tier, severity) : undefined;
-        next = repairReminder(anchor, severity as RepairSeverity, pace, law);
+        next = repairReminder(anchor, severity as RepairSeverity, pace, law, choice);
       }
     } else if (item.kind === "deposit" && item.anchorDate) {
-      next = depositReturnDeadline(item.anchorDate, law);
+      next = depositReturnDeadline(item.anchorDate, law, choice);
     } else if (item.kind === "notice_3day" && item.anchorDate && law === "CA") {
       next = threeDayNoticeDeadline(item.anchorDate);
     }
@@ -424,7 +428,7 @@ export async function saveResidence(user: User, body: Record<string, unknown>) {
   const saved = await updateUnit(user.id, unit.id, inputFor(unit, fields, place, mode === "typo" ? "typo" : "details", changed));
   if (mode === "typo" && changed && coversLaw(saved)) {
     const law = lawStateOf(saved);
-    if (law) await refreshOpenDeadlines(user.id, saved.id, law);
+    if (law) await refreshOpenDeadlines(user.id, saved.id, law, saved.lawChoice);
     await refreshRentCheck(user, saved);
   }
   return { note: labels.nothingSent, unit: await requireUnit(user.id, saved.id) };

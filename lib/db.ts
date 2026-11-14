@@ -10,6 +10,7 @@ import type { Locale } from "@/lib/disclaimer";
 import type { LeaseReview } from "@/lib/lease/review";
 import type { AssistantAnswer } from "@/lib/rules/assistant";
 import type { Jurisdiction, RentIncreaseResult, RsoStatus, RstpoTier } from "@/lib/rules/engine";
+import { lawChoiceOf, type LawChoice } from "@/lib/rules/special";
 import { deleteBlob, getBlob, putBlob } from "@/lib/storage";
 import { chainHash, GENESIS_HASH, sha256 } from "@/lib/hash";
 
@@ -54,6 +55,7 @@ export type Unit = {
   jurisdictionConfirmed: boolean;
   rsoStatus: RsoStatus;
   rstpoTier: RstpoTier;
+  lawChoice: LawChoice;
   landlordName: string;
   landlordEmail: string;
   landlordPhone: string;
@@ -92,6 +94,7 @@ type UnitRow = {
   jurisdiction_confirmed: number;
   rso_status: string;
   rstpo_tier: string;
+  law_choice?: string;
   landlord_name: string;
   landlord_email: string;
   landlord_phone: string;
@@ -133,6 +136,7 @@ function mapUnit(row: UnitRow, role: "owner" | "roommate"): Unit {
     jurisdictionConfirmed: isOn(row.jurisdiction_confirmed),
     rsoStatus: (row.rso_status as RsoStatus) || "unsure",
     rstpoTier: (row.rstpo_tier as RstpoTier) || "unsure",
+    lawChoice: lawChoiceOf(row.law_choice),
     landlordName: row.landlord_name || "",
     landlordEmail: row.landlord_email || "",
     landlordPhone: row.landlord_phone || "",
@@ -392,6 +396,7 @@ export type UnitInput = {
   jurisdictionConfirmed: boolean;
   rsoStatus: RsoStatus;
   rstpoTier: RstpoTier;
+  lawChoice?: LawChoice;
   landlordName: string;
   landlordEmail: string;
   landlordPhone: string;
@@ -409,12 +414,12 @@ export async function createUnit(userId: string, input: UnitInput) {
   await run(
     `insert into units (
       id, created_by, street, unit_number, city, postal_code, region, jurisdiction, jurisdiction_confirmed,
-      supported, rso_status, rstpo_tier, landlord_name, landlord_email, landlord_phone, relay_local,
+      supported, rso_status, rstpo_tier, law_choice, landlord_name, landlord_email, landlord_phone, relay_local,
       rent_cents, deposit_cents, move_in_date, lease_end_date, created_at
-    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id, userId, input.street, input.unitNumber, input.city, input.postalCode, input.region, input.jurisdiction,
-      input.jurisdictionConfirmed, input.supported !== false, input.rsoStatus, input.rstpoTier, input.landlordName, input.landlordEmail,
+      input.jurisdictionConfirmed, input.supported !== false, input.rsoStatus, input.rstpoTier, input.lawChoice || "unsure", input.landlordName, input.landlordEmail,
       input.landlordPhone, relay, input.rentCents, input.depositCents, input.moveInDate, input.leaseEndDate, now,
     ],
   );
@@ -428,11 +433,11 @@ export async function updateUnit(userId: string, unitId: string, input: UnitInpu
   if (unit.role !== "owner") throw new HttpError("Only the person who added the unit can edit the landlord and address.");
   await run(
     `update units set street=?, unit_number=?, city=?, postal_code=?, region=?, jurisdiction=?, jurisdiction_confirmed=?,
-     supported=?, rso_status=?, rstpo_tier=?, landlord_name=?, landlord_email=?, landlord_phone=?, rent_cents=?, deposit_cents=?, move_in_date=?, lease_end_date=?
+     supported=?, rso_status=?, rstpo_tier=?, law_choice=?, landlord_name=?, landlord_email=?, landlord_phone=?, rent_cents=?, deposit_cents=?, move_in_date=?, lease_end_date=?
      where id=?`,
     [
       input.street, input.unitNumber, input.city, input.postalCode, input.region, input.jurisdiction,
-      input.jurisdictionConfirmed, input.supported !== false, input.rsoStatus, input.rstpoTier, input.landlordName, input.landlordEmail,
+      input.jurisdictionConfirmed, input.supported !== false, input.rsoStatus, input.rstpoTier, input.lawChoice || "unsure", input.landlordName, input.landlordEmail,
       input.landlordPhone, input.rentCents, input.depositCents, input.moveInDate, input.leaseEndDate, unitId,
     ],
   );

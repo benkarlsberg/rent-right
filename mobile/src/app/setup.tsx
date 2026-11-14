@@ -10,6 +10,7 @@ import { colors } from "@/theme";
 import { Address, LabeledAddress } from "@/address";
 import { backAction } from "@/back-nav";
 import { Button, ErrorLine, Field, H1, Muted, Page } from "@/ui";
+import { ChoiceButtons, specialCopy, specialKind, type LawChoice } from "@/special-question";
 
 type Suggestion = { label: string; street: string; city: string; region: string; postalCode: string; unit?: string };
 type Kept = { street: string; unit: string; city: string; region: string; postalCode: string };
@@ -24,7 +25,11 @@ type PlaceResult = {
   kept?: Kept;
 };
 
-const STEPS = 4;
+function flow(jurisdiction: string) {
+  return specialKind(jurisdiction)
+    ? (["address", "special", "landlord", "lease", "rules"] as const)
+    : (["address", "landlord", "lease", "rules"] as const);
+}
 
 function usZip(value: string): boolean {
   return /^\d{5}$/.test(value);
@@ -47,6 +52,9 @@ export default function Setup() {
   const [offer, setOffer] = useState<Suggestion | null>(null);
   const [kept, setKept] = useState<Kept | null>(null);
   const [jurisdiction, setJurisdiction] = useState("unsure");
+  const [lawChoice, setLawChoice] = useState<LawChoice>("unsure");
+  const steps = flow(jurisdiction);
+  const current = steps[step] || "address";
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -118,7 +126,8 @@ export default function Setup() {
   function later() {
     setError("");
     setOffer(null);
-    if (step < STEPS - 1) {
+    if (current === "special") setLawChoice("unsure");
+    if (step < steps.length - 1) {
       setStep(step + 1);
       return;
     }
@@ -153,6 +162,7 @@ export default function Setup() {
           rent: rent.trim(),
           moveInDate: moveInDate.trim(),
           jurisdiction,
+          lawChoice: specialKind(jurisdiction) ? lawChoice : "unsure",
         },
       });
       await setSkippedSetup(false);
@@ -169,7 +179,7 @@ export default function Setup() {
   async function next() {
     try {
       setError("");
-      if (step === 0) {
+      if (current === "address") {
         const zip = postalCode.trim();
         if (!street.trim() || !city.trim() || !usZip(zip)) {
           setError(es ? "Agregue calle, ciudad y un código postal de 5 dígitos." : "Add a street, city, and a 5-digit ZIP.");
@@ -177,10 +187,6 @@ export default function Setup() {
         }
         setBusy(true);
         const found = await api<PlaceResult>("place", { token, body: { street: street.trim(), unitNumber: unitNumber.trim(), city: city.trim(), postalCode: zip, region: region.trim() || "CA" } });
-        if (!found.inCalifornia && found.jurisdiction !== "unsupported") {
-          setError(found.summary);
-          return;
-        }
         setSummary(found.summary);
         if (found.state) setRegion(found.state);
         if (found.jurisdiction) setJurisdiction(found.jurisdiction);
@@ -199,17 +205,21 @@ export default function Setup() {
         setStep(1);
         return;
       }
-      if (step === 1) {
+      if (current === "special") {
+        setStep(step + 1);
+        return;
+      }
+      if (current === "landlord") {
         const name = landlordName.trim();
         const email = landlordEmail.trim();
         if ((name || email) && (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
           setError(es ? "Agregue el nombre y el correo del propietario." : "Add the landlord's name and email.");
           return;
         }
-        setStep(2);
+        setStep(step + 1);
         return;
       }
-      if (step === 2) {
+      if (current === "lease") {
         if (moveInDate.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(moveInDate.trim())) {
           setError(es ? "Use una fecha como 2024-06-01, o déjela en blanco." : "Use a date like 2024-06-01, or leave it blank.");
           return;
@@ -218,7 +228,7 @@ export default function Setup() {
           setError(es ? "Escriba la renta en dólares, o déjela en blanco." : "Enter the rent in dollars, or leave it blank.");
           return;
         }
-        setStep(3);
+        setStep(step + 1);
         return;
       }
       setBusy(true);
@@ -235,6 +245,7 @@ export default function Setup() {
           rent: rent.trim(),
           moveInDate: moveInDate.trim(),
           jurisdiction,
+          lawChoice: specialKind(jurisdiction) ? lawChoice : "unsure",
         },
       });
       await setSkippedSetup(false);
@@ -248,21 +259,23 @@ export default function Setup() {
     }
   }
 
-  const titles = es
-    ? ["¿Dónde renta?", "Su propietario", "Datos del contrato", "Reglas para esta dirección"]
-    : ["Where do you rent?", "Your landlord", "Lease details", "Rules for this address"];
-  const hints = es
-    ? ["Una dirección en Estados Unidos.", "Deje ambos en blanco para agregarlos después. Nada se envía hasta que usted lo confirme.", "Los dos son opcionales.", summary]
-    : ["A US address.", "Leave both blank to add them later. Nothing is sent until you confirm it.", "Both of these are optional.", summary];
-  const action = step === 3 ? (es ? "Guardar" : "Save") : (es ? "Continuar" : "Continue");
+  const special = specialKind(jurisdiction);
+  const copy = special ? specialCopy(special, es) : null;
+  const titles: Record<typeof current, string> = es
+    ? { address: "¿Dónde renta?", special: copy?.title || "", landlord: "Su propietario", lease: "Datos del contrato", rules: "Reglas para esta dirección" }
+    : { address: "Where do you rent?", special: copy?.title || "", landlord: "Your landlord", lease: "Lease details", rules: "Rules for this address" };
+  const hints: Record<typeof current, string> = es
+    ? { address: "Una dirección en Estados Unidos.", special: copy?.body || "", landlord: "Deje ambos en blanco para agregarlos después. Nada se envía hasta que usted lo confirme.", lease: "Los dos son opcionales.", rules: summary }
+    : { address: "A US address.", special: copy?.body || "", landlord: "Leave both blank to add them later. Nothing is sent until you confirm it.", lease: "Both of these are optional.", rules: summary };
+  const action = current === "rules" ? (es ? "Guardar" : "Save") : (es ? "Continuar" : "Continue");
 
   return (
     <Page onBack={back}>
-      <Muted>{es ? `Paso ${step + 1} de ${STEPS}` : `Step ${step + 1} of ${STEPS}`}</Muted>
-      <H1>{titles[step]}</H1>
-      <Muted>{hints[step]}</Muted>
+      <Muted>{es ? `Paso ${step + 1} de ${steps.length}` : `Step ${step + 1} of ${steps.length}`}</Muted>
+      <H1>{titles[current]}</H1>
+      <Muted>{hints[current]}</Muted>
       <ErrorLine message={error} />
-      {step === 0 ? (
+      {current === "address" ? (
         <>
           <Field label={es ? "Calle" : "Street"} value={street} onChange={editStreet} autoComplete="street-address" textContentType="fullStreetAddress" />
           <Field label={es ? "Apto / Unidad" : "Apt / Unit"} value={unitNumber} onChange={editUnit} placeholder={es ? "Apto, suite, unidad (opcional)" : "Apt, suite, unit (optional)"} autoComplete="address-line2" textContentType="streetAddressLine2" />
@@ -271,22 +284,23 @@ export default function Setup() {
           <Field label={es ? "Código postal" : "ZIP"} value={postalCode} onChange={editPostal} placeholder="90026" keyboardType="number-pad" autoComplete="postal-code" textContentType="postalCode" />
         </>
       ) : null}
-      {step === 1 ? (
+      {current === "special" ? <ChoiceButtons value={lawChoice} onChange={setLawChoice} es={es} /> : null}
+      {current === "landlord" ? (
         <>
           <Field label={es ? "Nombre del propietario" : "Landlord name"} value={landlordName} onChange={setLandlord} autoComplete="name" textContentType="name" />
           <Field label={es ? "Correo del propietario" : "Landlord email"} value={landlordEmail} onChange={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" textContentType="emailAddress" />
         </>
       ) : null}
-      {step === 2 ? (
+      {current === "lease" ? (
         <>
           <Field label={es ? "Inicio del contrato" : "Lease start"} value={moveInDate} onChange={setMoveIn} placeholder="2024-06-01" autoComplete="off" />
           <Field label={es ? "Renta mensual" : "Monthly rent"} value={rent} onChange={setRent} placeholder="2150" keyboardType="decimal-pad" />
         </>
       ) : null}
-      {step === 3 ? (
+      {current === "rules" ? (
         <Address street={street} unit={unitNumber} city={city} postalCode={postalCode} region={region || "CA"} style={styles.recap} />
       ) : null}
-      {step === 0 && offer ? (
+      {current === "address" && offer ? (
         <>
           <LabeledAddress label={es ? "Revisada" : "Checked"} street={kept?.street || street} unit={kept?.unit || unitNumber} city={kept?.city || city} region={kept?.region || "CA"} postalCode={kept?.postalCode || postalCode} />
           <LabeledAddress label={es ? "Sugerencia" : "Suggestion"} street={offer.street} unit={offer.unit} city={offer.city} region={offer.region} postalCode={offer.postalCode} />

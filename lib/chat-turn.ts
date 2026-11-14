@@ -1085,7 +1085,7 @@ async function commitRepair(user: User, unit: Unit, summary: string, description
   }
   const covered = coversLaw(unit);
   const law = lawStateOf(unit);
-  const reminder = law ? repairReminder(todayISO(), severity, reminderPace(tier, severity), law) : null;
+  const reminder = law ? repairReminder(todayISO(), severity, reminderPace(tier, severity), law, unit.lawChoice) : null;
   const pending = await ensureRepairDrafts(user, unit, [entry], []);
   const letter = pending[0];
   const draft = await createChatDraft(user.id, unit.id, "repair", {
@@ -1192,6 +1192,8 @@ async function runRent(user: User, unit: Unit, lowest: number | null, proposed: 
       firstYear: null,
       claimsExemption: false,
       inNewYorkCity: unit.jurisdiction === "city_nyc",
+      stabilized: unit.jurisdiction === "city_nyc" ? unit.lawChoice : "unsure",
+      lawChoice: unit.lawChoice,
     });
     await say(user, unit, {
       headline: user.locale === "es" ? note.headlineEs : note.headlineEn,
@@ -1311,7 +1313,7 @@ async function runDeposit(user: User, unit: Unit, moveOutDate: string) {
     landlordDeductions: existing?.landlord_deductions || "",
     tenantNotes: existing?.tenant_notes || "",
   });
-  const due = depositReturnDeadline(moveOutDate, lawStateOf(unit) || "CA");
+  const due = depositReturnDeadline(moveOutDate, lawStateOf(unit) || "CA", unit.lawChoice);
   await sayDeposit(user, unit, due.dueDate, due.explanation, due.explanationEs, due.ruleId);
 }
 

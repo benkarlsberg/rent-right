@@ -38,6 +38,7 @@ export function repairDraftLetter(input: {
   covered?: boolean;
   state?: LawState | null;
   inNewYorkCity?: boolean;
+  lawChoice?: "yes" | "no" | "unsure";
 }): { subject: string; body: string; ruleId: string; dueDate: string | null } {
   const locale = input.locale;
   const day = input.eventDate.slice(0, 10);
@@ -55,7 +56,7 @@ export function repairDraftLetter(input: {
   const severity = severityOf(input.severity);
   const pace = input.tier ? reminderPace(input.tier, input.severity) : undefined;
   const state = input.state || "CA";
-  const reminder = repairReminder(day, severity, pace, state);
+  const reminder = repairReminder(day, severity, pace, state, input.lawChoice);
   const urgent = input.tier ? input.tier === "urgent" : tierForSeverity(severity) === "urgent";
   const tier = input.tier ?? (urgent ? "urgent" : "routine");
   const lines = [
@@ -64,7 +65,7 @@ export function repairDraftLetter(input: {
     tx(locale, `Issue: ${issue}`, `Problema: ${issue}`),
     tx(locale, `Date: ${date}`, `Fecha: ${date}`),
     "",
-    state === "CA" ? repairLegalNote(locale, tier) : stateRepairLetter(state, locale, severity),
+    state === "CA" ? repairLegalNote(locale, tier) : stateRepairLetter(state, locale, severity, input.lawChoice),
   ];
   if (input.inNewYorkCity) lines.push("", locale === "es" ? NYC_REPAIR_NOTE_ES : NYC_REPAIR_NOTE_EN);
   const body = lines.join("\n");
@@ -159,6 +160,7 @@ export async function ensureRepairDrafts(user: User, unit: Unit, logs: LogEntry[
       covered: coversLaw(unit),
       state: lawStateOf(unit),
       inNewYorkCity: unit.jurisdiction === "city_nyc",
+      lawChoice: unit.lawChoice,
     });
     try {
       const row = await insertMessage({
@@ -196,7 +198,7 @@ export async function ensureRepairDeadline(user: User, unit: Unit, log: LogEntry
   const pace = log.flags?.tierManual === true ? reminderPace(log.tier, log.severity) : undefined;
   const state = lawStateOf(unit);
   if (!state) return;
-  const reminder = repairReminder(day, severityOf(log.severity), pace, state);
+  const reminder = repairReminder(day, severityOf(log.severity), pace, state, unit.lawChoice);
   if (unit.jurisdiction === "city_nyc") {
     reminder.explanation = `${reminder.explanation} ${NYC_REPAIR_NOTE_EN}`;
     reminder.explanationEs = `${reminder.explanationEs} ${NYC_REPAIR_NOTE_ES}`;

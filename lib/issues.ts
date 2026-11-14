@@ -410,7 +410,7 @@ export async function setIssueTier(user: User, unit: Unit, id: string, tier: Iss
   const anchor = (log.eventDate || todayISO()).slice(0, 10);
   const law = lawStateOf(unit);
   if (!law) return;
-  const reminder = repairReminder(anchor, asRepairSeverity(log.severity), reminderPace(tier, log.severity), law);
+  const reminder = repairReminder(anchor, asRepairSeverity(log.severity), reminderPace(tier, log.severity), law, unit.lawChoice);
   const open = (await listDeadlines(user.id, unit.id)).find((item) => item.kind === "repair" && item.sourceId === id && item.status === "open");
   if (!open) return;
   await updateDeadlineFacts(open.id, {
