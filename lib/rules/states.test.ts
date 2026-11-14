@@ -20,6 +20,11 @@ describe("added state coverage", () => {
     expect(detectPlace({ city: "Columbus", region: "OH", postalCode: "43215" }).jurisdiction).toBe("oh");
     expect(detectPlace({ city: "Washington", region: "DC", postalCode: "20001" }).jurisdiction).toBe("dc");
     expect(detectPlace({ city: "Los Angeles", region: "CA", postalCode: "90026" }).jurisdiction).toBe("city_la");
+    expect(detectPlace({ city: "Detroit", region: "MI", postalCode: "48201" }).jurisdiction).toBe("mi");
+    expect(detectPlace({ city: "Richmond", region: "VA", postalCode: "23219" }).jurisdiction).toBe("va");
+    expect(detectPlace({ city: "Baltimore", region: "MD", postalCode: "21201" }).jurisdiction).toBe("md");
+    expect(detectPlace({ city: "Minneapolis", region: "MN", postalCode: "55401" }).jurisdiction).toBe("mn");
+    expect(detectPlace({ city: "Milwaukee", region: "WI", postalCode: "53202" }).jurisdiction).toBe("wi");
     expect(detectPlace({ address: "1 Peachtree St, Atlanta, GA 30303" }).jurisdiction).toBe("unsupported");
   });
 
@@ -319,5 +324,41 @@ describe("added state coverage", () => {
     expect(selectRules("rent stabilization increase", "NY").rules.some((item) => item.jurisdiction === "CITY_NYC")).toBe(false);
     expect(selectRules("rent stabilization increase", "NY", "city_nyc").rules.some((item) => item.id === "NYC-RGB-ORDER")).toBe(true);
     expect(selectRules("rent stabilization increase", "CA").rules.some((item) => item.jurisdiction === "CITY_NYC")).toBe(false);
+  });
+
+  it("uses the opened clocks for Michigan, Virginia, Maryland, Minnesota, and Wisconsin", () => {
+    expect(depositReturnDeadline("2026-09-01", "MI")).toMatchObject({ dueDate: "2026-10-01", unsure: true, ruleId: "MI-554.609" });
+    expect(depositReturnDeadline("2026-09-01", "VA").dueDate).toBe("2026-10-16");
+    expect(depositReturnDeadline("2026-09-01", "MD").dueDate).toBe("2026-10-16");
+    expect(depositReturnDeadline("2026-09-01", "MN")).toMatchObject({ dueDate: "2026-09-22", unsure: true });
+    expect(depositReturnDeadline("2026-09-01", "WI").dueDate).toBe("2026-09-22");
+    for (const state of ["MI", "VA", "MD", "MN", "WI"] as const) {
+      const repair = repairReminder("2026-10-01", "leak", undefined, state);
+      expect(repair.dueDate).toBeNull();
+      expect(repair.explanation.toLowerCase()).toContain("not permission to withhold rent");
+    }
+    expect(retaliationWindow("2026-01-01", "2026-04-01", "MN").flagged).toBe(true);
+    expect(retaliationWindow("2026-01-01", "2026-04-02", "MN").flagged).toBe(false);
+    expect(retaliationWindow("2026-01-01", "2026-07-01", "MD").flagged).toBe(true);
+    expect(retaliationWindow("2026-01-01", "2026-07-02", "MD").flagged).toBe(false);
+    expect(retaliationWindow("2026-01-01", "2026-03-01", "MI").flagged).toBe(false);
+    expect(retaliationWindow("2026-01-01", "2026-03-01", "VA").flagged).toBe(false);
+    expect(retaliationWindow("2026-01-01", "2026-03-01", "WI").flagged).toBe(false);
+    const shared = {
+      lowestCents: 200_000,
+      proposedCents: 230_000,
+      noticeDate: "2026-09-01",
+      effectiveDate: "2026-10-01",
+      weekToWeek: false,
+      firstYear: null,
+      claimsExemption: false,
+    };
+    expect(stateRentAnswer({ state: "VA", ...shared }).detailEn).toContain("60 days");
+    expect(stateRentAnswer({ state: "VA", ...shared }).abovePublishedMax).toBe(false);
+    expect(stateRentAnswer({ state: "MD", ...shared }).detailEn).toContain("Montgomery County");
+    expect(stateRentAnswer({ state: "MN", ...shared }).detailEn).toContain("Minneapolis");
+    expect(stateRentAnswer({ state: "WI", ...shared }).detailEn).toContain("704.19");
+    expect(selectRules("security deposit", "CA").rules.some((item) => item.jurisdiction === "MI" || item.jurisdiction === "WI")).toBe(false);
+    expect(detectPlace({ address: "1 Peachtree St, Atlanta, GA 30303" }).jurisdiction).toBe("unsupported");
   });
 });

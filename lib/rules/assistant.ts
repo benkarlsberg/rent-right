@@ -82,9 +82,10 @@ function checkedLine(locale: Locale, state: LawState, cityRules: boolean): strin
       : `General information based on California law, checked ${LIBRARY_CHECKED_EN}. Not legal advice.`;
   }
   const name = stateName(state);
+  const batch2 = state === "MI" || state === "VA" || state === "MD" || state === "MN" || state === "WI";
   const later = state === "NY" || state === "IL" || state === "MA" || state === "NC" || state === "PA" || state === "OH" || state === "DC";
-  const checked = cityRules ? "Nov 13, 2026" : later ? "Nov 10, 2026" : state === "TX" || state === "FL" ? "Nov 9, 2026" : "Nov 8, 2026";
-  const checkedEs = cityRules ? "13 de noviembre de 2026" : later ? "10 de noviembre de 2026" : state === "TX" || state === "FL" ? "9 de noviembre de 2026" : "8 de noviembre de 2026";
+  const checked = cityRules ? "Nov 13, 2026" : batch2 ? "Nov 14, 2026" : later ? "Nov 10, 2026" : state === "TX" || state === "FL" ? "Nov 9, 2026" : "Nov 8, 2026";
+  const checkedEs = cityRules ? "13 de noviembre de 2026" : batch2 ? "14 de noviembre de 2026" : later ? "10 de noviembre de 2026" : state === "TX" || state === "FL" ? "9 de noviembre de 2026" : "8 de noviembre de 2026";
   return locale === "es"
     ? `Información general basada en la ley de ${name}, revisada el ${checkedEs}. No es asesoramiento legal. Las ordenanzas de la ciudad no se investigaron.`
     : `General information based on ${name} law, checked ${checked}. Not legal advice. City ordinances were not researched.`;
@@ -165,6 +166,6 @@ export function answerFromModelIds(question: string, locale: Locale, retrieved: 
 function stateFromRules(rules: Rule[]): LawState {
   const code = rules.find((item) => item.jurisdiction !== "CITY_NYC")?.jurisdiction || rules[0]?.jurisdiction;
   if (code === "CITY_NYC" || code === "NY") return "NY";
-  if (code === "AZ" || code === "NV" || code === "OR" || code === "WA" || code === "TX" || code === "FL" || code === "IL" || code === "MA" || code === "NC" || code === "PA" || code === "OH" || code === "DC") return code;
+  if (code === "AZ" || code === "NV" || code === "OR" || code === "WA" || code === "TX" || code === "FL" || code === "IL" || code === "MA" || code === "NC" || code === "PA" || code === "OH" || code === "DC" || code === "MI" || code === "VA" || code === "MD" || code === "MN" || code === "WI") return code;
   return "CA";
 }
