@@ -361,4 +361,23 @@ describe("added state coverage", () => {
     expect(selectRules("security deposit", "CA").rules.some((item) => item.jurisdiction === "MI" || item.jurisdiction === "WI")).toBe(false);
     expect(detectPlace({ address: "1 Peachtree St, Atlanta, GA 30303" }).jurisdiction).toBe("unsupported");
   });
+
+  it("uses the opened clocks for Indiana, South Carolina, Connecticut, and Iowa", () => {
+    expect(detectPlace({ city: "Indianapolis", region: "IN", postalCode: "46204" }).jurisdiction).toBe("in");
+    expect(detectPlace({ city: "Columbia", region: "SC", postalCode: "29201" }).jurisdiction).toBe("sc");
+    expect(detectPlace({ city: "Hartford", region: "CT", postalCode: "06103" }).jurisdiction).toBe("ct");
+    expect(detectPlace({ city: "Des Moines", region: "IA", postalCode: "50309" }).jurisdiction).toBe("ia");
+    expect(depositReturnDeadline("2026-09-01", "IN")).toMatchObject({ dueDate: "2026-10-16", unsure: true });
+    expect(depositReturnDeadline("2026-09-01", "CT").dueDate).toBeNull();
+    expect(depositReturnDeadline("2026-09-01", "IA").explanation).toContain("two months");
+    for (const state of ["IN", "SC", "CT", "IA"] as const) {
+      expect(repairReminder("2026-10-01", "leak", undefined, state).explanation.toLowerCase()).toContain("not permission to withhold rent");
+    }
+    expect(retaliationWindow("2026-01-01", "2026-07-01", "CT").flagged).toBe(true);
+    expect(retaliationWindow("2026-01-01", "2027-01-01", "IA").flagged).toBe(true);
+    expect(retaliationWindow("2026-01-01", "2026-06-01", "IN").flagged).toBe(false);
+    expect(stateRentAnswer({ state: "CT", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).detailEn).toContain("45 days");
+    expect(stateRentAnswer({ state: "IA", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).abovePublishedMax).toBe(false);
+    expect(detectPlace({ city: "Birmingham", region: "AL", postalCode: "35203" }).jurisdiction).toBe("unsupported");
+  });
 });
