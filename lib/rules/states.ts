@@ -1,5 +1,6 @@
 import { addDays, addMonths, daysBetween, isWeekend, parseISODate } from "@/lib/rules/dates";
 import { nycRentAnswer } from "@/lib/rules/cities/new-york-city";
+import { BATCH5_RULES, batch5Deposit, batch5Rent, batch5Repair, batch5RepairLetter, batch5Retaliation } from "@/lib/rules/states/batch5";
 import { BATCH4_RULES, batch4Deposit, batch4Rent, batch4Repair, batch4RepairLetter, batch4Retaliation } from "@/lib/rules/states/batch4";
 import { BATCH3_RULES, batch3Deposit, batch3Rent, batch3Repair, batch3RepairLetter, batch3Retaliation } from "@/lib/rules/states/batch3";
 import { BATCH2_RULES, batch2Deposit, batch2Rent, batch2Repair, batch2RepairLetter, batch2Retaliation } from "@/lib/rules/states/batch2";
@@ -29,7 +30,7 @@ function increasePpm(lowestCents: number, proposedCents: number): number {
 }
 
 /** Statewide law loaded for a home. California local packs stay on the California path. */
-export const COVERED_LAW_STATES = ["AZ", "NV", "OR", "WA", "TX", "FL", "NY", "IL", "MA", "NC", "PA", "OH", "DC", "MI", "VA", "MD", "MN", "WI", "IN", "SC", "CT", "IA", "KS", "NE", "HI", "NH", "ID", "WV"] as const;
+export const COVERED_LAW_STATES = ["AZ", "NV", "OR", "WA", "TX", "FL", "NY", "IL", "MA", "NC", "PA", "OH", "DC", "MI", "VA", "MD", "MN", "WI", "IN", "SC", "CT", "IA", "KS", "NE", "HI", "NH", "ID", "WV", "ME", "MT", "RI", "DE", "SD", "ND", "AK", "VT", "WY"] as const;
 export type AddedState = (typeof COVERED_LAW_STATES)[number];
 export type LawState = "CA" | AddedState;
 
@@ -140,7 +141,7 @@ type Stamp = {
 };
 
 export function stateDeposit(state: AddedState, triggerDate: string): Stamp {
-  const added = batch4Deposit(state, triggerDate) || batch3Deposit(state, triggerDate) || batch2Deposit(state, triggerDate) || batch1bDeposit(state, triggerDate);
+  const added = batch5Deposit(state, triggerDate) || batch4Deposit(state, triggerDate) || batch3Deposit(state, triggerDate) || batch2Deposit(state, triggerDate) || batch1bDeposit(state, triggerDate);
   if (added) return added;
   if (state === "TX") return txDeposit(triggerDate);
   if (state === "FL") return flDeposit(triggerDate);
@@ -238,7 +239,7 @@ function repairClock(state: AddedState, severity: RepairSeverity): RepairClock {
 }
 
 export function stateRepair(state: AddedState, requestDate: string, severity: RepairSeverity): Stamp {
-  const added = batch4Repair(state, requestDate) || batch3Repair(state, requestDate) || batch2Repair(state, requestDate) || batch1bRepair(state, requestDate, severity);
+  const added = batch5Repair(state, requestDate) || batch4Repair(state, requestDate) || batch3Repair(state, requestDate) || batch2Repair(state, requestDate) || batch1bRepair(state, requestDate, severity);
   if (added) return added;
   if (state === "TX") return txRepair(requestDate);
   if (state === "FL") return flRepair();
@@ -283,7 +284,7 @@ export function stateRetaliation(state: AddedState, activityDate: string, notice
   explanationEs: string;
 } {
   const daysSince = daysBetween(activityDate, noticeDate);
-  const added = batch4Retaliation(state, activityDate, noticeDate, daysSince) || batch3Retaliation(state, activityDate, noticeDate, daysSince) || batch2Retaliation(state, activityDate, noticeDate, daysSince) || batch1bRetaliation(state, activityDate, noticeDate, daysSince);
+  const added = batch5Retaliation(state, activityDate, noticeDate, daysSince) || batch4Retaliation(state, activityDate, noticeDate, daysSince) || batch3Retaliation(state, activityDate, noticeDate, daysSince) || batch2Retaliation(state, activityDate, noticeDate, daysSince) || batch1bRetaliation(state, activityDate, noticeDate, daysSince);
   if (added) return added;
   if (state === "TX") return txRetaliation(activityDate, noticeDate, daysSince);
   if (state === "FL") return flRetaliation(daysSince);
@@ -356,7 +357,7 @@ export function stateRentAnswer(input: {
     const statewide = batch1bRent("NY", input.lowestCents, input.proposedCents);
     if (statewide) return nycRentAnswer({ ...input, statewide });
   }
-  const added = batch4Rent(input.state, input.lowestCents, input.proposedCents) || batch3Rent(input.state, input.lowestCents, input.proposedCents) || batch2Rent(input.state, input.lowestCents, input.proposedCents) || batch1bRent(input.state, input.lowestCents, input.proposedCents);
+  const added = batch5Rent(input.state, input.lowestCents, input.proposedCents) || batch4Rent(input.state, input.lowestCents, input.proposedCents) || batch3Rent(input.state, input.lowestCents, input.proposedCents) || batch2Rent(input.state, input.lowestCents, input.proposedCents) || batch1bRent(input.state, input.lowestCents, input.proposedCents);
   if (added) return added;
   if (input.state === "TX") return txRent(input.lowestCents, input.proposedCents);
   if (input.state === "FL") return flRent(input.lowestCents, input.proposedCents);
@@ -507,6 +508,7 @@ export const ADDED_STATE_RULES: Rule[] = [
   ...BATCH2_RULES,
   ...BATCH3_RULES,
   ...BATCH4_RULES,
+  ...BATCH5_RULES,
   stateRule({
     id: "AZ-ARS-33-1321",
     jurisdiction: "AZ",
@@ -718,7 +720,7 @@ export const ADDED_STATE_RULES: Rule[] = [
 ];
 
 export function stateRepairLetter(state: AddedState, locale: "en" | "es", severity: RepairSeverity): string {
-  const added = batch4RepairLetter(state, locale) || batch3RepairLetter(state, locale) || batch2RepairLetter(state, locale) || batch1bRepairLetter(state, locale);
+  const added = batch5RepairLetter(state, locale) || batch4RepairLetter(state, locale) || batch3RepairLetter(state, locale) || batch2RepairLetter(state, locale) || batch1bRepairLetter(state, locale);
   if (added) return added;
   if (state === "TX" || state === "FL") return batchRepairLetter(state, locale);
   if (state !== "AZ" && state !== "NV" && state !== "OR" && state !== "WA") {

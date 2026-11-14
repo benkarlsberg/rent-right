@@ -403,4 +403,35 @@ describe("added state coverage", () => {
     expect(stateRentAnswer({ state: "WV", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).abovePublishedMax).toBe(false);
     expect(detectPlace({ city: "Little Rock", region: "AR", postalCode: "72201" }).jurisdiction).toBe("unsupported");
   });
+
+  it("uses the opened clocks for the remaining smaller states", () => {
+    expect(detectPlace({ city: "Portland", region: "ME", postalCode: "04101" }).jurisdiction).toBe("me");
+    expect(detectPlace({ city: "Billings", region: "MT", postalCode: "59101" }).jurisdiction).toBe("mt");
+    expect(detectPlace({ city: "Providence", region: "RI", postalCode: "02903" }).jurisdiction).toBe("ri");
+    expect(detectPlace({ city: "Wilmington", region: "DE", postalCode: "19801" }).jurisdiction).toBe("de");
+    expect(detectPlace({ city: "Sioux Falls", region: "SD", postalCode: "57104" }).jurisdiction).toBe("sd");
+    expect(detectPlace({ city: "Fargo", region: "ND", postalCode: "58102" }).jurisdiction).toBe("nd");
+    expect(detectPlace({ city: "Anchorage", region: "AK", postalCode: "99501" }).jurisdiction).toBe("ak");
+    expect(detectPlace({ city: "Burlington", region: "VT", postalCode: "05401" }).jurisdiction).toBe("vt");
+    expect(detectPlace({ city: "Cheyenne", region: "WY", postalCode: "82001" }).jurisdiction).toBe("wy");
+    expect(depositReturnDeadline("2026-09-01", "DE")).toMatchObject({ dueDate: "2026-09-21", unsure: false });
+    expect(depositReturnDeadline("2026-09-01", "ND")).toMatchObject({ dueDate: "2026-10-01", unsure: true });
+    expect(depositReturnDeadline("2026-09-01", "ME").dueDate).toBeNull();
+    expect(depositReturnDeadline("2026-09-01", "WY").dueDate).toBeNull();
+    for (const state of ["ME", "MT", "RI", "DE", "SD", "ND", "AK", "VT", "WY"] as const) {
+      expect(repairReminder("2026-10-01", "leak", undefined, state).explanation.toLowerCase()).toContain("not permission to withhold rent");
+    }
+    expect(retaliationWindow("2026-01-01", "2026-07-01", "ME").flagged).toBe(true);
+    expect(retaliationWindow("2026-01-01", "2026-04-01", "DE").flagged).toBe(true);
+    expect(retaliationWindow("2026-01-01", "2026-04-02", "DE").flagged).toBe(false);
+    expect(retaliationWindow("2026-01-01", "2026-06-01", "SD").flagged).toBe(true);
+    expect(retaliationWindow("2026-01-01", "2026-08-01", "SD").flagged).toBe(false);
+    expect(retaliationWindow("2026-01-01", "2026-06-01", "WY").flagged).toBe(false);
+    const maine = stateRentAnswer({ state: "ME", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false });
+    expect(maine.detailEn).toContain("75");
+    expect(maine.detailEn).toContain("Portland");
+    expect(maine.abovePublishedMax).toBe(false);
+    expect(stateRentAnswer({ state: "VT", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).detailEn).toContain("Burlington");
+    expect(stateRentAnswer({ state: "RI", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).detailEn).toContain("60 days");
+  });
 });
