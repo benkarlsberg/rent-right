@@ -277,15 +277,15 @@ describe("renter workflows", () => {
     expect(elsewhere.json?.state).toBe("TX");
     expect(elsewhere.json?.covered).toBe(true);
     expect(String(elsewhere.json?.summary)).toContain("Texas");
-    const kansas = await api("POST", "place", {
+    const alabama = await api("POST", "place", {
       street: "1 Main",
-      city: "Wichita",
-      postalCode: "67202",
-      region: "KS",
+      city: "Birmingham",
+      postalCode: "35203",
+      region: "AL",
     }, token);
-    expect(kansas.json?.jurisdiction).toBe("unsupported");
-    expect(kansas.json?.covered).toBe(false);
-    expect(kansas.json?.summary).toBe(COVERAGE_NOTICE_EN);
+    expect(alabama.json?.jurisdiction).toBe("unsupported");
+    expect(alabama.json?.covered).toBe(false);
+    expect(alabama.json?.summary).toBe(COVERAGE_NOTICE_EN);
     const saved = await api("POST", "unit", {
       street: "1604 dover ave",
       unitNumber: "apt 4",

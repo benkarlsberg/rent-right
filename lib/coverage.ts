@@ -3,10 +3,10 @@ import { lawStateOf, type LawState } from "@/lib/rules/states";
 import { stateName } from "@/lib/us-address";
 
 export const COVERAGE_NOTICE_EN =
-  "Rent Right has statewide rules for California, Arizona, Nevada, Oregon, Washington, Texas, Florida, New York, Illinois, Massachusetts, North Carolina, Pennsylvania, Ohio, the District of Columbia, Michigan, Virginia, Maryland, Minnesota, Wisconsin, Indiana, South Carolina, Connecticut, and Iowa. It does not cover this state's law. You can still log issues, keep photos, and email your landlord, but rules, legal deadlines, and law citations won't apply to your home.";
+  "Rent Right has statewide rules for California, Arizona, Nevada, Oregon, Washington, Texas, Florida, New York, Illinois, Massachusetts, North Carolina, Pennsylvania, Ohio, the District of Columbia, Michigan, Virginia, Maryland, Minnesota, Wisconsin, Indiana, South Carolina, Connecticut, Iowa, Kansas, Nebraska, Hawaii, New Hampshire, Idaho, and West Virginia. It does not cover this state's law. You can still log issues, keep photos, and email your landlord, but rules, legal deadlines, and law citations won't apply to your home.";
 
 export const COVERAGE_NOTICE_ES =
-  "Rent Right tiene reglas estatales para California, Arizona, Nevada, Oregón, Washington, Texas, Florida, Nueva York, Illinois, Massachusetts, Carolina del Norte, Pensilvania, Ohio, el Distrito de Columbia, Michigan, Virginia, Maryland, Minnesota, Wisconsin, Indiana, Carolina del Sur, Connecticut e Iowa. No cubre la ley de este estado. Aún puede anotar problemas, guardar fotos y escribirle a su propietario, pero las reglas, los plazos legales y las citas de leyes no aplican a su vivienda.";
+  "Rent Right tiene reglas estatales para California, Arizona, Nevada, Oregón, Washington, Texas, Florida, Nueva York, Illinois, Massachusetts, Carolina del Norte, Pensilvania, Ohio, el Distrito de Columbia, Michigan, Virginia, Maryland, Minnesota, Wisconsin, Indiana, Carolina del Sur, Connecticut, Iowa, Kansas, Nebraska, Hawái, Nuevo Hampshire, Idaho y Virginia Occidental. No cubre la ley de este estado. Aún puede anotar problemas, guardar fotos y escribirle a su propietario, pero las reglas, los plazos legales y las citas de leyes no aplican a su vivienda.";
 
 export function coverageNotice(locale: Locale | "en" | "es" = "en"): string {
   return locale === "es" ? COVERAGE_NOTICE_ES : COVERAGE_NOTICE_EN;

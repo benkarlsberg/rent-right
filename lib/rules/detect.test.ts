@@ -55,7 +55,7 @@ describe("California place detection", () => {
     expect(detectPlace({ city: "Los Angeles", address: "100 Commerce Ave" }).jurisdiction).toBe("city_la");
     expect(detectPlace({ address: "1 Main, Austin, TX 78701" }).jurisdiction).toBe("tx");
     expect(detectPlace({ address: "1 Main, Austin, TX 78701" }).state).toBe("TX");
-    expect(detectPlace({ address: "1 Main, Wichita, KS 67202" }).jurisdiction).toBe("unsupported");
+    expect(detectPlace({ address: "1 Main, Birmingham, AL 35203" }).jurisdiction).toBe("unsupported");
     expect(detectPlace({}).jurisdiction).toBe("unsure");
   });
 
@@ -76,7 +76,7 @@ describe("California place detection", () => {
     expect(placeSummary(detectPlace({ address: "1 Main, Austin, TX 78701" }))).toBe(
       "Statewide Texas rules apply. City ordinances were not researched.",
     );
-    expect(placeSummary(detectPlace({ address: "1 Main, Wichita, KS 67202" }))).toBe(COVERAGE_NOTICE_EN);
+    expect(placeSummary(detectPlace({ address: "1 Main, Birmingham, AL 35203" }))).toBe(COVERAGE_NOTICE_EN);
     expect(placeSummary(detectPlace({}))).toBe("No address entered.");
     expect(placeSummary(detectPlace({ city: "Los Angeles", region: "CA", postalCode: "90026" }), "es")).toContain("Los Ángeles");
   });

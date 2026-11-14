@@ -380,4 +380,27 @@ describe("added state coverage", () => {
     expect(stateRentAnswer({ state: "IA", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).abovePublishedMax).toBe(false);
     expect(detectPlace({ city: "Birmingham", region: "AL", postalCode: "35203" }).jurisdiction).toBe("unsupported");
   });
+
+  it("uses the opened clocks for Kansas, Nebraska, Hawaii, New Hampshire, Idaho, and West Virginia", () => {
+    expect(detectPlace({ city: "Wichita", region: "KS", postalCode: "67202" }).jurisdiction).toBe("ks");
+    expect(detectPlace({ city: "Omaha", region: "NE", postalCode: "68102" }).jurisdiction).toBe("ne");
+    expect(detectPlace({ city: "Honolulu", region: "HI", postalCode: "96813" }).jurisdiction).toBe("hi");
+    expect(detectPlace({ city: "Manchester", region: "NH", postalCode: "03101" }).jurisdiction).toBe("nh");
+    expect(detectPlace({ city: "Boise", region: "ID", postalCode: "83702" }).jurisdiction).toBe("id");
+    expect(detectPlace({ city: "Charleston", region: "WV", postalCode: "25301" }).jurisdiction).toBe("wv");
+    expect(depositReturnDeadline("2026-09-01", "NE")).toMatchObject({ dueDate: "2026-09-15", unsure: false });
+    expect(depositReturnDeadline("2026-09-01", "HI")).toMatchObject({ dueDate: "2026-09-15", unsure: false });
+    expect(depositReturnDeadline("2026-09-01", "KS")).toMatchObject({ dueDate: "2026-10-01", unsure: true });
+    expect(depositReturnDeadline("2026-09-01", "WV").dueDate).toBeNull();
+    for (const state of ["KS", "NE", "HI", "NH", "ID", "WV"] as const) {
+      expect(repairReminder("2026-10-01", "leak", undefined, state).explanation.toLowerCase()).toContain("not permission to withhold rent");
+    }
+    expect(retaliationWindow("2026-01-01", "2026-07-01", "NH").flagged).toBe(true);
+    expect(retaliationWindow("2026-01-01", "2026-07-02", "NH").flagged).toBe(false);
+    expect(retaliationWindow("2026-01-01", "2026-06-01", "KS").flagged).toBe(false);
+    expect(stateRentAnswer({ state: "HI", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).detailEn).toContain("45");
+    expect(stateRentAnswer({ state: "ID", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).detailEn).toContain("30 days");
+    expect(stateRentAnswer({ state: "WV", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).abovePublishedMax).toBe(false);
+    expect(detectPlace({ city: "Little Rock", region: "AR", postalCode: "72201" }).jurisdiction).toBe("unsupported");
+  });
 });
