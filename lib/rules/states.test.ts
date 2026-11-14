@@ -378,7 +378,18 @@ describe("added state coverage", () => {
     expect(retaliationWindow("2026-01-01", "2026-06-01", "IN").flagged).toBe(false);
     expect(stateRentAnswer({ state: "CT", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).detailEn).toContain("45 days");
     expect(stateRentAnswer({ state: "IA", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).abovePublishedMax).toBe(false);
-    expect(detectPlace({ city: "Birmingham", region: "AL", postalCode: "35203" }).jurisdiction).toBe("unsupported");
+    expect(detectPlace({ city: "Birmingham", region: "AL", postalCode: "35203" }).jurisdiction).toBe("al");
+    expect(depositReturnDeadline("2026-09-01", "AL")).toMatchObject({ dueDate: "2026-10-31", unsure: true });
+    expect(depositReturnDeadline("2026-09-01", "MO")).toMatchObject({ dueDate: "2026-10-01", unsure: false });
+    expect(depositReturnDeadline("2026-09-01", "OK")).toMatchObject({ dueDate: "2026-10-16", unsure: true });
+    expect(depositReturnDeadline("2026-09-01", "UT")).toMatchObject({ dueDate: "2026-10-01", unsure: true });
+    for (const state of ["AL", "MO", "OK", "UT"] as const) {
+      expect(repairReminder("2026-10-01", "leak", undefined, state).explanation.toLowerCase()).toContain("not permission to withhold rent");
+      expect(retaliationWindow("2026-01-01", "2026-06-01", state).flagged).toBe(false);
+    }
+    expect(stateRentAnswer({ state: "AL", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).abovePublishedMax).toBe(false);
+    expect(stateRentAnswer({ state: "UT", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).detailEn).toContain("57-22-7");
+    expect(detectPlace({ city: "Newark", region: "NJ", postalCode: "07102" }).jurisdiction).toBe("unsupported");
   });
 
   it("uses the opened clocks for Kansas, Nebraska, Hawaii, New Hampshire, Idaho, and West Virginia", () => {
