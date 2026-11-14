@@ -153,22 +153,22 @@ describe("address suggestions", () => {
 
   it("rejects an address outside California", async () => {
     census({
-      matchedAddress: "1 PEACHTREE ST, ATLANTA, GA, 30303",
+      matchedAddress: "1 BROADWAY, NASHVILLE, TN, 37203",
       addressComponents: {
         fromAddress: "1",
-        streetName: "PEACHTREE",
+        streetName: "BROADWAY",
         suffixType: "ST",
-        city: "ATLANTA",
-        state: "GA",
-        zip: "30303",
+        city: "NASHVILLE",
+        state: "TN",
+        zip: "37203",
       },
     });
-    const found = await suggestPlace({ street: "1 Peachtree St", city: "Atlanta", region: "CA", postalCode: "30303" });
+    const found = await suggestPlace({ street: "1 Broadway", city: "Nashville", region: "CA", postalCode: "37203" });
     expect(found.place.inCalifornia).toBe(false);
     expect(found.place.jurisdiction).toBe("unsupported");
-    expect(found.place.state).toBe("GA");
+    expect(found.place.state).toBe("TN");
     expect(found.suggestion).toBeNull();
-    expect(found.kept.street).toBe("1 Peachtree St");
+    expect(found.kept.street).toBe("1 Broadway");
     expect(placeSummary(found.place)).toBe(COVERAGE_NOTICE_EN);
   });
 

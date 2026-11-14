@@ -25,7 +25,7 @@ describe("added state coverage", () => {
     expect(detectPlace({ city: "Baltimore", region: "MD", postalCode: "21201" }).jurisdiction).toBe("md");
     expect(detectPlace({ city: "Minneapolis", region: "MN", postalCode: "55401" }).jurisdiction).toBe("mn");
     expect(detectPlace({ city: "Milwaukee", region: "WI", postalCode: "53202" }).jurisdiction).toBe("wi");
-    expect(detectPlace({ address: "1 Peachtree St, Atlanta, GA 30303" }).jurisdiction).toBe("unsupported");
+    expect(detectPlace({ address: "1 Peachtree St, Atlanta, GA 30303" }).jurisdiction).toBe("ga");
   });
 
   it("counts Arizona deposit days without weekends or the observed July 4 holiday", () => {
@@ -359,7 +359,7 @@ describe("added state coverage", () => {
     expect(stateRentAnswer({ state: "MN", ...shared }).detailEn).toContain("Minneapolis");
     expect(stateRentAnswer({ state: "WI", ...shared }).detailEn).toContain("704.19");
     expect(selectRules("security deposit", "CA").rules.some((item) => item.jurisdiction === "MI" || item.jurisdiction === "WI")).toBe(false);
-    expect(detectPlace({ address: "1 Peachtree St, Atlanta, GA 30303" }).jurisdiction).toBe("unsupported");
+    expect(detectPlace({ address: "1 Peachtree St, Atlanta, GA 30303" }).jurisdiction).toBe("ga");
   });
 
   it("uses the opened clocks for Indiana, South Carolina, Connecticut, and Iowa", () => {
@@ -390,6 +390,23 @@ describe("added state coverage", () => {
     expect(stateRentAnswer({ state: "AL", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).abovePublishedMax).toBe(false);
     expect(stateRentAnswer({ state: "UT", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).detailEn).toContain("57-22-7");
     expect(detectPlace({ city: "Newark", region: "NJ", postalCode: "07102" }).jurisdiction).toBe("unsupported");
+    expect(detectPlace({ city: "Denver", region: "CO", postalCode: "80202" }).jurisdiction).toBe("co");
+    expect(detectPlace({ city: "Santa Fe", region: "NM", postalCode: "87501" }).jurisdiction).toBe("nm");
+    expect(detectPlace({ city: "Jackson", region: "MS", postalCode: "39201" }).jurisdiction).toBe("ms");
+    expect(depositReturnDeadline("2026-09-01", "CO").dueDate).toBeNull();
+    expect(depositReturnDeadline("2026-09-01", "GA")).toMatchObject({ dueDate: "2026-10-01", unsure: true });
+    expect(depositReturnDeadline("2026-09-01", "NM")).toMatchObject({ dueDate: "2026-10-01", unsure: true });
+    expect(depositReturnDeadline("2026-09-01", "MS")).toMatchObject({ dueDate: "2026-10-16", unsure: true });
+    for (const state of ["CO", "GA", "NM", "MS"] as const) {
+      expect(repairReminder("2026-10-01", "leak", undefined, state).explanation.toLowerCase()).toContain("not permission to withhold rent");
+    }
+    expect(retaliationWindow("2026-01-01", "2026-04-01", "GA").flagged).toBe(true);
+    expect(retaliationWindow("2026-01-01", "2026-04-02", "GA").flagged).toBe(false);
+    expect(retaliationWindow("2026-01-01", "2026-07-01", "NM").flagged).toBe(true);
+    expect(retaliationWindow("2026-01-01", "2026-06-01", "CO").flagged).toBe(false);
+    expect(stateRentAnswer({ state: "NM", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).detailEn).toContain("30 days");
+    expect(stateRentAnswer({ state: "CO", lowestCents: 100_000, proposedCents: 110_000, noticeDate: null, effectiveDate: "2026-12-01", weekToWeek: false, firstYear: null, claimsExemption: false }).abovePublishedMax).toBe(false);
+    expect(detectPlace({ city: "Nashville", region: "TN", postalCode: "37203" }).jurisdiction).toBe("unsupported");
   });
 
   it("uses the opened clocks for Kansas, Nebraska, Hawaii, New Hampshire, Idaho, and West Virginia", () => {
