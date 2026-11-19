@@ -110,7 +110,7 @@ import { inboundDisplay, EMPTY_REPLY } from "@/email/plain";
 import { isResponseNote, landlordBubble, refileResponseNotes, settleQuotedInbound } from "@/lib/inbound-reply";
 import { describeTenantMail, outboundSubject, REPLY_LINE, senderForCard } from "@/lib/tenant-mail";
 import { ChatTurnDone, runChatTurn } from "@/lib/chat-turn";
-import { all, databaseTimedOut, drainRoundTrips, openTrace, runTraced, withActor, type Trace } from "@/lib/pg";
+import { all, databaseTimedOut, drainRoundTrips, one, openTrace, runTraced, withActor, type Trace } from "@/lib/pg";
 import { archivedNote, previewResidence, residencePayload, saveResidence, selectResidence } from "@/lib/residence";
 import { hideIssue, hideNote, issueHistory, issueSummary, recordRulesIssue, refreshIssueTiers, reopenRepair, resolveRepair, restoreNote, setIssueTier } from "@/lib/issues";
 import { deleteReminder, dismissReminder, restoreReminder } from "@/lib/reminders";
@@ -229,6 +229,33 @@ async function actor(): Promise<User> {
   return user;
 }
 
+/** On only when LANDLORD_PORTAL is exactly "on". */
+export function landlordPortalEnabled(): boolean {
+  return process.env.LANDLORD_PORTAL === "on";
+}
+
+class LandlordAccessError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** A landlord session. An empty unit id checks the account only. */
+export async function requireLandlord(unitId: string): Promise<User> {
+  const user = await actor();
+  const account = await one<{ user_id: string }>("select user_id from landlord_accounts where user_id = ?", [user.id]);
+  if (!account) throw new LandlordAccessError("This sign-in does not have a landlord account.", 403);
+  if (!unitId) return user;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(unitId)) {
+    throw new LandlordAccessError("This landlord account is not linked to that home.", 403);
+  }
+  const linked = await one<{ allowed: boolean }>("select public.is_unit_landlord(?::uuid) as allowed", [unitId]);
+  if (!linked?.allowed) throw new LandlordAccessError("This landlord account is not linked to that home.", 403);
+  return user;
+}
+
 async function withUnit(): Promise<{ user: User; unit: Unit }> {
   const user = await actor();
   const unit = await primaryUnit(user.id);
@@ -302,6 +329,7 @@ function unitLocal(unit: Unit, locale: Locale) {
 }
 
 function publicFailure(error: unknown): { message: string; status: number } {
+  if (error instanceof LandlordAccessError) return { message: error.message, status: error.status };
   const raw = error instanceof Error ? error.message : "";
   if (raw === "Sign in required.") return { message: raw, status: 401 };
   if (/generativelanguage\.googleapis|api\.openai\.com|GEMINI_API|OPENAI_API/i.test(raw)) {
@@ -535,6 +563,20 @@ async function route(request: Request, path: string[]): Promise<Response> {
   if (method === "POST" && key === "chat/draft/photo/remove") return json(await removeDraftPhoto(await readBody(request)));
   if (method === "POST" && key === "chat/landlord-email") return json(await saveLandlordEmail(await readBody(request)));
   if (method === "POST" && key === "landlord") return json(await saveLandlord(await readBody(request)));
+  if (method === "GET" && key === "landlord/me") {
+    if (!landlordPortalEnabled()) return json({ error: "Not found." }, 404);
+    const unitId = new URL(request.url).searchParams.get("unit")?.trim() ?? "";
+    const user = await requireLandlord(unitId);
+    const links = await all<{ id: string; unit_id: string; status: string }>(
+      "select id, unit_id, status from landlord_links where landlord_user_id = ? and status <> 'revoked' order by created_at",
+      [user.id],
+    );
+    return json({
+      email: user.email,
+      name: user.name,
+      links: links.map((link) => ({ id: link.id, unitId: link.unit_id, status: link.status })),
+    });
+  }
   if (method === "GET" && key === "dates") return json(await datesPayload());
   if (method === "POST" && path[0] === "dates" && path[1]) {
     const user = await actor();
